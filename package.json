@@ -19,12 +19,37 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
-    "prepare": "husky"
+    "prepare": "husky",
+    "preprotoc": "npx protolint",
+    "svg2font": "svgtofont --sources ./src/renderer/src/assets/icons --output ./src/renderer/src/assets/iconfont"
+  },
+  "svgtofont": {
+    "outSVGReact": false,
+    "outSVGPath": false,
+    "generateInfoData": false,
+    "classNamePrefix": "icon",
+    "fontName": "iconfont",
+    "css": {
+      "fontSize": "inherit",
+      "include": "\\.css$"
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx,json}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
+    "@ant-design/charts": "^2.6.1",
+    "@ant-design/v5-patch-for-react-19": "^1.0.3",
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
-    "electron-updater": "^6.3.9"
+    "antd": "^5.26.0",
+    "better-sqlite3": "^11.10.0",
+    "electron-updater": "^6.3.9",
+    "protobufjs": "^7.5.3",
+    "react-infinite-scroll-component": "^6.1.0",
+    "react-router": "^7.6.2"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",
@@ -32,6 +57,9 @@
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.0.0",
     "@electron-toolkit/tsconfig": "^1.0.1",
+    "@tailwindcss/vite": "^4.1.9",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.14.1",
     "@types/react": "^19.1.1",
     "@types/react-dom": "^19.1.2",
@@ -45,9 +73,13 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "husky": "^9.1.7",
-    "prettier": "^3.5.3",
+    "lint-staged": "^16.1.0",
+    "prettier": "^3.6.2",
+    "prettier-plugin-tailwindcss": "^0.6.14",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "svgtofont": "^6.4.0",
+    "tailwindcss": "^4.1.9",
     "typescript": "^5.8.3",
     "vite": "^6.2.6"
   }

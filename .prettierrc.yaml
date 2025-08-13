@@ -4,3 +4,16 @@ printWidth: 80
 singleQuote: true
 trailingComma: none
 semi: false
+importOrder:
+  - '^react'
+  - '^next'
+  - '^[a-zA-Z]'
+  - '^@\w'
+  - '^@\/'
+  - '^[./]'
+importOrderSeparation: false
+importOrderSortSpecifiers: true
+
+plugins:
+  - prettier-plugin-tailwindcss
+  - '@trivago/prettier-plugin-sort-imports'
