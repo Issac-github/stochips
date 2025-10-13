@@ -1,6 +1,9 @@
+import { useNavigate } from 'react-router'
 import { Button } from 'antd'
 
 const RootBoundary: React.FC = () => {
+  const navigate = useNavigate()
+
   return (
     <div
       style={{
@@ -12,7 +15,8 @@ const RootBoundary: React.FC = () => {
     >
       <Button
         onClick={() => {
-          location.reload()
+          // location.reload()
+          navigate('/')
         }}
       >
         Reload

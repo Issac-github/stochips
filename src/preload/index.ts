@@ -1,9 +1,22 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { errorLog } from '@shared/logger'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  handleMcpPort: {
+    requestMcpPort: () => {
+      ipcRenderer.send('mcp-port')
+    },
+    responseMcpPort: (callback: (port: number) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, port: number) => {
+        callback(port)
+      }
+      ipcRenderer.on('mcp-port', listener)
+      return () => ipcRenderer.removeListener('mcp-port', listener)
+    }
+  }
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

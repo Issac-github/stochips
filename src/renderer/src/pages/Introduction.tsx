@@ -1,5 +1,7 @@
-const Introduction: React.FC = () => {
-  return <>Hello Stochips</>
+import '@xterm/xterm/css/xterm.css'
+
+const App: React.FC = () => {
+  return <>121</>
 }
 
-export default Introduction
+export default App

@@ -3,13 +3,10 @@ import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { debugLog } from '@shared/logger'
 import icon from '../../resources/icon.png?asset'
-import {
-  initializeDatabase,
-  insertArticle
-} from './database/controller/article'
+import { insertArticle } from './database/controller/article'
+import { portMap } from './lib/ipc'
 
 function createWindow(): void {
-  // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
@@ -27,7 +24,6 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    initializeDatabase()
     insertArticle({
       title: 'Normal Title',
       content: "'); DROP TABLE article; --"
@@ -47,6 +43,10 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  ipcMain.on('mcp-port', () => {
+    mainWindow?.webContents.send('mcp-port', portMap)
+  })
 }
 
 // This method will be called when Electron has finished

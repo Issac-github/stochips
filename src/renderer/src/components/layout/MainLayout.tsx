@@ -1,24 +1,27 @@
 import { FC } from 'react'
 import { useState } from 'react'
-import { Outlet } from 'react-router'
-// import chipsImage from '@renderer/assets/images/chips.svg'
-
+import { Outlet, useNavigate } from 'react-router'
 import { Button, Flex, Layout, Menu, Space, theme } from 'antd'
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReadOutlined,
-  UploadOutlined,
-  VideoCameraOutlined
+  RobotOutlined,
+  UploadOutlined
 } from '@ant-design/icons'
 
 const { Sider, Content } = Layout
 
 const MainLayout: FC = () => {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
+  const navigate = useNavigate()
   const {
     token: { colorBgContainer, borderRadiusLG, colorBorderSecondary }
   } = theme.useToken()
+
+  const handleMenuClick = (path: string) => {
+    navigate(path)
+  }
 
   return (
     <>
@@ -29,16 +32,10 @@ const MainLayout: FC = () => {
           collapsed={collapsed}
           className="flex h-screen flex-col justify-between"
           style={{ backgroundColor: colorBgContainer }}
-          // style={
-          //   {
-          //     backgroundColor: colorBgContainer,
-          //     WebkitAppRegion: 'drag'
-          //   } as React.CSSProperties
-          // }
         >
           <Flex className="h-screen" vertical>
             <Flex
-              className="mx-auto w-full justify-center pt-8"
+              className="mx-auto w-full justify-center border-r-2 pt-8"
               style={{
                 borderRightWidth: '1px',
                 background: colorBgContainer,
@@ -46,7 +43,6 @@ const MainLayout: FC = () => {
               }}
             >
               <Space className="bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-lg text-transparent hover:from-pink-500 hover:to-orange-500">
-                {/* <Image src={chipsImage} preview={false} className="w-8 h-8" /> */}
                 {!collapsed && <span className="font-bold">StoChips</span>}
                 <Button
                   type="text"
@@ -55,10 +51,10 @@ const MainLayout: FC = () => {
                   }
                   onClick={() => setCollapsed(!collapsed)}
                   size="small"
+                  className="h-10 w-10 text-base"
                   style={{
-                    fontSize: '16px',
-                    width: 40,
-                    height: 40
+                    // @ts-ignore - WebkitAppRegion is a valid CSS property for Electron
+                    WebkitAppRegion: 'drag'
                   }}
                 />
               </Space>
@@ -67,21 +63,22 @@ const MainLayout: FC = () => {
               mode="inline"
               className="h-full"
               defaultSelectedKeys={['1']}
+              onClick={({ key }) => handleMenuClick(key)}
               items={[
                 {
-                  key: '1',
+                  key: '/',
                   icon: <ReadOutlined />,
-                  label: 'Today'
+                  label: 'Home'
                 },
                 {
-                  key: '2',
-                  icon: <VideoCameraOutlined />,
-                  label: 'This Week'
-                },
-                {
-                  key: '3',
+                  key: '/this-month',
                   icon: <UploadOutlined />,
                   label: 'This Month'
+                },
+                {
+                  key: '/mcp-chat',
+                  icon: <RobotOutlined />,
+                  label: 'MCP Chat'
                 }
               ]}
             />
