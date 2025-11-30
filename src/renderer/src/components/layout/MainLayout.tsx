@@ -3,11 +3,12 @@ import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router'
 import { Button, Flex, Layout, Menu, Space, theme } from 'antd'
 import {
+  ConsoleSqlOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReadOutlined,
-  RobotOutlined,
-  UploadOutlined
+  ReconciliationOutlined,
+  RobotOutlined
 } from '@ant-design/icons'
 
 const { Sider, Content } = Layout
@@ -71,10 +72,16 @@ const MainLayout: FC = () => {
                   label: 'Home'
                 },
                 {
-                  key: '/this-month',
-                  icon: <UploadOutlined />,
-                  label: 'This Month'
+                  key: '/limit-up-data-editor',
+                  icon: <ConsoleSqlOutlined />,
+                  label: 'Limit Up Data Editor'
                 },
+                {
+                  key: '/limit-up-data',
+                  icon: <ReconciliationOutlined />,
+                  label: 'Limit Up Data'
+                },
+
                 {
                   key: '/mcp-chat',
                   icon: <RobotOutlined />,

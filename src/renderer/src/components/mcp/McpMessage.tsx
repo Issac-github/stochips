@@ -1,10 +1,16 @@
 import React, { useEffect, useRef } from 'react'
 import { Divider, Space, Typography } from 'antd'
+import { marked } from 'marked'
 import { RobotOutlined, UserOutlined } from '@ant-design/icons'
 import { ANTD_MAP_TOKEN, ANTD_SEED_TOKEN } from '../../assets/style/color'
 
 const { Text } = Typography
-
+const customRenderer = new marked.Renderer()
+customRenderer.link = ({ href, title, text }) => {
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer" title="${
+    title || ''
+  }">${text}</a>`
+}
 interface ChatMessage {
   id: string
   type: 'user' | 'assistant' | 'system'
@@ -90,7 +96,7 @@ const Mcp: React.FC<Props> = ({ messageList }) => {
               <Space align="start" style={{ width: '100%' }}>
                 {getMessageStyle(message.type).icon}
                 <div className="max-w-4/5">
-                  <div className="mb-1 flex justify-between">
+                  <div className="mb-1 flex items-center justify-between gap-2">
                     <Text
                       strong
                       style={{
@@ -116,20 +122,26 @@ const Mcp: React.FC<Props> = ({ messageList }) => {
                         : 'none'
                     }}
                   >
-                    <Text
+                    <div
                       className="whitespace-pre-wrap"
                       style={{
                         color: message.error
                           ? ANTD_SEED_TOKEN.colorError
                           : undefined
                       }}
-                    >
-                      {message.content}
-                    </Text>
+                      dangerouslySetInnerHTML={{
+                        __html: marked.parse(message.content || '', {
+                          renderer: customRenderer,
+                          gfm: true,
+                          breaks: true,
+                          async: false
+                        })
+                      }}
+                    />
                   </div>
                 </div>
               </Space>
-              <Divider style={{ margin: '12px 0' }} />
+              <Divider style={{ margin: '16px 0' }} />
             </div>
           ))}
         </Space>

@@ -1,19 +1,35 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { EventKey } from '@shared/eventKey'
 import { errorLog } from '@shared/logger'
 
 // Custom APIs for renderer
 const api = {
-  handleMcpPort: {
-    requestMcpPort: () => {
-      ipcRenderer.send('mcp-port')
+  mcpPort: {
+    request: () => {
+      ipcRenderer.send(EventKey.McpPort)
     },
-    responseMcpPort: (callback: (port: number) => void): (() => void) => {
+    response: (callback: (port: number) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, port: number) => {
         callback(port)
       }
-      ipcRenderer.on('mcp-port', listener)
-      return () => ipcRenderer.removeListener('mcp-port', listener)
+      ipcRenderer.on(EventKey.McpPort, listener)
+      return () => ipcRenderer.removeListener(EventKey.McpPort, listener)
+    }
+  },
+  database: {
+    request: (args: DatabaseListenerEventArgs) => {
+      ipcRenderer.send(EventKey.Database, args)
+    },
+    response: (callback: (...args: unknown[]) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: DatabaseListenerEventArgs
+      ) => {
+        callback(data)
+      }
+      ipcRenderer.on(EventKey.Database, listener)
+      return () => ipcRenderer.removeListener(EventKey.Database, listener)
     }
   }
 }

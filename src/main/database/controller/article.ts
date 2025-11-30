@@ -1,24 +1,5 @@
 import { debugLog, errorLog } from '@shared/logger'
-import db from '..'
-
-export const initializeDatabase = () => {
-  try {
-    const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS article (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `
-    db.exec(createTableQuery)
-    debugLog('Article table initialized successfully')
-  } catch (err) {
-    errorLog('Error initializing database:', err)
-    throw err
-  }
-}
+import db from '../models'
 
 export const readAllArticle = () => {
   try {
@@ -38,7 +19,6 @@ export const insertArticle = (data: { title: string; content: string }) => {
     const insertQuery = db.prepare(
       `INSERT INTO article (title, content) VALUES (?, ?)`
     )
-
     const transaction = db.transaction(() => {
       const info = insertQuery.run(title, content)
       debugLog(
@@ -46,6 +26,17 @@ export const insertArticle = (data: { title: string; content: string }) => {
       )
     })
     transaction()
+  } catch (err) {
+    errorLog(err)
+    throw err
+  }
+}
+
+export const deleteAllArticles = () => {
+  try {
+    const deleteQuery = db.prepare(`DELETE FROM article`)
+    const info = deleteQuery.run()
+    debugLog(`Deleted ${info.changes} rows from article`)
   } catch (err) {
     errorLog(err)
     throw err

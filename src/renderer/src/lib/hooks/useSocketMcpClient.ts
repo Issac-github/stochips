@@ -63,8 +63,8 @@ const useSocketMcpClient = ({ addMessage }: Props) => {
   }, [port])
 
   useEffect(() => {
-    window.api.handleMcpPort.requestMcpPort()
-    const unsubscribe = window.api.handleMcpPort.responseMcpPort((portMap) => {
+    window.api.mcpPort.request()
+    const unsubscribe = window.api.mcpPort.response((portMap) => {
       setPort(portMap.socket)
     })
     return () => {

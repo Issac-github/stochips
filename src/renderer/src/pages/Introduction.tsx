@@ -1,7 +1,8 @@
+import CustomTerminal from '@renderer/components/shared/Terminal'
 import '@xterm/xterm/css/xterm.css'
 
 const App: React.FC = () => {
-  return <>121</>
+  return <CustomTerminal />
 }
 
 export default App

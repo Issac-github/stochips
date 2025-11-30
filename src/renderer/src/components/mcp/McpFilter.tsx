@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Input, Space, Spin, Typography } from 'antd'
 import { ClearOutlined, SendOutlined } from '@ant-design/icons'
-import useSocketMcpClient from '@renderer/lib/hooks/useSocketMcpClient'
+import useHttpMcpClient from '@renderer/lib/hooks/useHttpMcpClient'
 import { errorLog } from '@shared/logger'
 import MCP_KEYS from '@shared/mcpKey'
 import McpMessage from './McpMessage'
@@ -17,7 +17,7 @@ interface ChatMessage {
   error?: boolean
 }
 
-const McpChat: React.FC = () => {
+const McpFilter: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -32,12 +32,10 @@ const McpChat: React.FC = () => {
     }
     setMessages((prev) => [...prev, newMessage])
   }
-
   const { isConnected, connectionError, setConnectionError, clientRef } =
-    useSocketMcpClient({
+    useHttpMcpClient({
       addMessage
     })
-
   const sendMessage = async (message: string) => {
     if (!clientRef.current || !message.trim()) {
       return
@@ -45,8 +43,18 @@ const McpChat: React.FC = () => {
     setIsLoading(true)
     addMessage({ type: 'user', content: message })
     try {
-      const toolName = MCP_KEYS.chat_llm
-      const args = { instruction: message }
+      const toolName = MCP_KEYS.filter_json_llm
+      const args = {
+        data: [
+          { id: 1, city: 'Beijing', temperature: 15, aqi: 180 },
+          { id: 2, city: 'Shanghai', temperature: 8, aqi: 220 },
+          { id: 3, city: 'Guangzhou', temperature: 22, aqi: 150 },
+          { id: 4, city: 'Shenzhen', temperature: 25, aqi: 120 },
+          { id: 5, city: 'Hangzhou', temperature: 5, aqi: 190 },
+          { id: 6, city: 'Nanjing', temperature: 12, aqi: 210 }
+        ],
+        instruction: message
+      }
       const res = await clientRef.current.callTool({
         name: toolName,
         arguments: args
@@ -89,6 +97,12 @@ const McpChat: React.FC = () => {
 
   const clearChat = () => {
     setMessages([])
+  }
+
+  const runSample = async () => {
+    const sampleMessage =
+      '保留空气质量AQI小于200且温度大于等于20的记录，只输出 id 和 city 字段，返回数组。'
+    await sendMessage(sampleMessage)
   }
 
   useEffect(() => {
@@ -146,6 +160,14 @@ const McpChat: React.FC = () => {
             autoFocus={true}
           />
           <Button
+            onClick={runSample}
+            disabled={!isConnected || isLoading}
+            size="large"
+            type="primary"
+          >
+            Run Sample
+          </Button>
+          <Button
             type="primary"
             icon={isLoading ? <Spin size="small" /> : <SendOutlined />}
             onClick={handleSend}
@@ -160,4 +182,4 @@ const McpChat: React.FC = () => {
   )
 }
 
-export default McpChat
+export default McpFilter

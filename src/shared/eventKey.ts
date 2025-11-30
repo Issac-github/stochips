@@ -1,7 +1,14 @@
-enum EventKey {
+export enum EventKey {
   PasteImage = 'PasteImage',
   PasteImageSuccess = 'PasteImageSuccess',
-  PasteImageFailed = 'PasteImageFailed'
+  PasteImageFailed = 'PasteImageFailed',
+  McpPort = 'McpPort',
+  Database = 'Database'
 }
 
-export default EventKey
+export enum DatabaseEventKey {
+  WriteEmLimitUpData = 'WriteEmLimitUpData',
+  ReadEmLimitUpData = 'ReadEmLimitUpData',
+  WriteHrLimitUpData = 'WriteHrLimitUpData',
+  ReadHrLimitUpData = 'ReadHrLimitUpData'
+}

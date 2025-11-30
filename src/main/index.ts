@@ -3,8 +3,10 @@ import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { debugLog } from '@shared/logger'
 import icon from '../../resources/icon.png?asset'
+// import hrData from './data/hr.json'
 import { insertArticle } from './database/controller/article'
-import { portMap } from './lib/ipc'
+// import { insertHrLimitUp } from './database/controller/hrLimitUp'
+import { IPC } from './lib/ipc'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -24,11 +26,12 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    insertArticle({
-      title: 'Normal Title',
-      content: "'); DROP TABLE article; --"
-    })
     mainWindow.show()
+    insertArticle({
+      title: 'title',
+      content: 'content'
+    })
+    // insertHrLimitUp(hrData.info.map((item) => ({ ...item, date: hrData.date })))
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -44,9 +47,8 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  ipcMain.on('mcp-port', () => {
-    mainWindow?.webContents.send('mcp-port', portMap)
-  })
+  const ipc = new IPC()
+  ipc.ipcOnMainWindow(mainWindow)
 }
 
 // This method will be called when Electron has finished

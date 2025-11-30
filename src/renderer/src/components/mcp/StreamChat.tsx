@@ -1,10 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Button, Card, Input, Space, Typography } from 'antd'
+import { marked } from 'marked'
 import { ClearOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { ANTD_MAP_TOKEN } from '@renderer/assets/style/color'
 import useStreamChat from '@renderer/lib/hooks/useGPTChat'
 
 const { TextArea } = Input
 const { Text, Title } = Typography
+
+const customRenderer = new marked.Renderer()
+customRenderer.link = ({ href, title, text }) => {
+  return `<a href="${href}" target="_blank" rel="noopener noreferrer" title="${
+    title || ''
+  }">${text}</a>`
+}
+customRenderer.strong = ({ text }) => {
+  return `<strong style="font-weight: 700;">${text}</strong>`
+}
 
 interface Message {
   id: string
@@ -113,7 +125,7 @@ const StreamChat: React.FC = () => {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-auto p-1">
+    <div className="flex h-full flex-col overflow-auto">
       <Card
         title={
           <Space>
@@ -130,10 +142,13 @@ const StreamChat: React.FC = () => {
             清空
           </Button>
         }
-        classNames={{ body: 'h-full flex flex-col p-5' }}
+        classNames={{ body: 'h-full flex flex-col p-4 overflow-auto' }}
         className="flex h-full flex-col"
       >
-        <div className="mb-4 h-full flex-1 space-y-4 overflow-auto">
+        <div
+          className="mb-4 h-full flex-1 space-y-4 overflow-auto rounded-lg p-4"
+          style={{ border: `1px solid ${ANTD_MAP_TOKEN.colorBorderSecondary}` }}
+        >
           {messageList.map((message) => (
             <div
               key={message.id}
@@ -146,7 +161,17 @@ const StreamChat: React.FC = () => {
                     : 'bg-gray-200 text-gray-800'
                 }`}
               >
-                <div className="whitespace-pre-wrap">{message.content}</div>
+                <div
+                  className="whitespace-pre-wrap"
+                  dangerouslySetInnerHTML={{
+                    __html: marked.parse(message.content || '', {
+                      renderer: customRenderer,
+                      gfm: true,
+                      breaks: true,
+                      async: false
+                    })
+                  }}
+                />
                 {message.streaming && (
                   <span className="ml-1 inline-block h-4 w-1 animate-pulse bg-current" />
                 )}

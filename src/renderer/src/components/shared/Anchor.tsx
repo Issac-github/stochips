@@ -74,7 +74,7 @@ const StoAnchor: FC<Props> = ({
         ref={contentRef}
         style={{
           overflow: 'auto',
-          padding: '12px 0',
+          padding: '16px 0',
           ...contentStyleProps
         }}
         onScroll={handleScroll}

@@ -6,7 +6,13 @@ import router from './lib/router'
 const App: React.FC = () => {
   return (
     <StyleProvider layer>
-      <ConfigProvider>
+      <ConfigProvider
+        theme={{
+          token: {
+            colorPrimary: '#faad14'
+          }
+        }}
+      >
         <RouterProvider router={router} />
       </ConfigProvider>
     </StyleProvider>

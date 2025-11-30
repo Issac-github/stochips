@@ -1,5 +1,5 @@
 import type { WebSocket as WSWebSocket } from 'ws'
-import { SocketReadyState } from '@shared/lib/utils'
+import { SocketReadyState } from '@shared/lib/constant'
 
 /*
   Transport implementation for MCP over WebSocket

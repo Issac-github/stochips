@@ -11,8 +11,8 @@ const useGPTChat = () => {
   const abortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    window.api.handleMcpPort.requestMcpPort()
-    const unsubscribe = window.api.handleMcpPort.responseMcpPort((portMap) => {
+    window.api.mcpPort.request()
+    const unsubscribe = window.api.mcpPort.response((portMap) => {
       setPort(portMap.gpt)
     })
     return () => {
