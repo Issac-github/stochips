@@ -1,0 +1,51 @@
+[project]
+name = "stock-analysis-agent"
+version = "1.0.0"
+description = "股票选股及风控Agent系统 - 自动抓取股票数据并进行风险评估"
+authors = [
+    {name = "Stock Analysis Team", email = "team@example.com"}
+]
+requires-python = ">=3.10,<4.0.0"
+dependencies = [
+    # 基础依赖
+    "python-dotenv (>=1.0.0,<2.0.0)",
+    "pydantic (>=2.0.0,<3.0.0)",
+
+    # HTTP客户端
+    "aiohttp (>=3.9.0,<4.0.0)",
+    "requests (>=2.31.0,<3.0.0)",
+
+    # 数据库
+    "sqlalchemy (>=2.0.0,<3.0.0)",
+    "pymysql (>=1.1.0,<2.0.0)",
+    "cryptography (>=42.0.0)",
+
+    # 定时任务
+    "apscheduler (>=3.10.0,<4.0.0)",
+
+    # AI分析依赖
+    "langchain (>=0.3.0,<1.0.0)",
+    "langchain-core (>=0.3.78,<0.4.0)",
+    "langchain-openai (>=0.2.0,<1.0.0)",
+    "langchain-chroma (>=0.2.0,<0.3.0)",
+    "langchain-community (>=0.3.0,<0.4.0)",
+    "langchain-huggingface (>=0.1.0,<0.2.0)",
+    "openai (>=1.0.0,<2.0.0)",
+    "onnxruntime (>=1.23.0,<1.24.0)",
+
+    # 工具库
+    "python-dateutil (>=2.8.0,<3.0.0)",
+]
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+black = "^24.0.0"
+flake8 = "^7.0.0"

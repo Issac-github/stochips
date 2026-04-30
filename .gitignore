@@ -1,10 +1,35 @@
-node_modules
-dist
-out
-.DS_Store
-.eslintcache
 *.log*
-.env.local
 
+.DS_Store
+node_modules/
+dist/
+out/
+.eslintcache
 /storage
 /src/main/data
+
+__pycache__/
+
+# Local environment and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Local editor state
+.vscode/
+
+# Private trading knowledge and generated vector indexes
+agent/chain/wiki/README.md
+agent/chain/wiki/1.md
+agent/chain/wiki/WIKI.md
+agent/chain/wiki/raw/
+agent/chain/wiki/wiki/
+agent/chain/wiki/chroma_wiki_db/
+agent/chain/rag/chroma_db/
+agent/examples/ai_analysis_example.md
+
+# Local runtime state
+agent/stock_agent.log
