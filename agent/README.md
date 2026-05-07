@@ -56,7 +56,7 @@ vim .env
 MYSQL_ROOT_PASSWORD=your_root_password
 MYSQL_USER=stock
 MYSQL_PASSWORD=your_password
-DATABASE_URL=mysql+pymysql://stock:your_password@mysql:3306/stock_analysis
+DATABASE_URL=mysql+pymysql://stock:your_password@mysql:3306/stock_analysis?charset=utf8mb4
 
 # 同花顺Cookie（数据抓取必需）
 STOCK_COOKIE=your_ths_cookie
@@ -74,17 +74,154 @@ MOONSHOT_API_KEY=your_api_key
 3. 刷新页面，找到XHR请求
 4. 复制请求中的Cookie字段（主要是`v=`后面的值）
 
-### Docker部署（推荐）
+### Docker 部署（推荐）
+
+当前 Docker 默认部署包含 2 个服务，另有 1 个按需启动的 RAG/wiki 服务：
+
+| 服务 | 说明 |
+|------|------|
+| `mysql` | MySQL 8.0 数据库，保存抓取数据、日志和风险评估结果 |
+| `stock_agent` | Python Agent 服务，定时抓取股票数据并执行风险评估 |
+| `rag_agent` | 可选服务，运行 wiki/RAG 向量检索，使用 CPU-only torch |
+
+`stock_agent` 镜像默认只安装股票抓取、风控和 Moonshot AI 分析依赖，不安装 HuggingFace/Chroma/Torch，避免镜像过大。需要 wiki/RAG 时启动单独的 `rag_agent`，它会安装 CPU-only torch，并把模型缓存、Chroma 向量库挂到 Docker volume。
+
+#### 基础启动
 
 ```bash
-# 构建并启动
-docker-compose up -d
+# 1. 准备环境变量
+cp .env.example .env
+vim .env
 
-# 查看日志
-docker-compose logs -f stock_agent
+# 2. 构建并启动 MySQL + 股票 Agent
+docker compose up -d --build
 
-# 进入MySQL查看数据
-docker-compose exec mysql mysql -ustock -p stock_analysis
+# 3. 查看服务状态
+docker compose ps
+
+# 4. 查看日志
+docker compose logs -f stock_agent
+docker compose logs -f mysql
+```
+
+`.env` 中至少需要确认这些值：
+
+```bash
+MYSQL_ROOT_PASSWORD=your_root_password
+MYSQL_USER=stock
+MYSQL_PASSWORD=your_password
+MYSQL_PORT=3306
+
+STOCK_COOKIE=your_ths_cookie
+
+# 可选：启用 AI 分析
+MOONSHOT_API_KEY=your_api_key
+
+LOG_LEVEL=INFO
+TZ=Asia/Shanghai
+```
+
+#### 股票任务命令
+
+```bash
+# 手动抓取今天数据
+docker compose exec stock_agent python main.py fetch
+
+# 手动抓取指定日期
+docker compose exec stock_agent python main.py fetch 20260506
+
+# 规则风险评估
+docker compose exec stock_agent python main.py assess 20260506
+
+# AI + 规则增强评估
+docker compose exec stock_agent python main.py assess-ai 20260506
+
+# 完整流程：抓取 + 规则评估
+docker compose exec stock_agent python main.py run 20260506
+
+# 查看数据状态
+docker compose exec stock_agent python main.py status 20260506
+```
+
+#### MySQL 命令
+
+```bash
+# 进入 MySQL
+docker compose exec mysql mysql --default-character-set=utf8mb4 -ustock -p stock_analysis
+
+# 清理某天板块数据后重新抓取
+DELETE FROM block_top WHERE date = '2026-05-06';
+
+# 查询当天各表数量
+SELECT COUNT(*) FROM continuous_limit_up WHERE date = '2026-05-06';
+SELECT COUNT(*) FROM block_top WHERE date = '2026-05-06';
+SELECT COUNT(*) FROM limit_up_pool WHERE date = '2026-05-06';
+SELECT COUNT(*) FROM eastmoney_zt_pool WHERE date = '2026-05-06';
+```
+
+#### 运维命令
+
+```bash
+# 停止服务但保留 MySQL 数据卷
+docker compose down
+
+# 停止并删除 MySQL 数据卷（会清空数据）
+docker compose down -v
+
+# 只重建并重启股票 Agent
+docker compose build --no-cache stock_agent
+docker compose up -d stock_agent
+
+# 清理无标签旧镜像
+docker image prune -f
+
+# 清理未使用的构建缓存
+docker builder prune -f
+```
+
+#### Wiki/RAG 命令
+
+```bash
+# 构建 RAG/wiki 镜像（CPU-only torch）
+docker compose --profile rag build rag_agent
+
+# 列出 wiki 页面
+docker compose --profile rag run --rm rag_agent python -m main wiki pages
+
+# 构建/强制重建 wiki 向量库
+docker compose --profile rag run --rm rag_agent python -m main wiki build
+
+# 查询 wiki
+docker compose --profile rag run --rm rag_agent python -m main wiki query "什么是龙头"
+
+# RAG 检索/问答
+docker compose --profile rag run --rm rag_agent python -m chain.rag.main build
+docker compose --profile rag run --rm rag_agent python -m chain.rag.main rebuild
+docker compose --profile rag run --rm rag_agent python -m chain.rag.main search "天量"
+docker compose --profile rag run --rm rag_agent python -m chain.rag.main chat "天量代表什么"
+
+# 删除 RAG/wiki 向量库 volume（会清空已构建索引，保留模型缓存）
+docker compose down
+docker volume rm agent_rag_chroma agent_wiki_chroma
+
+# 如果连 HuggingFace 模型缓存也要清空，再执行这个
+docker volume rm agent_hf_cache
+```
+
+`rag_agent` 使用 Docker volume 保存 Chroma 向量库和 HuggingFace 模型缓存。重建镜像不会删除向量库和模型缓存；删除 `agent_rag_chroma`、`agent_wiki_chroma` 会强制重新构建索引，删除 `agent_hf_cache` 会导致下次重新下载 embedding 模型。
+
+国内服务器首次下载 embedding 模型时建议保留 `.env` 中的：
+
+```bash
+HF_ENDPOINT=https://hf-mirror.com
+PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu
+TORCH_VERSION=2.7.1+cpu
+```
+
+如果是已有数据库升级，并且需要补充增强版 AI 风险评估字段，启动后执行迁移：
+
+```bash
+docker compose exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < migrations/20260506_add_risk_assessment_ai_fields.sql
 ```
 
 ### 本地开发
@@ -149,7 +286,7 @@ fetcher = create_fetcher()
 data = fetcher.fetch_all_data('20260412')
 
 # 数据存储
-storage = create_storage('mysql+pymysql://user:pass@localhost/stock_analysis')
+storage = create_storage('mysql+pymysql://user:pass@localhost/stock_analysis?charset=utf8mb4')
 results = storage.save_all_data(data, date(2026, 4, 12))
 
 # 风险评估

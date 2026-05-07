@@ -99,6 +99,35 @@ class StockDataStorage:
             return default
         return str(value)
 
+    def _first_value(self, item: Dict[str, Any], *keys: str) -> Any:
+        """按候选字段名取第一个非空值，兼容不同数据源字段。"""
+        for key in keys:
+            value = item.get(key)
+            if value is not None and value != '' and value != '-':
+                return value
+        return None
+
+    def _upsert_by_keys(
+        self,
+        session: Session,
+        model,
+        values: Dict[str, Any],
+        key_fields: Tuple[str, ...],
+    ):
+        """按业务唯一键更新或插入，避免 session.merge 只按主键判断导致重复插入。"""
+        filters = [
+            getattr(model, field) == values[field]
+            for field in key_fields
+        ]
+        record = session.query(model).filter(*filters).one_or_none()
+        if record:
+            for key, value in values.items():
+                setattr(record, key, value)
+            return record
+        record = model(**values)
+        session.add(record)
+        return record
+
     def save_continuous_limit_up(
         self,
         data: List[Dict[str, Any]],
@@ -125,33 +154,39 @@ class StockDataStorage:
         try:
             for item in data:
                 try:
-                    record = ContinuousLimitUp(
-                        date=target_date,
-                        code=self._safe_str(item.get('code')),
-                        name=self._safe_str(item.get('name')),
-                        continuous_days=self._safe_int(item.get('continuous_days')),
-                        latest_limit_up_time=self._safe_str(item.get('latest_limit_up_time')),
-                        limit_up_open_count=self._safe_int(item.get('limit_up_open_count')),
-                        limit_up_price=self._safe_decimal(item.get('limit_up_price')),
-                        change_percent=self._safe_decimal(item.get('change_percent')),
-                        volume=self._safe_int(item.get('volume')),
-                        turnover=self._safe_decimal(item.get('turnover')),
-                        market_value=self._safe_decimal(item.get('market_value')),
-                        concept=self._safe_str(item.get('concept')),
-                    )
+                    code = self._safe_str(self._first_value(item, 'code', 'stock_code', 'symbol'))
+                    name = self._safe_str(self._first_value(item, 'name', 'stock_name', 'short_name'))
+                    if not code or not name:
+                        logger.warning(f"跳过连板记录，缺少股票代码或名称: {item}")
+                        failed_count += 1
+                        continue
 
-                    session.merge(record)  # 使用merge实现upsert
+                    values = {
+                        'date': target_date,
+                        'code': code,
+                        'name': name,
+                        'continuous_days': self._safe_int(self._first_value(item, 'continuous_days', 'high_days', 'limit_up_days', 'days')),
+                        'latest_limit_up_time': self._safe_str(self._first_value(item, 'latest_limit_up_time', 'limit_up_time', 'last_limit_up_time')),
+                        'limit_up_open_count': self._safe_int(self._first_value(item, 'limit_up_open_count', 'open_count')),
+                        'limit_up_price': self._safe_decimal(self._first_value(item, 'limit_up_price', 'price')),
+                        'change_percent': self._safe_decimal(self._first_value(item, 'change_percent', 'change_rate', 'rate')),
+                        'volume': self._safe_int(self._first_value(item, 'volume', 'vol')),
+                        'turnover': self._safe_decimal(self._first_value(item, 'turnover', 'amount')),
+                        'market_value': self._safe_decimal(self._first_value(item, 'market_value', 'total_value', 'circulation_value')),
+                        'concept': self._safe_str(self._first_value(item, 'concept', 'reason', 'reason_info')),
+                    }
+
+                    self._upsert_by_keys(session, ContinuousLimitUp, values, ('date', 'code'))
                     success_count += 1
 
                 except Exception as e:
                     logger.error(f"保存连板记录失败 {item.get('code')}: {e}")
                     failed_count += 1
 
-            session.commit()
-            logger.info(f"连板天梯数据保存完成: 成功{success_count}条，失败{failed_count}条")
-
             # 记录日志
             self._save_log(session, target_date, 'continuous_limit_up', success_count)
+            session.commit()
+            logger.info(f"连板天梯数据保存完成: 成功{success_count}条，失败{failed_count}条")
 
         except Exception as e:
             session.rollback()
@@ -188,32 +223,38 @@ class StockDataStorage:
         try:
             for item in data:
                 try:
-                    record = BlockTop(
-                        date=target_date,
-                        block_code=self._safe_str(item.get('block_code')),
-                        block_name=self._safe_str(item.get('block_name')),
-                        stock_count=self._safe_int(item.get('stock_count')),
-                        prev_stock_count=self._safe_int(item.get('prev_stock_count')),
-                        change_percent=self._safe_decimal(item.get('change_percent')),
-                        leading_stock=self._safe_str(item.get('leading_stock')),
-                        leading_stock_name=self._safe_str(item.get('leading_stock_name')),
-                        continuous_days=self._safe_int(item.get('continuous_days')),
-                        avg_limit_up_time=self._safe_str(item.get('avg_limit_up_time')),
-                        block_type=self._safe_str(item.get('block_type')),
-                    )
+                    block_name = self._safe_str(self._first_value(item, 'block_name', 'name', 'plate_name', 'concept_name'))
+                    block_code = self._safe_str(self._first_value(item, 'block_code', 'code', 'plate_code', 'concept_code'), block_name)
+                    if not block_name:
+                        logger.warning(f"跳过板块记录，缺少板块名称: {item}")
+                        failed_count += 1
+                        continue
 
-                    session.merge(record)
+                    values = {
+                        'date': target_date,
+                        'block_code': block_code,
+                        'block_name': block_name,
+                        'stock_count': self._safe_int(self._first_value(item, 'stock_count', 'num', 'count', 'limit_up_count')),
+                        'prev_stock_count': self._safe_int(self._first_value(item, 'prev_stock_count', 'pre_num', 'prev_count')),
+                        'change_percent': self._safe_decimal(self._first_value(item, 'change_percent', 'change_rate', 'rate')),
+                        'leading_stock': self._safe_str(self._first_value(item, 'leading_stock', 'leader_code', 'stock_code')),
+                        'leading_stock_name': self._safe_str(self._first_value(item, 'leading_stock_name', 'leader_name', 'stock_name')),
+                        'continuous_days': self._safe_int(self._first_value(item, 'continuous_days', 'days', 'high_days'), 1),
+                        'avg_limit_up_time': self._safe_str(self._first_value(item, 'avg_limit_up_time', 'avg_time')),
+                        'block_type': self._safe_str(self._first_value(item, 'block_type', 'type')),
+                    }
+
+                    self._upsert_by_keys(session, BlockTop, values, ('date', 'block_code'))
                     success_count += 1
 
                 except Exception as e:
                     logger.error(f"保存板块记录失败 {item.get('block_code')}: {e}")
                     failed_count += 1
 
-            session.commit()
-            logger.info(f"最强风口数据保存完成: 成功{success_count}条，失败{failed_count}条")
-
             # 记录日志
             self._save_log(session, target_date, 'block_top', success_count)
+            session.commit()
+            logger.info(f"最强风口数据保存完成: 成功{success_count}条，失败{failed_count}条")
 
         except Exception as e:
             session.rollback()
@@ -250,42 +291,48 @@ class StockDataStorage:
         try:
             for item in data:
                 try:
-                    record = LimitUpPool(
-                        date=target_date,
-                        code=self._safe_str(item.get('code')),
-                        name=self._safe_str(item.get('name')),
-                        latest_price=self._safe_decimal(item.get('latest_price')),
-                        limit_up_price=self._safe_decimal(item.get('limit_up_price')),
-                        change_percent=self._safe_decimal(item.get('change_percent')),
-                        limit_up_type=self._safe_str(item.get('limit_up_type')),
-                        limit_up_time=self._safe_str(item.get('limit_up_time')),
-                        open_count=self._safe_int(item.get('open_count')),
-                        last_time=self._safe_str(item.get('last_time')),
-                        strength=self._safe_decimal(item.get('strength')),
-                        board_amount=self._safe_decimal(item.get('board_amount')),
-                        volume_ratio=self._safe_decimal(item.get('volume_ratio')),
-                        turnover_rate=self._safe_decimal(item.get('turnover_rate')),
-                        market_value=self._safe_decimal(item.get('market_value')),
-                        total_value=self._safe_decimal(item.get('total_value')),
-                        pe_ratio=self._safe_decimal(item.get('pe_ratio')),
-                        pb_ratio=self._safe_decimal(item.get('pb_ratio')),
-                        concept=self._safe_str(item.get('concept')),
-                        block_name=self._safe_str(item.get('block_name')),
-                        reason=self._safe_str(item.get('reason')),
-                    )
+                    code = self._safe_str(self._first_value(item, 'code', '199112'))
+                    name = self._safe_str(self._first_value(item, 'name', '10'))
+                    if not code or not name:
+                        logger.warning(f"跳过涨停强度记录，缺少股票代码或名称: {item}")
+                        failed_count += 1
+                        continue
 
-                    session.merge(record)
+                    values = {
+                        'date': target_date,
+                        'code': code,
+                        'name': name,
+                        'latest_price': self._safe_decimal(self._first_value(item, 'latest_price', '9001')),
+                        'limit_up_price': self._safe_decimal(self._first_value(item, 'limit_up_price', '330323')),
+                        'change_percent': self._safe_decimal(self._first_value(item, 'change_percent', 'change_rate')),
+                        'limit_up_type': self._safe_str(self._first_value(item, 'limit_up_type', '9002')),
+                        'limit_up_time': self._safe_str(self._first_value(item, 'limit_up_time', '330324')),
+                        'open_count': self._safe_int(self._first_value(item, 'open_count', '330325')),
+                        'last_time': self._safe_str(self._first_value(item, 'last_time', '330329')),
+                        'strength': self._safe_decimal(self._first_value(item, 'strength', '133971')),
+                        'board_amount': self._safe_decimal(self._first_value(item, 'board_amount', '133970')),
+                        'volume_ratio': self._safe_decimal(self._first_value(item, 'volume_ratio', '1968584')),
+                        'turnover_rate': self._safe_decimal(self._first_value(item, 'turnover_rate', '3475914')),
+                        'market_value': self._safe_decimal(self._first_value(item, 'market_value', '9003')),
+                        'total_value': self._safe_decimal(self._first_value(item, 'total_value')),
+                        'pe_ratio': self._safe_decimal(self._first_value(item, 'pe_ratio')),
+                        'pb_ratio': self._safe_decimal(self._first_value(item, 'pb_ratio')),
+                        'concept': self._safe_str(self._first_value(item, 'concept', 'reason_type')),
+                        'block_name': self._safe_str(self._first_value(item, 'block_name')),
+                        'reason': self._safe_str(self._first_value(item, 'reason', '9004')),
+                    }
+
+                    self._upsert_by_keys(session, LimitUpPool, values, ('date', 'code'))
                     success_count += 1
 
                 except Exception as e:
                     logger.error(f"保存涨停记录失败 {item.get('code')}: {e}")
                     failed_count += 1
 
-            session.commit()
-            logger.info(f"涨停强度数据保存完成: 成功{success_count}条，失败{failed_count}条")
-
             # 记录日志
             self._save_log(session, target_date, 'limit_up_pool', success_count)
+            session.commit()
+            logger.info(f"涨停强度数据保存完成: 成功{success_count}条，失败{failed_count}条")
 
         except Exception as e:
             session.rollback()
@@ -322,40 +369,39 @@ class StockDataStorage:
         try:
             for item in data:
                 try:
-                    record = EastmoneyZTPool(
-                        date=target_date,
-                        code=self._safe_str(item.get('c')),  # 东财字段：c
-                        name=self._safe_str(item.get('n')),  # 东财字段：n
-                        latest_price=self._safe_decimal(item.get('p')),  # 东财字段：p
-                        change_percent=self._safe_decimal(item.get('zdp')),  # 东财字段：zdp
-                        first_limit_up_time=self._safe_str(item.get('fbt')),  # 东财字段：fbt
-                        last_limit_up_time=self._safe_str(item.get('lbt')),  # 东财字段：lbt
-                        limit_up_type=self._safe_str(item.get('zttz')),  # 东财字段：zttz
-                        board_amount=self._safe_decimal(item.get('fund')),  # 东财字段：fund（封单金额）
-                        block_name=self._safe_str(item.get('hybk')),  # 东财字段：hybk（行业板块）
-                        reason=self._safe_str(item.get('ztzy')),  # 东财字段：ztzy（涨停原因）
-                        volume=self._safe_int(item.get('v')),  # 东财字段：v
-                        turnover=self._safe_int(item.get('a')),  # 东财字段：a（成交额）
-                        market_value=self._safe_decimal(item.get('m')),  # 东财字段：m（总市值）
-                        circulating_value=self._safe_decimal(item.get('cm')),  # 东财字段：cm（流通市值）
-                        turnover_rate=self._safe_decimal(item.get('hs')),  # 东财字段：hs（换手率）
-                        pe_ratio=self._safe_decimal(item.get('pe')),  # 东财字段：pe
-                        amplitude=self._safe_decimal(item.get('zf')),  # 东财字段：zf（振幅）
-                        pre_3_day_change=self._safe_decimal(item.get('z3')),  # 东财字段：z3（3日涨幅）
-                    )
+                    values = {
+                        'date': target_date,
+                        'code': self._safe_str(item.get('c')),  # 东财字段：c
+                        'name': self._safe_str(item.get('n')),  # 东财字段：n
+                        'latest_price': self._safe_decimal(item.get('p')),  # 东财字段：p
+                        'change_percent': self._safe_decimal(item.get('zdp')),  # 东财字段：zdp
+                        'first_limit_up_time': self._safe_str(item.get('fbt')),  # 东财字段：fbt
+                        'last_limit_up_time': self._safe_str(item.get('lbt')),  # 东财字段：lbt
+                        'limit_up_type': self._safe_str(item.get('zttz')),  # 东财字段：zttz
+                        'board_amount': self._safe_decimal(item.get('fund')),  # 东财字段：fund
+                        'block_name': self._safe_str(item.get('hybk')),  # 东财字段：hybk
+                        'reason': self._safe_str(item.get('ztzy')),  # 东财字段：ztzy
+                        'volume': self._safe_int(item.get('v')),  # 东财字段：v
+                        'turnover': self._safe_int(item.get('a')),  # 东财字段：a
+                        'market_value': self._safe_decimal(item.get('m')),  # 东财字段：m
+                        'circulating_value': self._safe_decimal(item.get('cm')),  # 东财字段：cm
+                        'turnover_rate': self._safe_decimal(item.get('hs')),  # 东财字段：hs
+                        'pe_ratio': self._safe_decimal(item.get('pe')),  # 东财字段：pe
+                        'amplitude': self._safe_decimal(item.get('zf')),  # 东财字段：zf
+                        'pre_3_day_change': self._safe_decimal(item.get('z3')),  # 东财字段：z3
+                    }
 
-                    session.merge(record)
+                    self._upsert_by_keys(session, EastmoneyZTPool, values, ('date', 'code'))
                     success_count += 1
 
                 except Exception as e:
                     logger.error(f"保存东财涨停记录失败 {item.get('c')}: {e}")
                     failed_count += 1
 
-            session.commit()
-            logger.info(f"东方财富涨停池数据保存完成: 成功{success_count}条，失败{failed_count}条")
-
             # 记录日志
             self._save_log(session, target_date, 'eastmoney_zt_pool', success_count)
+            session.commit()
+            logger.info(f"东方财富涨停池数据保存完成: 成功{success_count}条，失败{failed_count}条")
 
         except Exception as e:
             session.rollback()
@@ -432,19 +478,14 @@ class StockDataStorage:
             status: 状态
             error_message: 错误信息
         """
-        try:
-            log = DataFetchLog(
-                date=target_date,
-                data_type=data_type,
-                status=status,
-                record_count=record_count,
-                error_message=error_message
-            )
-            session.merge(log)
-            session.commit()
-        except Exception as e:
-            logger.error(f"保存日志失败: {e}")
-            session.rollback()
+        values = {
+            'date': target_date,
+            'data_type': data_type,
+            'status': status,
+            'record_count': record_count,
+            'error_message': error_message,
+        }
+        self._upsert_by_keys(session, DataFetchLog, values, ('date', 'data_type'))
 
     def get_data_status(self, target_date: Optional[date] = None) -> Dict[str, Any]:
         """
@@ -502,7 +543,8 @@ class StockDataStorage:
             status['is_complete'] = all([
                 status['continuous_limit_up'] > 0,
                 status['block_top'] > 0,
-                status['limit_up_pool'] > 0
+                status['limit_up_pool'] > 0,
+                status['eastmoney_zt_pool'] > 0,
             ])
 
             return status

@@ -14,6 +14,7 @@ LLM Wiki 引擎：基于 Karpathy LLM Wiki 模式的知识库管理
 
 import os
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -25,6 +26,18 @@ SCHEMA_FILE = WIKI_ROOT / "WIKI.md"
 INDEX_FILE = WIKI_DIR / "index.md"
 LOG_FILE = WIKI_DIR / "log.md"
 CHROMA_DIR = str(WIKI_ROOT / "chroma_wiki_db")
+
+
+def _clear_directory_contents(path: str):
+    """清空目录内容但保留目录本身，兼容 Docker volume 挂载点。"""
+    target = Path(path)
+    if not target.exists():
+        return
+    for child in target.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
 
 
 # ---- Embedding（复用 RAG 模块的模式） ----
@@ -76,6 +89,9 @@ def build_wiki_vector_store(force_rebuild: bool = False) -> "Chroma":
             persist_directory=CHROMA_DIR,
             embedding_function=embeddings,
         )
+    if force_rebuild and os.path.exists(CHROMA_DIR):
+        print("🧹 清理旧 Wiki 向量数据库...")
+        _clear_directory_contents(CHROMA_DIR)
 
     # 加载 wiki 目录下的所有 .md 文件
     loader = DirectoryLoader(

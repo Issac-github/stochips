@@ -9,14 +9,8 @@ import logging
 from datetime import date
 from typing import Dict, List, Optional, Any, Tuple
 
-from sqlalchemy.orm import Session
-
 from ..models.database import (
     ContinuousLimitUp,
-    LimitUpPool,
-    RiskAssessment,
-    init_database,
-    get_session_maker,
 )
 from .risk_agent import RiskAssessmentAgent, RiskLevel, Suggestion, RiskFactor
 from .ai_analyzer import AIStockAnalyzer, create_ai_analyzer
@@ -295,7 +289,7 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
 
         # 1. 获取所有符合条件的股票
         self._init_db()
-        session: Session = self.Session()
+        session = self._get_session()
 
         try:
             stocks = session.query(ContinuousLimitUp).filter(
@@ -375,7 +369,7 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
             return 0, 0
 
         self._init_db()
-        session: Session = self.Session()
+        session = self._get_session()
 
         success_count = 0
         failed_count = 0
@@ -383,19 +377,7 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
         try:
             for assessment in assessments:
                 try:
-                    record = RiskAssessment(
-                        date=assessment['date'],
-                        code=assessment['code'],
-                        name=assessment['name'],
-                        risk_level=assessment['risk_level'],
-                        risk_score=assessment['risk_score'],
-                        continuous_days=assessment['continuous_days'],
-                        risk_factors=assessment['risk_factors'],
-                        suggestion=assessment['suggestion'],
-                        assessment_reason=assessment['assessment_reason']
-                    )
-
-                    session.merge(record)
+                    self._upsert_assessment(session, assessment)
                     success_count += 1
 
                 except Exception as e:

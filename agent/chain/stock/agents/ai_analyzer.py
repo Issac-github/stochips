@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 # LangChain imports
 from langchain_openai import ChatOpenAI
@@ -74,10 +74,10 @@ class AIAnalysisResult:
 
     # 详细报告
     analysis_report: str  # 完整分析报告
-    key_factors: List[Dict]  # 关键因子
+    key_factors: List[Dict[str, Any]]  # 关键因子
 
     # 对比分析
-    similar_cases: List[Dict]  # 相似案例
+    similar_cases: List[Dict[str, Any]]  # 相似案例
     history_pattern: str  # 历史模式
 
 
@@ -98,7 +98,7 @@ class AIStockAnalyzer:
         """
         self.database_url = database_url
         self.engine = None
-        self.Session = None
+        self.Session: Optional[sessionmaker[Session]] = None
 
         # 初始化LLM
         self.api_key = api_key or os.getenv("MOONSHOT_API_KEY")
@@ -119,6 +119,14 @@ class AIStockAnalyzer:
             self.engine = init_database(self.database_url)
             self.Session = get_session_maker(self.engine)
 
+    def _get_session(self) -> Session:
+        """获取数据库会话。"""
+        self._init_db()
+        session_factory = self.Session
+        if not session_factory:
+            raise RuntimeError("数据库会话初始化失败")
+        return session_factory()
+
     def _get_stock_data(self, code: str, target_date: date) -> Dict[str, Any]:
         """
         获取股票完整数据
@@ -130,8 +138,7 @@ class AIStockAnalyzer:
         Returns:
             股票完整数据字典
         """
-        self._init_db()
-        session: Session = self.Session()
+        session = self._get_session()
 
         try:
             # 查询连板数据
@@ -430,8 +437,7 @@ class AIStockAnalyzer:
         if not target_date:
             target_date = date.today()
 
-        self._init_db()
-        session: Session = self.Session()
+        session = self._get_session()
 
         try:
             # 获取符合条件的股票
@@ -471,5 +477,7 @@ def create_ai_analyzer(database_url: Optional[str] = None) -> AIStockAnalyzer:
     """
     if not database_url:
         database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            raise ValueError("请提供database_url或设置DATABASE_URL环境变量")
 
     return AIStockAnalyzer(database_url)

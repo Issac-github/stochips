@@ -27,6 +27,18 @@ EMBEDDING_MODEL_NAME = "BAAI/bge-small-zh-v1.5"  # 模型大小约 1.5GB
 # EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"  # 只需 800MB
 
 
+def _clear_directory_contents(path: str):
+    """清空目录内容但保留目录本身，兼容 Docker volume 挂载点。"""
+    target = Path(path)
+    if not target.exists():
+        return
+    for child in target.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def _create_embeddings(local_files_only: bool) -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL_NAME,
@@ -515,7 +527,7 @@ def build_vector_store(force_rebuild: bool = False) -> Chroma:
         )
     if force_rebuild and os.path.exists(CHROMA_PERSIST_DIR):
         print("🧹 清理旧向量数据库...")
-        shutil.rmtree(CHROMA_PERSIST_DIR)
+        _clear_directory_contents(CHROMA_PERSIST_DIR)
 
     # 重新构建
     print("📄 加载文档...")

@@ -8,12 +8,11 @@ import asyncio
 import functools
 import json
 import logging
+import os
 from datetime import datetime, date
-from typing import Dict, List, Optional, Any, Callable, Union
-from urllib.parse import urlencode
+from typing import Dict, List, Optional, Any, Callable
 
 import aiohttp
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +63,8 @@ class StockDataFetcher:
         'sec-ch-ua-platform': '"macOS"',
     }
 
-    # Cookie配置（可从环境变量或配置文件中读取）
-    COOKIES = {
-        'v': 'A8O1oOLurvG9TWKFqQX3KmkiVIxoOF7rkdeT3vWhHACZc-3yfQjnyqGcK9UG'
-    }
+    # Cookie配置：不要在代码里写入真实Cookie，运行时从环境变量或参数传入。
+    COOKIES = {}
 
     # 东方财富独立请求头（完全保留curl参数）
     EASTMONEY_HEADERS = {
@@ -86,39 +83,58 @@ class StockDataFetcher:
         'sec-ch-ua-platform': '"macOS"',
     }
 
-    # 东方财富Cookie（从curl完整复制）
-    EASTMONEY_COOKIES = {
-        'qgqp_b_id': 'f2bac33486bfbed93b611fa17371f876',
-        'st_si': '63471290576605',
-        'st_asi': 'delete',
-        'st_nvi': '7EWAvd_TmjIfshYmh-zUO0566',
-        'nid18': '00f4c85ed43452ac9ace58d543e696c4',
-        'nid18_create_time': '1775986220300',
-        'gviem': 'Ro2sFUUxjTxdwiDNGWLHs7462',
-        'gviem_create_time': '1775986220300',
-        'st_pvi': '71061582355408',
-        'st_sp': '2026-04-12 17:30:19',
-        'st_inirUrl': '',
-        'st_sn': '4',
-        'st_psi': '20260412173108372-113200304537-3616223390',
-    }
+    # 东方财富接口一般可匿名访问；如后续确需Cookie，也应从配置注入。
+    EASTMONEY_COOKIES = {}
 
-    def __init__(self, cookie: Optional[str] = None):
+    def __init__(
+        self,
+        cookie: Optional[str] = None,
+        timeout: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
+    ):
         """
         初始化抓取器
 
         Args:
             cookie: 可选的自定义cookie字符串，用于覆盖默认cookie
+            timeout: 请求超时时间（秒）
+            max_retries: 最大重试次数
+            retry_delay: 重试延迟（秒）
         """
-        if cookie:
-            self.COOKIES = {'v': cookie}
+        cookie = cookie or os.getenv("STOCK_COOKIE")
+        self.cookies = self._parse_cookie(cookie, default_name="v")
+        self.timeout = timeout or int(os.getenv("STOCK_FETCH_TIMEOUT", "30"))
+        self.max_retries = max_retries or int(os.getenv("STOCK_FETCH_MAX_RETRIES", "3"))
+        self.retry_delay = retry_delay or float(os.getenv("STOCK_FETCH_RETRY_DELAY", "1.0"))
         self.session: Optional[aiohttp.ClientSession] = None
+
+    @staticmethod
+    def _parse_cookie(cookie: Optional[str], default_name: str) -> Dict[str, str]:
+        """解析完整 Cookie 头或单个 cookie 值。"""
+        if not cookie:
+            return {}
+
+        cookie = cookie.strip()
+        if not cookie:
+            return {}
+
+        if "=" not in cookie:
+            return {default_name: cookie}
+
+        cookies: Dict[str, str] = {}
+        for part in cookie.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name and value:
+                cookies[name] = value
+        return cookies
 
     async def __aenter__(self):
         """异步上下文管理器入口"""
         self.session = aiohttp.ClientSession(
             headers=self.BASE_HEADERS,
-            cookies=self.COOKIES
+            cookies=self.cookies,
+            timeout=aiohttp.ClientTimeout(total=self.timeout),
         )
         return self
 
@@ -140,6 +156,166 @@ class StockDataFetcher:
         headers = self.BASE_HEADERS.copy()
         headers['Referer'] = referer
         return headers
+
+    async def _request_json(
+        self,
+        url: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        cookies: Optional[Dict[str, str]] = None,
+        jsonp: bool = False,
+    ) -> Any:
+        """发送GET请求并解析JSON/JSONP响应。"""
+        if not self.session:
+            raise RuntimeError("StockDataFetcher must be used as an async context manager")
+
+        retrying = async_retry(
+            max_retries=self.max_retries,
+            delay=self.retry_delay,
+            exceptions=(aiohttp.ClientError, asyncio.TimeoutError, ValueError),
+        )(self._request_json_once)
+
+        return await retrying(
+            url,
+            params=params,
+            headers=headers,
+            cookies=cookies,
+            jsonp=jsonp,
+        )
+
+    async def _request_json_once(
+        self,
+        url: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        cookies: Optional[Dict[str, str]] = None,
+        jsonp: bool = False,
+    ) -> Any:
+        session = self.session
+        if not session:
+            raise RuntimeError("StockDataFetcher must be used as an async context manager")
+
+        async with session.get(
+            url,
+            params=params,
+            headers=headers,
+            cookies=cookies,
+        ) as response:
+            if response.status != 200:
+                logger.error(f"请求失败: url={url}, status={response.status}")
+                response.raise_for_status()
+
+            if jsonp:
+                return self._parse_jsonp(await response.text())
+            return await response.json()
+
+    def _extract_api_records(self, payload: Any, data_type: str) -> List[Dict[str, Any]]:
+        """兼容同花顺接口返回 dict 或直接返回 list 的情况。"""
+        if isinstance(payload, list):
+            records = [item for item in payload if isinstance(item, dict)]
+            return self._flatten_continuous_groups(records) if data_type == 'continuous_limit_up' else records
+
+        if not isinstance(payload, dict):
+            raise ValueError(f"{data_type} 返回格式异常: {type(payload).__name__}")
+
+        status_code = payload.get('status_code')
+        if status_code not in (None, 0):
+            error_msg = payload.get('message', '未知错误')
+            logger.error(f"❌ API返回错误: {error_msg}")
+            raise Exception(f"API错误: {error_msg}")
+
+        data = payload.get('data', [])
+        if isinstance(data, dict):
+            data = data.get('data', data.get('list', data.get('items', [])))
+
+        if isinstance(data, list):
+            records = [item for item in data if isinstance(item, dict)]
+            return self._flatten_continuous_groups(records) if data_type == 'continuous_limit_up' else records
+
+        raise ValueError(f"{data_type} data字段格式异常: {type(data).__name__}")
+
+    def _flatten_continuous_groups(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """展开连板天梯按高度分组的响应。"""
+        flattened: List[Dict[str, Any]] = []
+
+        for group in records:
+            code_list = group.get('code_list')
+            if not isinstance(code_list, list):
+                flattened.append(group)
+                continue
+
+            height = group.get('height')
+            for stock in code_list:
+                if not isinstance(stock, dict):
+                    continue
+
+                item = stock.copy()
+                item.setdefault('continuous_days', stock.get('continue_num', height))
+                item.setdefault('height', height)
+                flattened.append(item)
+
+        return flattened
+
+    def _extract_limit_up_pool_page(
+        self,
+        payload: Any,
+        page: int,
+        limit: int,
+    ) -> Dict[str, Any]:
+        """解析涨停强度分页响应，兼容 data/info/list 等字段名。"""
+        if not isinstance(payload, dict):
+            raise ValueError(f"limit_up_pool 返回格式异常: {type(payload).__name__}")
+
+        status_code = payload.get('status_code')
+        if status_code not in (None, 0):
+            error_msg = payload.get('message', '未知错误')
+            logger.error(f"❌ API返回错误: {error_msg}")
+            raise Exception(f"API错误: {error_msg}")
+
+        data = payload.get('data', {})
+        if isinstance(data, list):
+            records = [item for item in data if isinstance(item, dict)]
+            return {'data': records, 'has_more': len(records) >= limit}
+
+        if not isinstance(data, dict):
+            raise ValueError(f"limit_up_pool data字段格式异常: {type(data).__name__}")
+
+        records = []
+        for key in ('data', 'info', 'list', 'items'):
+            value = data.get(key)
+            if isinstance(value, list):
+                records = [item for item in value if isinstance(item, dict)]
+                break
+
+        has_more = data.get('has_more')
+        if has_more is None:
+            page_info = data.get('page') if isinstance(data.get('page'), dict) else {}
+            total = self._safe_positive_int(
+                data.get('total')
+                or data.get('count')
+                or data.get('total_count')
+                or page_info.get('total')
+                or page_info.get('count')
+            )
+            current_page = self._safe_positive_int(
+                data.get('page')
+                if not isinstance(data.get('page'), dict)
+                else page_info.get('page')
+            ) or page
+            page_size = self._safe_positive_int(data.get('limit') or page_info.get('limit')) or limit
+            has_more = (current_page * page_size < total) if total else len(records) >= limit
+
+        return {'data': records, 'has_more': bool(has_more)}
+
+    @staticmethod
+    def _safe_positive_int(value: Any) -> int:
+        try:
+            number = int(value)
+            return number if number > 0 else 0
+        except (TypeError, ValueError):
+            return 0
 
     async def fetch_continuous_limit_up(
         self,
@@ -174,21 +350,10 @@ class StockDataFetcher:
 
         logger.info(f"📊 获取连板天梯数据: date={target_date}")
 
-        async with self.session.get(url, params=params, headers=headers) as response:
-            if response.status != 200:
-                logger.error(f"❌ 获取连板天梯数据失败: status={response.status}")
-                response.raise_for_status()
-
-            data = await response.json()
-
-            if data.get('status_code') != 0:
-                error_msg = data.get('message', '未知错误')
-                logger.error(f"❌ API返回错误: {error_msg}")
-                raise Exception(f"API错误: {error_msg}")
-
-            result = data.get('data', {}).get('data', [])
-            logger.info(f"✅ 获取连板天梯数据成功: {len(result)}条记录")
-            return result
+        data = await self._request_json(url, params=params, headers=headers)
+        result = self._extract_api_records(data, 'continuous_limit_up')
+        logger.info(f"✅ 获取连板天梯数据成功: {len(result)}条记录")
+        return result
 
     async def fetch_block_top(
         self,
@@ -223,21 +388,10 @@ class StockDataFetcher:
 
         logger.info(f"📊 获取最强风口数据: date={target_date}")
 
-        async with self.session.get(url, params=params, headers=headers) as response:
-            if response.status != 200:
-                logger.error(f"❌ 获取最强风口数据失败: status={response.status}")
-                response.raise_for_status()
-
-            data = await response.json()
-
-            if data.get('status_code') != 0:
-                error_msg = data.get('message', '未知错误')
-                logger.error(f"❌ API返回错误: {error_msg}")
-                raise Exception(f"API错误: {error_msg}")
-
-            result = data.get('data', [])
-            logger.info(f"✅ 获取最强风口数据成功: {len(result)}条记录")
-            return result
+        data = await self._request_json(url, params=params, headers=headers)
+        result = self._extract_api_records(data, 'block_top')
+        logger.info(f"✅ 获取最强风口数据成功: {len(result)}条记录")
+        return result
 
     async def fetch_limit_up_pool_page(
         self,
@@ -294,19 +448,8 @@ class StockDataFetcher:
 
         logger.debug(f"获取涨停强度数据: page={page}, limit={limit}, date={target_date}")
 
-        async with self.session.get(url, params=params, headers=headers) as response:
-            if response.status != 200:
-                logger.error(f"获取涨停强度数据失败: status={response.status}")
-                response.raise_for_status()
-
-            data = await response.json()
-
-            if data.get('status_code') != 0:
-                error_msg = data.get('message', '未知错误')
-                logger.error(f"❌ API返回错误: {error_msg}")
-                raise Exception(f"API错误: {error_msg}")
-
-            return data.get('data', {})
+        data = await self._request_json(url, params=params, headers=headers)
+        return self._extract_limit_up_pool_page(data, page, limit)
 
     async def fetch_limit_up_pool(
         self,
@@ -439,24 +582,14 @@ class StockDataFetcher:
 
         logger.debug(f"获取东方财富涨停池: date={target_date}, page={page_index}, size={page_size}")
 
-        # 使用东方财富专用Cookie
-        async with self.session.get(
+        data = await self._request_json(
             url,
             params=params,
             headers=headers,
-            cookies=self.EASTMONEY_COOKIES
-        ) as response:
-            if response.status != 200:
-                logger.error(f"获取东方财富涨停池失败: status={response.status}")
-                response.raise_for_status()
-
-            # 获取文本响应（JSONP格式）
-            text = await response.text()
-
-            # 解析JSONP
-            data = self._parse_jsonp(text)
-
-            return data
+            cookies=self.EASTMONEY_COOKIES,
+            jsonp=True,
+        )
+        return data
 
     async def fetch_eastmoney_zt_pool(
         self,
@@ -522,17 +655,18 @@ class StockDataFetcher:
         target_date: Optional[str] = None
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
-        获取所有三类数据
+        获取所有股票数据
 
         Args:
             target_date: 数据日期，格式YYYYMMDD，默认今天
 
         Returns:
-            包含三类数据的字典
+            包含各类数据的字典
             {
                 'continuous_limit_up': [...],
                 'block_top': [...],
-                'limit_up_pool': [...]
+                'limit_up_pool': [...],
+                'eastmoney_zt_pool': [...]
             }
         """
         if not target_date:
@@ -540,22 +674,25 @@ class StockDataFetcher:
 
         logger.info(f"🚀 开始获取所有股票数据: date={target_date}")
 
-        # 并发获取三类数据
+        # 并发获取数据
         continuous_task = self.fetch_continuous_limit_up(target_date)
         block_task = self.fetch_block_top(target_date)
         pool_task = self.fetch_limit_up_pool(target_date)
+        eastmoney_task = self.fetch_eastmoney_zt_pool(target_date)
 
-        continuous_data, block_data, pool_data = await asyncio.gather(
+        continuous_data, block_data, pool_data, eastmoney_data = await asyncio.gather(
             continuous_task,
             block_task,
             pool_task,
+            eastmoney_task,
             return_exceptions=True
         )
 
-        result = {
+        result: Dict[str, List[Dict[str, Any]]] = {
             'continuous_limit_up': [],
             'block_top': [],
             'limit_up_pool': [],
+            'eastmoney_zt_pool': [],
             'errors': []
         }
 
@@ -578,10 +715,17 @@ class StockDataFetcher:
         else:
             result['limit_up_pool'] = pool_data
 
+        if isinstance(eastmoney_data, Exception):
+            logger.error(f"东方财富涨停池数据获取失败: {eastmoney_data}")
+            result['errors'].append({'type': 'eastmoney_zt_pool', 'error': str(eastmoney_data)})
+        else:
+            result['eastmoney_zt_pool'] = eastmoney_data
+
         logger.info(f"✅ 所有数据获取完成: "
                    f"连板天梯{len(result['continuous_limit_up'])}条, "
                    f"最强风口{len(result['block_top'])}条, "
-                   f"涨停强度{len(result['limit_up_pool'])}条")
+                   f"涨停强度{len(result['limit_up_pool'])}条, "
+                   f"东财涨停池{len(result['eastmoney_zt_pool'])}条")
 
         return result
 
@@ -589,8 +733,19 @@ class StockDataFetcher:
 class StockDataFetcherSync:
     """同步版本的股票数据抓取器（用于非异步环境）"""
 
-    def __init__(self, cookie: Optional[str] = None):
-        self.fetcher = StockDataFetcher(cookie)
+    def __init__(
+        self,
+        cookie: Optional[str] = None,
+        timeout: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        retry_delay: Optional[float] = None,
+    ):
+        self.fetcher = StockDataFetcher(
+            cookie=cookie,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+        )
 
     def fetch_continuous_limit_up(
         self,
@@ -649,14 +804,22 @@ class StockDataFetcherSync:
             return await coro
 
 
-def create_fetcher(cookie: Optional[str] = None) -> StockDataFetcherSync:
+def create_fetcher(
+    cookie: Optional[str] = None,
+    timeout: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    retry_delay: Optional[float] = None,
+) -> StockDataFetcherSync:
     """
     工厂函数：创建同步数据抓取器
 
     Args:
         cookie: 可选的cookie字符串
+        timeout: 请求超时时间（秒）
+        max_retries: 最大重试次数
+        retry_delay: 重试延迟（秒）
 
     Returns:
         StockDataFetcherSync实例
     """
-    return StockDataFetcherSync(cookie)
+    return StockDataFetcherSync(cookie, timeout, max_retries, retry_delay)

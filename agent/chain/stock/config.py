@@ -14,7 +14,7 @@ class DatabaseConfig:
     """数据库配置"""
     url: str = field(default_factory=lambda: os.getenv(
         'DATABASE_URL',
-        'mysql+pymysql://stock:stock123@localhost:3306/stock_analysis'
+        'mysql+pymysql://stock:stock123@localhost:3306/stock_analysis?charset=utf8mb4'
     ))
 
     @property

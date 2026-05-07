@@ -119,6 +119,7 @@ def cmd_fetch(target_date: Optional[str] = None):
         print(f"  连板天梯: {status['continuous_limit_up']} 条")
         print(f"  最强风口: {status['block_top']} 条")
         print(f"  涨停强度: {status['limit_up_pool']} 条")
+        print(f"  东财涨停池: {status['eastmoney_zt_pool']} 条")
 
         if status["is_complete"]:
             print("\n✅ 数据抓取完成")
@@ -298,7 +299,7 @@ def cmd_schedule():
     def notification(msg: str):
         print(f"\n[通知] {msg}")
 
-    try:
+    async def run_scheduler():
         scheduler = create_scheduler(notification_callback=notification)
 
         # 设置定时任务
@@ -319,11 +320,16 @@ def cmd_schedule():
 
         # 保持运行
         try:
-            asyncio.get_event_loop().run_forever()
-        except KeyboardInterrupt:
+            await asyncio.Event().wait()
+        finally:
             print("\n正在停止调度器...")
             scheduler.shutdown()
             print("调度器已停止")
+
+    try:
+        asyncio.run(run_scheduler())
+    except KeyboardInterrupt:
+        pass
 
     except Exception as e:
         print(f"错误：{e}")
@@ -352,6 +358,7 @@ def cmd_status(target_date: Optional[str] = None):
         print(f"  连板天梯: {status['continuous_limit_up']} 条")
         print(f"  最强风口: {status['block_top']} 条")
         print(f"  涨停强度: {status['limit_up_pool']} 条")
+        print(f"  东财涨停池: {status['eastmoney_zt_pool']} 条")
 
         if status["is_complete"]:
             print("\n✅ 数据完整")

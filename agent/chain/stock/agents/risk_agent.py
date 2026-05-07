@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from ..models.database import (
     ContinuousLimitUp,
@@ -74,7 +74,7 @@ class RiskAssessmentAgent:
         """
         self.database_url = database_url
         self.engine = None  # 将在需要时延迟初始化
-        self.Session = None
+        self.Session: Optional[sessionmaker[Session]] = None
 
     def _init_db(self):
         """延迟初始化数据库连接"""
@@ -83,10 +83,53 @@ class RiskAssessmentAgent:
             self.engine = init_database(self.database_url)
             self.Session = get_session_maker(self.engine)
 
+    def _get_session(self) -> Session:
+        """获取数据库会话。"""
+        self._init_db()
+        session_factory = self.Session
+        if not session_factory:
+            raise RuntimeError("数据库会话初始化失败")
+        return session_factory()
+
+    def _upsert_assessment(self, session: Session, assessment: Dict[str, Any]):
+        """按 date + code 更新或插入风险评估结果。"""
+        record = session.query(RiskAssessment).filter(
+            RiskAssessment.date == assessment['date'],
+            RiskAssessment.code == assessment['code'],
+        ).one_or_none()
+
+        values = {
+            'date': assessment['date'],
+            'code': assessment['code'],
+            'name': assessment['name'],
+            'risk_level': assessment['risk_level'],
+            'risk_score': assessment['risk_score'],
+            'continuous_days': assessment['continuous_days'],
+            'risk_factors': assessment['risk_factors'],
+            'rule_score': assessment.get('rule_score'),
+            'ai_score': assessment.get('ai_score'),
+            'ai_confidence': assessment.get('ai_confidence'),
+            'score_calculation': assessment.get('score_calculation'),
+            'ai_factors': assessment.get('ai_factors'),
+            'ai_analysis_report': assessment.get('ai_analysis_report'),
+            'is_ai_analyzed': 1 if assessment.get('is_ai_analyzed') else 0,
+            'suggestion': assessment['suggestion'],
+            'assessment_reason': assessment['assessment_reason'],
+        }
+
+        if record:
+            for key, value in values.items():
+                setattr(record, key, value)
+            return record
+
+        record = RiskAssessment(**values)
+        session.add(record)
+        return record
+
     def calculate_risk_score(
         self,
-        continuous_data: Optional[Dict],
-        pool_data: Optional[Dict]
+        continuous_data: Optional[Dict[str, Any]],
+        pool_data: Optional[Dict[str, Any]]
     ) -> Tuple[RiskLevel, float, List[RiskFactor], Suggestion, str]:
         """
         计算风险评分
@@ -294,7 +337,7 @@ class RiskAssessmentAgent:
             target_date = date.today()
 
         self._init_db()
-        session: Session = self.Session()
+        session = self._get_session()
 
         try:
             # 查询连板数据
@@ -381,7 +424,7 @@ class RiskAssessmentAgent:
             target_date = date.today()
 
         self._init_db()
-        session: Session = self.Session()
+        session = self._get_session()
 
         try:
             # 获取所有符合条件的连板股票
@@ -424,7 +467,7 @@ class RiskAssessmentAgent:
             return 0, 0
 
         self._init_db()
-        session: Session = self.Session()
+        session = self._get_session()
 
         success_count = 0
         failed_count = 0
@@ -432,19 +475,7 @@ class RiskAssessmentAgent:
         try:
             for assessment in assessments:
                 try:
-                    record = RiskAssessment(
-                        date=assessment['date'],
-                        code=assessment['code'],
-                        name=assessment['name'],
-                        risk_level=assessment['risk_level'],
-                        risk_score=assessment['risk_score'],
-                        continuous_days=assessment['continuous_days'],
-                        risk_factors=assessment['risk_factors'],
-                        suggestion=assessment['suggestion'],
-                        assessment_reason=assessment['assessment_reason']
-                    )
-
-                    session.merge(record)
+                    self._upsert_assessment(session, assessment)
                     success_count += 1
 
                 except Exception as e:

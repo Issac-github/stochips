@@ -1,48 +1,49 @@
-# 使用Python 3.11 slim镜像
+# RAG / Wiki service image.
+# This image is intentionally separate from stock_agent because HuggingFace,
+# Chroma and torch make the image much larger.
 FROM python:3.11-slim
 
-# 设置工作目录
 WORKDIR /app
 
-# 设置环境变量
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONUTF8=1 \
     TZ=Asia/Shanghai
 
-# Debian apt源。国内服务器构建较慢时可在 compose/build 命令里覆盖。
 ARG DEBIAN_MIRROR=https://mirrors.aliyun.com/debian
 ARG DEBIAN_SECURITY_MIRROR=https://mirrors.aliyun.com/debian-security
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
+ARG PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG TORCH_VERSION=2.7.1+cpu
 
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST} \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# 安装系统依赖
 RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
     apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    default-libmysqlclient-dev \
-    pkg-config \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装Python依赖
 COPY pyproject.toml poetry.lock ./
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --without dev
+    poetry install --no-interaction --no-ansi --without dev && \
+    pip install --no-cache-dir \
+      --index-url "${PYTORCH_CPU_INDEX_URL}" \
+      --extra-index-url "${PIP_INDEX_URL}" \
+      "torch==${TORCH_VERSION}" && \
+    pip install --no-cache-dir \
+      "langchain-chroma>=0.2.0,<0.3.0" \
+      "langchain-community>=0.3.0,<0.4.0" \
+      "langchain-huggingface>=0.1.0,<0.2.0" \
+      "onnxruntime>=1.23.0,<1.24.0"
 
-# 复制应用代码
 COPY . .
 
-# 创建日志目录
-RUN mkdir -p logs
+RUN mkdir -p logs chain/wiki/chroma_wiki_db chain/rag/chroma_db /root/.cache/huggingface && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 设置时区
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-# 运行入口
-CMD ["python", "main.py", "schedule"]
+CMD ["python", "-m", "main", "wiki", "pages"]
