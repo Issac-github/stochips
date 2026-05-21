@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional
 from langchain_openai import ChatOpenAI
 from sqlalchemy.orm import Session
 
+from ..config import config
 from ..data import create_fetcher
 from ..data.storage import StockDataStorage
 from ..models.database import (
@@ -95,7 +96,7 @@ class StockAgent:
         notification_callback: Optional[Callable[[str], None]] = None,
     ):
         self.database_url = database_url
-        self.cookie = cookie or os.getenv("STOCK_COOKIE")
+        self.cookie = cookie or config.fetcher.ths_cookie
         self.notification_callback = notification_callback
 
         self.fetcher = create_fetcher(self.cookie)
@@ -130,7 +131,7 @@ class StockAgent:
         if not target_date:
             target_date = date.today()
         if use_ai is None:
-            use_ai = bool(os.getenv("MOONSHOT_API_KEY"))
+            use_ai = config.ai.is_configured
         if use_llm_planner is None:
             use_llm_planner = bool(self.llm_planner)
 
@@ -638,15 +639,15 @@ class StockAgent:
         return float(value)
 
     def _create_llm_planner(self) -> Optional[ChatOpenAI]:
-        api_key = os.getenv("MOONSHOT_API_KEY")
-        if not api_key:
+        if not config.ai.api_key:
             return None
 
         return ChatOpenAI(
-            model=os.getenv("MOONSHOT_MODEL", "moonshot-v1-8k"),
-            api_key=api_key,
-            base_url=os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1"),
+            model=config.ai.model,
+            api_key=config.ai.api_key,
+            base_url=config.ai.base_url,
             temperature=0,
+            timeout=config.ai.timeout,
         )
 
     def _build_planner_prompt(

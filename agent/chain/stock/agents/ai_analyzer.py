@@ -12,7 +12,6 @@ AI智能分析模块
 
 import json
 import logging
-import os
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
@@ -23,9 +22,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 # LangChain imports
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
 
+from ..config import config
 from ..models.database import (
     ContinuousLimitUp,
     LimitUpPool,
@@ -35,6 +33,20 @@ from ..models.database import (
 )
 
 logger = logging.getLogger(__name__)
+
+ALLOWED_AI_SUGGESTIONS = {"机会", "观望", "谨慎", "规避"}
+SUGGESTION_ALIASES = {
+    "强烈推荐": "机会",
+    "推荐": "机会",
+    "买入": "机会",
+    "关注": "观望",
+    "持有": "观望",
+    "谨慎": "谨慎",
+    "观望": "观望",
+    "回避": "规避",
+    "规避": "规避",
+    "卖出": "规避",
+}
 
 
 class Sentiment(Enum):
@@ -101,16 +113,18 @@ class AIStockAnalyzer:
         self.Session: Optional[sessionmaker[Session]] = None
 
         # 初始化LLM
-        self.api_key = api_key or os.getenv("MOONSHOT_API_KEY")
+        self.api_key = api_key or config.ai.api_key
         if not self.api_key:
             logger.warning("MOONSHOT_API_KEY未设置，AI分析功能将不可用")
             self.llm = None
         else:
             self.llm = ChatOpenAI(
-                model="moonshot-v1-8k",
+                model=config.ai.model,
                 api_key=self.api_key,
-                base_url="https://api.moonshot.cn/v1",
-                temperature=0.3,  # 低温度，更确定性
+                base_url=config.ai.base_url,
+                temperature=config.ai.temperature,
+                max_tokens=config.ai.max_tokens,
+                timeout=config.ai.timeout,
             )
 
     def _init_db(self):
@@ -258,7 +272,7 @@ class AIStockAnalyzer:
 4. **基本面评估**：基于PE、PB、市值等指标评估基本面
 5. **技术面分析**：分析封单强度、换手率、量比等技术信号
 6. **AI风险评分**：0-100分，分数越高风险越大
-7. **投资建议**：明确给出建议（强烈推荐/推荐/观望/规避）
+7. **风险建议**：明确给出建议（机会/观望/谨慎/规避），不要输出直接荐股或买卖指令
 8. **关键因子**：列出3-5个最关键的影响因子
 9. **相似案例**：描述历史上类似走势的案例
 10. **明日预判**：预测明日可能的走势
@@ -271,7 +285,7 @@ class AIStockAnalyzer:
     "fundamental_assessment": "基本面评估...",
     "technical_analysis": "技术面分析...",
     "ai_risk_score": 75.5,
-    "ai_suggestion": "规避",
+    "ai_suggestion": "机会/观望/谨慎/规避",
     "confidence": 0.85,
     "key_factors": [
         {{"factor": "概念热度", "impact": "正面", "weight": 0.3}},
@@ -283,12 +297,88 @@ class AIStockAnalyzer:
 
 要求：
 1. 必须输出合法JSON，不要包含markdown格式
-2. 分析要客观、专业，基于提供的数据
+2. 分析要客观、专业，只基于提供的数据；数据不足时写“无足够数据”，不要编造历史案例
 3. AI风险评分要综合考虑所有因素
-4. 投资建议要明确，不要模棱两可
+4. 风险建议只能是：机会、观望、谨慎、规避
 """
 
         return prompt
+
+    @staticmethod
+    def _clamp_float(value: Any, default: float, min_value: float, max_value: float) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            number = default
+        return max(min_value, min(max_value, number))
+
+    @staticmethod
+    def normalize_suggestion(value: Any) -> str:
+        """把模型可能输出的荐股话术收敛到系统风险建议枚举。"""
+        if value is None:
+            return "观望"
+        text = str(value).strip()
+        if text in ALLOWED_AI_SUGGESTIONS:
+            return text
+        return SUGGESTION_ALIASES.get(text, "观望")
+
+    @classmethod
+    def parse_analysis_json(cls, content: Any) -> Dict[str, Any]:
+        """解析并归一化LLM返回，避免上层直接面对不稳定JSON。"""
+        if not isinstance(content, str):
+            raise ValueError("LLM返回内容不是文本")
+
+        try:
+            result_json = json.loads(content)
+        except json.JSONDecodeError:
+            json_start = content.find('{')
+            json_end = content.rfind('}')
+            if json_start == -1 or json_end == -1 or json_end <= json_start:
+                raise ValueError("无法解析LLM返回的JSON")
+            try:
+                result_json = json.loads(content[json_start:json_end + 1])
+            except json.JSONDecodeError as exc:
+                raise ValueError("无法解析LLM返回的JSON") from exc
+
+        if not isinstance(result_json, dict):
+            raise ValueError("LLM返回JSON必须是对象")
+
+        result_json["ai_risk_score"] = cls._clamp_float(
+            result_json.get("ai_risk_score"),
+            50.0,
+            0.0,
+            100.0,
+        )
+        result_json["confidence"] = cls._clamp_float(
+            result_json.get("confidence"),
+            0.5,
+            0.0,
+            1.0,
+        )
+        result_json["ai_suggestion"] = cls.normalize_suggestion(
+            result_json.get("ai_suggestion")
+        )
+
+        factors = result_json.get("key_factors", [])
+        if not isinstance(factors, list):
+            factors = []
+        result_json["key_factors"] = [
+            factor for factor in factors if isinstance(factor, dict)
+        ]
+
+        return result_json
+
+    def _invoke_llm_with_retry(self, messages: List[Dict[str, str]]):
+        """带有限重试的LLM调用，避免偶发网络错误直接吞掉整只股票。"""
+        last_error: Optional[Exception] = None
+        attempts = max(1, config.ai.max_retries + 1)
+        for attempt in range(1, attempts + 1):
+            try:
+                return self.llm.invoke(messages)
+            except Exception as exc:
+                last_error = exc
+                logger.warning("AI调用失败，第%s/%s次: %s", attempt, attempts, exc)
+        raise RuntimeError(f"AI调用失败: {last_error}") from last_error
 
     def analyze_stock(
         self,
@@ -329,25 +419,15 @@ class AIStockAnalyzer:
 
             # 调用LLM
             messages = [
-                {"role": "system", "content": "你是一位专业的A股涨停股票分析师，擅长从多维度分析股票的投资价值和风险。输出必须是合法的JSON格式。"},
+                {"role": "system", "content": "你是一位专业的A股涨停股票风险分析师。只做风险研判，不给直接买卖指令。输出必须是合法JSON。"},
                 {"role": "user", "content": prompt_text}
             ]
 
-            response = self.llm.invoke(messages)
+            response = self._invoke_llm_with_retry(messages)
             content = response.content
 
-            # 解析JSON
-            try:
-                # 尝试直接解析
-                result_json = json.loads(content)
-            except json.JSONDecodeError:
-                # 尝试提取JSON部分
-                json_start = content.find('{')
-                json_end = content.rfind('}')
-                if json_start != -1 and json_end != -1:
-                    result_json = json.loads(content[json_start:json_end+1])
-                else:
-                    raise ValueError("无法解析LLM返回的JSON")
+            # 解析并归一化JSON
+            result_json = self.parse_analysis_json(content)
 
             # 构建结果
             result = AIAnalysisResult(
@@ -359,9 +439,9 @@ class AIStockAnalyzer:
                 market_sentiment=result_json.get('market_sentiment', ''),
                 fundamentalAssessment=result_json.get('fundamental_assessment', ''),
                 technical_analysis=result_json.get('technical_analysis', ''),
-                ai_risk_score=float(result_json.get('ai_risk_score', 50)),
+                ai_risk_score=result_json.get('ai_risk_score', 50.0),
                 ai_suggestion=result_json.get('ai_suggestion', '观望'),
-                confidence=float(result_json.get('confidence', 0.5)),
+                confidence=result_json.get('confidence', 0.5),
                 analysis_report=self._generate_report(result_json),
                 key_factors=result_json.get('key_factors', []),
                 similar_cases=[{"description": result_json.get('similar_cases', '')}],
@@ -444,6 +524,9 @@ class AIStockAnalyzer:
             stocks = session.query(ContinuousLimitUp).filter(
                 ContinuousLimitUp.date == target_date,
                 ContinuousLimitUp.continuous_days >= min_continuous_days
+            ).order_by(
+                ContinuousLimitUp.continuous_days.desc(),
+                ContinuousLimitUp.code.asc(),
             ).limit(limit).all()
 
             logger.info(f"批量AI分析: {len(stocks)}只股票")
@@ -476,7 +559,7 @@ def create_ai_analyzer(database_url: Optional[str] = None) -> AIStockAnalyzer:
         AIStockAnalyzer实例
     """
     if not database_url:
-        database_url = os.getenv('DATABASE_URL')
+        database_url = config.database.url
         if not database_url:
             raise ValueError("请提供database_url或设置DATABASE_URL环境变量")
 

@@ -3,9 +3,6 @@ import { join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { debugLog } from '@shared/logger'
 import icon from '../../resources/icon.png?asset'
-// import hrData from './data/hr.json'
-import { insertArticle } from './database/controller/article'
-// import { insertHrLimitUp } from './database/controller/hrLimitUp'
 import { IPC } from './lib/ipc'
 
 function createWindow(): void {
@@ -27,11 +24,6 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    insertArticle({
-      title: 'title',
-      content: 'content'
-    })
-    // insertHrLimitUp(hrData.info.map((item) => ({ ...item, date: hrData.date })))
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

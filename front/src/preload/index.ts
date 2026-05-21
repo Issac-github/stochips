@@ -9,27 +9,20 @@ const api = {
     request: () => {
       ipcRenderer.send(EventKey.McpPort)
     },
-    response: (callback: (port: number) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, port: number) => {
+    response: (callback: (port: PortMapType) => void): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        port: PortMapType
+      ) => {
         callback(port)
       }
       ipcRenderer.on(EventKey.McpPort, listener)
       return () => ipcRenderer.removeListener(EventKey.McpPort, listener)
     }
   },
-  database: {
-    request: (args: DatabaseListenerEventArgs) => {
-      ipcRenderer.send(EventKey.Database, args)
-    },
-    response: (callback: (...args: unknown[]) => void): (() => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        data: DatabaseListenerEventArgs
-      ) => {
-        callback(data)
-      }
-      ipcRenderer.on(EventKey.Database, listener)
-      return () => ipcRenderer.removeListener(EventKey.Database, listener)
+  stockRpc: {
+    invoke: (args: StockRpcRequestArgs) => {
+      return ipcRenderer.invoke(EventKey.StockRpc, args)
     }
   }
 }

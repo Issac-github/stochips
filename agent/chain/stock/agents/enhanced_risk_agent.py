@@ -9,8 +9,10 @@ import logging
 from datetime import date
 from typing import Dict, List, Optional, Any, Tuple
 
+from ..config import config
 from ..models.database import (
     ContinuousLimitUp,
+    RiskAssessment,
 )
 from .risk_agent import RiskAssessmentAgent, RiskLevel, Suggestion, RiskFactor
 from .ai_analyzer import AIStockAnalyzer, create_ai_analyzer
@@ -87,7 +89,9 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
         code: str,
         name: str,
         target_date: Optional[date] = None,
-        use_ai: bool = True
+        use_ai: bool = True,
+        force_ai: bool = False,
+        allow_fresh_ai: bool = True,
     ) -> Optional[Dict[str, Any]]:
         """
         增强版单只股票评估
@@ -97,6 +101,8 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
             name: 股票名称
             target_date: 评估日期
             use_ai: 是否使用AI分析
+            force_ai: 是否忽略已保存的AI分析
+            allow_fresh_ai: 是否允许新发起LLM调用
 
         Returns:
             增强版评估结果
@@ -119,22 +125,42 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
         ai_suggestion = None
         ai_report = None
         ai_factors = []
+        ai_source = "disabled"
 
         if use_ai and self.ai_analyzer.llm:
-            try:
-                ai_result = self.ai_analyzer.analyze_stock(code, name, target_date)
+            cached_ai = None if force_ai else self._get_cached_ai_analysis(code, target_date)
+            if cached_ai:
+                ai_score = cached_ai.get('ai_score')
+                ai_confidence = cached_ai.get('ai_confidence') or 0
+                ai_suggestion = cached_ai.get('ai_suggestion')
+                ai_report = cached_ai.get('ai_analysis_report')
+                ai_factors = self._parse_ai_factors(cached_ai.get('ai_factors'))
+                ai_source = "cached"
+                logger.info(f"复用AI分析缓存: {code}, 评分: {ai_score}, 置信度: {ai_confidence}")
+            elif allow_fresh_ai:
+                try:
+                    ai_result = self.ai_analyzer.analyze_stock(code, name, target_date)
 
-                if ai_result:
-                    ai_score = ai_result.ai_risk_score
-                    ai_confidence = ai_result.confidence
-                    ai_suggestion = ai_result.ai_suggestion
-                    ai_report = ai_result.analysis_report
-                    ai_factors = ai_result.key_factors
+                    if ai_result:
+                        ai_score = ai_result.ai_risk_score
+                        ai_confidence = ai_result.confidence
+                        ai_suggestion = ai_result.ai_suggestion
+                        ai_report = ai_result.analysis_report
+                        ai_factors = ai_result.key_factors
+                        ai_source = "fresh"
 
-                    logger.info(f"AI分析完成: {code}, 评分: {ai_score}, 置信度: {ai_confidence}")
+                        logger.info(f"AI分析完成: {code}, 评分: {ai_score}, 置信度: {ai_confidence}")
+                    else:
+                        ai_source = "failed"
 
-            except Exception as e:
-                logger.error(f"AI分析失败 {code}: {e}")
+                except Exception as e:
+                    ai_source = "failed"
+                    logger.error(f"AI分析失败 {code}: {e}")
+            else:
+                ai_source = "budget_limited"
+                logger.info(f"AI分析达到预算上限，跳过新调用: {code}")
+        elif use_ai:
+            ai_source = "unavailable"
 
         # 3. 计算综合分数
         final_score, calc_desc = self.calculate_enhanced_risk_score(
@@ -158,9 +184,9 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
         # 如果AI建议与规则引擎冲突，以AI为准（如果置信度高）
         if ai_suggestion and ai_confidence >= 0.7:
             suggestion_map = {
-                "强烈推荐": Suggestion.OPPORTUNITY.value,
-                "推荐": Suggestion.OPPORTUNITY.value,
+                "机会": Suggestion.OPPORTUNITY.value,
                 "观望": Suggestion.WATCH.value,
+                "谨慎": Suggestion.CAUTIOUS.value,
                 "规避": Suggestion.AVOID.value,
             }
             final_suggestion = suggestion_map.get(ai_suggestion, final_suggestion)
@@ -199,10 +225,46 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
 
             # AI专属字段
             'ai_analysis_report': ai_report,
-            'is_ai_analyzed': ai_score is not None
+            'is_ai_analyzed': ai_score is not None,
+            'ai_source': ai_source,
         }
 
         return enhanced_result
+
+    def _get_cached_ai_analysis(self, code: str, target_date: date) -> Optional[Dict[str, Any]]:
+        """读取已落库的AI分析，避免重复消耗LLM调用。"""
+        self._init_db()
+        session = self._get_session()
+
+        try:
+            record = session.query(RiskAssessment).filter(
+                RiskAssessment.date == target_date,
+                RiskAssessment.code == code,
+                RiskAssessment.is_ai_analyzed == 1,
+            ).one_or_none()
+
+            if not record or record.ai_score is None:
+                return None
+
+            return {
+                'ai_score': float(record.ai_score),
+                'ai_confidence': float(record.ai_confidence or 0),
+                'ai_suggestion': record.suggestion,
+                'ai_analysis_report': record.ai_analysis_report,
+                'ai_factors': record.ai_factors,
+            }
+        finally:
+            session.close()
+
+    @staticmethod
+    def _parse_ai_factors(ai_factors: Optional[str]) -> List[Dict[str, Any]]:
+        if not ai_factors:
+            return []
+        try:
+            parsed = json.loads(ai_factors)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
 
     def _generate_enhanced_reason(
         self,
@@ -269,7 +331,9 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
         self,
         target_date: Optional[date] = None,
         min_continuous_days: int = 2,
-        use_ai: bool = True
+        use_ai: bool = True,
+        max_ai_calls: Optional[int] = None,
+        force_ai: bool = False,
     ) -> Dict[str, Any]:
         """
         运行每日增强版风险评估
@@ -278,6 +342,8 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
             target_date: 评估日期
             min_continuous_days: 最小连板天数
             use_ai: 是否使用AI分析
+            max_ai_calls: 最多新发起AI分析数量，缓存不计入
+            force_ai: 是否忽略已有AI缓存
 
         Returns:
             执行结果统计
@@ -286,6 +352,8 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
             target_date = date.today()
 
         logger.info(f"开始每日增强版风险评估: {target_date}, AI分析: {use_ai}")
+        if max_ai_calls is None:
+            max_ai_calls = config.ai.max_daily_calls
 
         # 1. 获取所有符合条件的股票
         self._init_db()
@@ -295,6 +363,9 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
             stocks = session.query(ContinuousLimitUp).filter(
                 ContinuousLimitUp.date == target_date,
                 ContinuousLimitUp.continuous_days >= min_continuous_days
+            ).order_by(
+                ContinuousLimitUp.continuous_days.desc(),
+                ContinuousLimitUp.code.asc(),
             ).all()
 
             logger.info(f"共{len(stocks)}只股票需要评估")
@@ -302,19 +373,28 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
             # 2. 逐个评估
             assessments = []
             ai_success_count = 0
+            fresh_ai_call_count = 0
 
             for i, stock in enumerate(stocks, 1):
                 try:
                     logger.info(f"[{i}/{len(stocks)}] 评估: {stock.code} {stock.name}")
+                    allow_fresh_ai = (not use_ai) or fresh_ai_call_count < max_ai_calls
 
                     assessment = self.assess_stock_enhanced(
-                        stock.code, stock.name, target_date, use_ai
+                        stock.code,
+                        stock.name,
+                        target_date,
+                        use_ai,
+                        force_ai=force_ai,
+                        allow_fresh_ai=allow_fresh_ai,
                     )
 
                     if assessment:
                         assessments.append(assessment)
                         if assessment.get('is_ai_analyzed'):
                             ai_success_count += 1
+                        if assessment.get('ai_source') == 'fresh':
+                            fresh_ai_call_count += 1
 
                 except Exception as e:
                     logger.error(f"评估失败 {stock.code}: {e}")
@@ -342,6 +422,8 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
                 'saved_success': success,
                 'saved_failed': failed,
                 'ai_success_count': ai_success_count,
+                'fresh_ai_call_count': fresh_ai_call_count,
+                'max_ai_calls': max_ai_calls,
                 'risk_distribution': risk_distribution,
                 'analysis_method_distribution': ai_distribution
             }
@@ -407,10 +489,8 @@ def create_enhanced_risk_agent(database_url: Optional[str] = None) -> EnhancedRi
     Returns:
         EnhancedRiskAssessmentAgent实例
     """
-    import os
-
     if not database_url:
-        database_url = os.getenv('DATABASE_URL')
+        database_url = config.database.url
         if not database_url:
             raise ValueError("请提供database_url或设置DATABASE_URL环境变量")
 

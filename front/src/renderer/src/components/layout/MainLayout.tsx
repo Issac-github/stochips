@@ -4,7 +4,6 @@ import {
   Bot,
   ChevronLeft,
   ChevronRight,
-  Database,
   Home,
   LineChart,
   NotebookText
@@ -14,11 +13,6 @@ import { cn } from '@renderer/lib/utils/cn'
 
 const navItems = [
   { key: '/', label: 'Home', icon: Home },
-  {
-    key: '/limit-up-data-editor',
-    label: 'Limit Up Data Editor',
-    icon: Database
-  },
   { key: '/limit-up-data', label: 'Limit Up Data', icon: LineChart },
   { key: '/mcp-chat', label: 'MCP Chat', icon: Bot }
 ]

@@ -51,16 +51,25 @@ class AIConfig:
     api_key: str = field(default_factory=lambda: os.getenv('MOONSHOT_API_KEY', ''))
 
     # 模型名称
-    model: str = 'moonshot-v1-8k'
+    model: str = field(default_factory=lambda: os.getenv('MOONSHOT_MODEL', 'moonshot-v1-8k'))
 
     # API基础URL
-    base_url: str = 'https://api.moonshot.cn/v1'
+    base_url: str = field(default_factory=lambda: os.getenv('MOONSHOT_BASE_URL', 'https://api.moonshot.cn/v1'))
 
     # 温度参数
-    temperature: float = 0.3
+    temperature: float = field(default_factory=lambda: float(os.getenv('MOONSHOT_TEMPERATURE', '0.3')))
 
     # 最大token数
-    max_tokens: int = 2000
+    max_tokens: int = field(default_factory=lambda: int(os.getenv('MOONSHOT_MAX_TOKENS', '2000')))
+
+    # 请求超时时间（秒）
+    timeout: int = field(default_factory=lambda: int(os.getenv('MOONSHOT_TIMEOUT', '60')))
+
+    # 最大重试次数
+    max_retries: int = field(default_factory=lambda: int(os.getenv('MOONSHOT_MAX_RETRIES', '2')))
+
+    # 每次增强评估最多新发起的AI分析数量，已有缓存不计入
+    max_daily_calls: int = field(default_factory=lambda: int(os.getenv('AI_MAX_DAILY_CALLS', '20')))
 
     @property
     def is_configured(self) -> bool:

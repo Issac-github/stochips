@@ -20,6 +20,7 @@ Environment Variables:
     DATABASE_URL: MySQL连接URL (required)
     STOCK_COOKIE: 数据抓取的cookie (optional)
     MOONSHOT_API_KEY: Moonshot API Key (AI分析功能需要)
+    AI_MAX_DAILY_CALLS: 每次增强评估最多新发起的AI分析数量 (default: 20)
     LOG_LEVEL: 日志级别 (default: INFO)
 """
 
@@ -260,6 +261,9 @@ def cmd_assess_enhanced(target_date: Optional[str] = None):
         # AI成功数量
         if use_ai:
             print(f"  AI分析成功: {result['ai_success_count']} 只")
+            print(
+                f"  新发起AI调用: {result['fresh_ai_call_count']} / {result['max_ai_calls']} 只"
+            )
 
         # 风险分布
         if result["risk_distribution"]:

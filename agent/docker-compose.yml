@@ -58,6 +58,41 @@ services:
     command: python main.py schedule
     stop_grace_period: 30s
 
+  # Go gRPC gateway for task submission; executes existing Python stock commands.
+  stock_rpc:
+    build:
+      context: ..
+      dockerfile: services/stock-rpc/Dockerfile
+      args:
+        DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
+        DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+    container_name: stock_rpc
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-stock}:${MYSQL_PASSWORD:-stock123}@mysql:3306/stock_analysis?charset=utf8mb4
+      STOCK_COOKIE: ${STOCK_COOKIE:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      STOCK_FETCH_TIMEOUT: ${STOCK_FETCH_TIMEOUT:-30}
+      STOCK_FETCH_MAX_RETRIES: ${STOCK_FETCH_MAX_RETRIES:-3}
+      STOCK_FETCH_RETRY_DELAY: ${STOCK_FETCH_RETRY_DELAY:-1.0}
+      STOCK_RPC_ADDR: :50051
+      STOCK_RPC_AGENT_DIR: /app
+      PYTHON_BIN: python
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./logs:/app/logs
+    ports:
+      - "${STOCK_RPC_PORT:-50051}:50051"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - stock_network
+    stop_grace_period: 30s
+
   # Wiki/RAG服务（按需启动，CPU-only torch）
   rag_agent:
     profiles:

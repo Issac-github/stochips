@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package stochips.stock.v1;
+
+option go_package = "stochips/stock_rpc/gen/stockv1;stockv1";
+
+service StockService {
+  rpc SubmitFetch(FetchRequest) returns (TaskReply);
+  rpc SubmitAssess(AssessRequest) returns (TaskReply);
+  rpc SubmitAssessAi(AssessAiRequest) returns (TaskReply);
+  rpc RunAgent(AgentRequest) returns (TaskReply);
+  rpc GetTask(TaskRequest) returns (TaskStatusReply);
+  rpc QueryHrLimitUp(QueryRangeRequest) returns (JsonReply);
+  rpc QueryEmLimitUp(QueryRangeRequest) returns (JsonReply);
+  rpc QueryBrokenBoard(QueryRangeRequest) returns (JsonReply);
+}
+
+message FetchRequest {
+  string date = 1;
+}
+
+message AssessRequest {
+  string date = 1;
+}
+
+message AssessAiRequest {
+  string date = 1;
+}
+
+message AgentRequest {
+  string goal = 1;
+  string date = 2;
+}
+
+message TaskReply {
+  string task_id = 1;
+}
+
+message TaskRequest {
+  string task_id = 1;
+}
+
+message TaskStatusReply {
+  string task_id = 1;
+  string type = 2;
+  string status = 3;
+  string result = 4;
+  string error = 5;
+}
+
+message QueryRangeRequest {
+  string start_date = 1;
+  string end_date = 2;
+}
+
+message JsonReply {
+  string json = 1;
+}

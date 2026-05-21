@@ -61,15 +61,6 @@ interface HRLimitUpData<T = number[]> {
   time_preview: T
 }
 
-interface EMLimitUpJSONData {
-  qdate: number
-  pool: EMLimitUpData[]
-}
-interface HRLimitUpJSONData {
-  date: string
-  info: HRLimitUpData[]
-}
-
 interface BrokenBoardRecord {
   code: string
   name: string
@@ -81,57 +72,25 @@ interface BrokenBoardRecord {
   daysBetween: number
 }
 
-type ListenerEventArgs<T = string, V = object | object[]> = {
-  event: T
-} & V
+type StockRpcTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
-type DatabaseListenerEventArgs =
-  | ListenerEventArgs<
-      import('@shared/eventKey').DatabaseEventKey.ReadEmLimitUpData,
-      {
-        payload?: {
-          startDate: string
-          endDate: string
-        }
-        data?: EMLimitUpData[]
-        error?: Record<string, unknown>
-      }
-    >
-  | ListenerEventArgs<
-      import('@shared/eventKey').DatabaseEventKey.ReadHrLimitUpData,
-      {
-        payload?: {
-          startDate: string
-          endDate: string
-        }
-        data?: HRLimitUpData[]
-        error?: Record<string, unknown>
-      }
-    >
-  | ListenerEventArgs<
-      import('@shared/eventKey').DatabaseEventKey.ReadBrokenBoardData,
-      {
-        payload?: {
-          startDate: string
-          endDate: string
-        }
-        data?: BrokenBoardRecord[]
-        error?: Record<string, unknown>
-      }
-    >
-  | ListenerEventArgs<
-      import('@shared/eventKey').DatabaseEventKey.WriteEmLimitUpData,
-      {
-        payload?: never
-        data: EMLimitUpJSONData | EMLimitUpJSONData[]
-        error?: Record<string, unknown>
-      }
-    >
-  | ListenerEventArgs<
-      import('@shared/eventKey').DatabaseEventKey.WriteHrLimitUpData,
-      {
-        payload?: never
-        data: HRLimitUpJSONData | HRLimitUpJSONData[]
-        error?: Record<string, unknown>
-      }
-    >
+type StockRpcResponse = {
+  taskId?: string
+  task_id?: string
+  type?: string
+  status?: StockRpcTaskStatus
+  result?: string
+  json?: string
+  error?: string
+}
+
+type StockRpcRequestArgs = {
+  event: import('@shared/eventKey').StockRpcEventKey
+  payload?: {
+    date?: string
+    goal?: string
+    taskId?: string
+    startDate?: string
+    endDate?: string
+  }
+}

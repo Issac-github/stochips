@@ -82,6 +82,7 @@ MOONSHOT_API_KEY=your_api_key
 |------|------|
 | `mysql` | MySQL 8.0 数据库，保存抓取数据、日志和风险评估结果 |
 | `stock_agent` | Python Agent 服务，定时抓取股票数据并执行风险评估 |
+| `stock_rpc` | Go gRPC 网关，提交任务并调用现有 Python 股票命令执行 |
 | `rag_agent` | 可选服务，运行 wiki/RAG 向量检索，使用 CPU-only torch |
 
 `stock_agent` 镜像默认只安装股票抓取、风控和 Moonshot AI 分析依赖，不安装 HuggingFace/Chroma/Torch，避免镜像过大。需要 wiki/RAG 时启动单独的 `rag_agent`，它会安装 CPU-only torch，并把模型缓存、Chroma 向量库挂到 Docker volume。
@@ -191,6 +192,9 @@ docker compose down -v
 # 只重建并重启股票 Agent
 docker compose build --no-cache stock_agent
 docker compose up -d stock_agent
+
+# 构建并启动 Go gRPC 网关
+docker compose up -d --build stock_rpc
 
 # 清理无标签旧镜像
 docker image prune -f
