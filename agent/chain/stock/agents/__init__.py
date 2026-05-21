@@ -7,6 +7,7 @@ Agent模块
 from .ai_analyzer import AIAnalysisResult, AIStockAnalyzer, create_ai_analyzer
 from .enhanced_risk_agent import EnhancedRiskAssessmentAgent, create_enhanced_risk_agent
 from .risk_agent import RiskAssessmentAgent, create_risk_agent
+from .stock_agent import StockAgent, StockAgentRunResult, create_stock_agent
 from .wiki_agent import StockWikiAgent, create_wiki_agent
 
 __all__ = [
@@ -17,6 +18,9 @@ __all__ = [
     "AIAnalysisResult",
     "EnhancedRiskAssessmentAgent",
     "create_enhanced_risk_agent",
+    "StockAgent",
+    "StockAgentRunResult",
+    "create_stock_agent",
     "StockWikiAgent",
     "create_wiki_agent",
 ]

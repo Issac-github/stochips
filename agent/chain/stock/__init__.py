@@ -13,6 +13,7 @@ from .agents import (
     create_ai_analyzer,
     create_enhanced_risk_agent,
     create_risk_agent,
+    create_stock_agent,
     create_wiki_agent,
 )
 from .data import create_fetcher, create_storage
@@ -26,5 +27,6 @@ __all__ = [
     "create_risk_agent",
     "create_enhanced_risk_agent",
     "create_ai_analyzer",
+    "create_stock_agent",
     "create_wiki_agent",
 ]

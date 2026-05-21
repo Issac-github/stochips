@@ -139,6 +139,9 @@ docker compose exec stock_agent python main.py assess-ai 20260506
 # 完整流程：抓取 + 规则评估
 docker compose exec stock_agent python main.py run 20260506
 
+# 目标驱动 Agent：根据目标自动决定抓取、评估、AI增强和报告
+docker compose exec stock_agent python main.py agent "更新数据并完成每日股票风险巡检" 20260506
+
 # 查看数据状态
 docker compose exec stock_agent python main.py status 20260506
 ```
@@ -148,11 +151,28 @@ docker compose exec stock_agent python main.py status 20260506
 ```bash
 # 进入 MySQL
 docker compose exec mysql mysql --default-character-set=utf8mb4 -ustock -p stock_analysis
+```
 
-# 清理某天板块数据后重新抓取
+如果想在宿主机使用 `mycli` 连接 Docker 里的 MySQL，先确认容器已启动，并使用映射到宿主机的端口连接：
+
+```bash
+# 启动 MySQL 容器
+docker compose up -d mysql
+
+# 使用 mycli 连接，默认密码见 .env 中的 MYSQL_PASSWORD
+mycli mysql://stock:stock123@127.0.0.1:3306/stock_analysis
+
+# 如果 .env 修改了 MYSQL_PASSWORD 或 MYSQL_PORT，对应替换密码和端口
+mycli mysql://stock:<MYSQL_PASSWORD>@127.0.0.1:<MYSQL_PORT>/stock_analysis
+```
+
+注意：宿主机连接 Docker 暴露端口时使用 `127.0.0.1:<MYSQL_PORT>`；只有在 `stock_agent` 等 Compose 容器内部访问时才使用 `mysql:3306`。
+
+```sql
+-- 清理某天板块数据后重新抓取
 DELETE FROM block_top WHERE date = '2026-05-06';
 
-# 查询当天各表数量
+-- 查询当天各表数量
 SELECT COUNT(*) FROM continuous_limit_up WHERE date = '2026-05-06';
 SELECT COUNT(*) FROM block_top WHERE date = '2026-05-06';
 SELECT COUNT(*) FROM limit_up_pool WHERE date = '2026-05-06';
@@ -257,6 +277,7 @@ poetry run python -m main assess-ai [YYYYMMDD]       # 混合评估（推荐）
 
 # 完整流程
 poetry run python -m main run [YYYYMMDD]             # 抓取+评估
+poetry run python -m main agent "完成每日风险巡检" [YYYYMMDD] # 目标驱动Agent
 
 # 定时任务
 poetry run python -m main schedule                   # 启动定时调度器

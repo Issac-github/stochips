@@ -19,7 +19,7 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from ..data import create_fetcher
 from ..data.storage import StockDataStorage
-from ..agents import create_risk_agent
+from ..agents import create_risk_agent, create_stock_agent
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,11 @@ class DailyJobScheduler:
         self.fetcher = create_fetcher(cookie)
         self.storage = StockDataStorage(database_url)
         self.risk_agent = create_risk_agent(database_url)
+        self.stock_agent = create_stock_agent(
+            database_url,
+            cookie=cookie,
+            notification_callback=notification_callback,
+        )
 
         # 初始化调度器
         self.scheduler = AsyncIOScheduler()
@@ -174,7 +179,7 @@ class DailyJobScheduler:
 
     async def run_daily_job(self, target_date: Optional[date] = None):
         """
-        运行每日完整任务（数据抓取 + 风险评估）
+        运行每日完整任务（目标驱动 StockAgent）
 
         Args:
             target_date: 目标日期，默认今天
@@ -184,19 +189,14 @@ class DailyJobScheduler:
 
         logger.info(f"开始每日任务: {target_date}")
 
-        # 1. 抓取并存储数据
-        fetch_result = await self.fetch_and_store_data(target_date)
-
-        # 2. 运行风险评估
-        assessment_result = await self.run_risk_assessment(target_date)
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: self.stock_agent.run("更新数据并完成每日股票风险巡检", target_date)
+        )
 
         logger.info(f"每日任务完成: {target_date}")
-
-        return {
-            'date': target_date.isoformat(),
-            'fetch_result': fetch_result,
-            'assessment_result': assessment_result
-        }
+        return result.to_dict()
 
     def schedule_daily_job(self, hour: int = 16, minute: int = 0):
         """

@@ -9,8 +9,8 @@ import functools
 import json
 import logging
 import os
-from datetime import datetime, date
-from typing import Dict, List, Optional, Any, Callable
+from datetime import date, datetime
+from typing import Any, Callable, Dict, List, Optional
 
 import aiohttp
 
@@ -26,6 +26,7 @@ def async_retry(max_retries: int = 3, delay: float = 1.0, exceptions=(Exception,
         delay: 重试间隔（秒）
         exceptions: 需要捕获的异常类型
     """
+
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
@@ -40,7 +41,9 @@ def async_retry(max_retries: int = 3, delay: float = 1.0, exceptions=(Exception,
                         await asyncio.sleep(delay * (attempt + 1))  # 递增延迟
             logger.error(f"{func.__name__} 在{max_retries}次尝试后仍然失败")
             raise last_exception
+
         return wrapper
+
     return decorator
 
 
@@ -49,18 +52,18 @@ class StockDataFetcher:
 
     # 基础请求头（所有接口通用）
     BASE_HEADERS = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Pragma': 'no-cache',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en,zh-CN;q=0.9,zh;q=0.8",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
     }
 
     # Cookie配置：不要在代码里写入真实Cookie，运行时从环境变量或参数传入。
@@ -68,19 +71,19 @@ class StockDataFetcher:
 
     # 东方财富独立请求头（完全保留curl参数）
     EASTMONEY_HEADERS = {
-        'Accept': '*/*',
-        'Accept-Language': 'en,zh-CN;q=0.9,zh;q=0.8',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Pragma': 'no-cache',
-        'Referer': 'https://quote.eastmoney.com/ztb/detail',
-        'Sec-Fetch-Dest': 'script',
-        'Sec-Fetch-Mode': 'no-cors',
-        'Sec-Fetch-Site': 'same-site',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-        'sec-ch-ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
+        "Accept": "*/*",
+        "Accept-Language": "en,zh-CN;q=0.9,zh;q=0.8",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Pragma": "no-cache",
+        "Referer": "https://quote.eastmoney.com/ztb/detail",
+        "Sec-Fetch-Dest": "script",
+        "Sec-Fetch-Mode": "no-cors",
+        "Sec-Fetch-Site": "same-site",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
     }
 
     # 东方财富接口一般可匿名访问；如后续确需Cookie，也应从配置注入。
@@ -106,7 +109,9 @@ class StockDataFetcher:
         self.cookies = self._parse_cookie(cookie, default_name="v")
         self.timeout = timeout or int(os.getenv("STOCK_FETCH_TIMEOUT", "30"))
         self.max_retries = max_retries or int(os.getenv("STOCK_FETCH_MAX_RETRIES", "3"))
-        self.retry_delay = retry_delay or float(os.getenv("STOCK_FETCH_RETRY_DELAY", "1.0"))
+        self.retry_delay = retry_delay or float(
+            os.getenv("STOCK_FETCH_RETRY_DELAY", "1.0")
+        )
         self.session: Optional[aiohttp.ClientSession] = None
 
     @staticmethod
@@ -154,7 +159,7 @@ class StockDataFetcher:
             完整的请求头字典
         """
         headers = self.BASE_HEADERS.copy()
-        headers['Referer'] = referer
+        headers["Referer"] = referer
         return headers
 
     async def _request_json(
@@ -168,7 +173,9 @@ class StockDataFetcher:
     ) -> Any:
         """发送GET请求并解析JSON/JSONP响应。"""
         if not self.session:
-            raise RuntimeError("StockDataFetcher must be used as an async context manager")
+            raise RuntimeError(
+                "StockDataFetcher must be used as an async context manager"
+            )
 
         retrying = async_retry(
             max_retries=self.max_retries,
@@ -195,7 +202,9 @@ class StockDataFetcher:
     ) -> Any:
         session = self.session
         if not session:
-            raise RuntimeError("StockDataFetcher must be used as an async context manager")
+            raise RuntimeError(
+                "StockDataFetcher must be used as an async context manager"
+            )
 
         async with session.get(
             url,
@@ -211,49 +220,61 @@ class StockDataFetcher:
                 return self._parse_jsonp(await response.text())
             return await response.json()
 
-    def _extract_api_records(self, payload: Any, data_type: str) -> List[Dict[str, Any]]:
+    def _extract_api_records(
+        self, payload: Any, data_type: str
+    ) -> List[Dict[str, Any]]:
         """兼容同花顺接口返回 dict 或直接返回 list 的情况。"""
         if isinstance(payload, list):
             records = [item for item in payload if isinstance(item, dict)]
-            return self._flatten_continuous_groups(records) if data_type == 'continuous_limit_up' else records
+            return (
+                self._flatten_continuous_groups(records)
+                if data_type == "continuous_limit_up"
+                else records
+            )
 
         if not isinstance(payload, dict):
             raise ValueError(f"{data_type} 返回格式异常: {type(payload).__name__}")
 
-        status_code = payload.get('status_code')
+        status_code = payload.get("status_code")
         if status_code not in (None, 0):
-            error_msg = payload.get('message', '未知错误')
+            error_msg = payload.get("message", "未知错误")
             logger.error(f"❌ API返回错误: {error_msg}")
             raise Exception(f"API错误: {error_msg}")
 
-        data = payload.get('data', [])
+        data = payload.get("data", [])
         if isinstance(data, dict):
-            data = data.get('data', data.get('list', data.get('items', [])))
+            data = data.get("data", data.get("list", data.get("items", [])))
 
         if isinstance(data, list):
             records = [item for item in data if isinstance(item, dict)]
-            return self._flatten_continuous_groups(records) if data_type == 'continuous_limit_up' else records
+            return (
+                self._flatten_continuous_groups(records)
+                if data_type == "continuous_limit_up"
+                else records
+            )
 
         raise ValueError(f"{data_type} data字段格式异常: {type(data).__name__}")
 
-    def _flatten_continuous_groups(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _flatten_continuous_groups(
+        self, records: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """展开连板天梯按高度分组的响应。"""
         flattened: List[Dict[str, Any]] = []
 
         for group in records:
-            code_list = group.get('code_list')
+            code_list = group.get("code_list")
             if not isinstance(code_list, list):
                 flattened.append(group)
                 continue
 
-            height = group.get('height')
+            height = group.get("height")
             for stock in code_list:
                 if not isinstance(stock, dict):
                     continue
 
                 item = stock.copy()
-                item.setdefault('continuous_days', stock.get('continue_num', height))
-                item.setdefault('height', height)
+                item.setdefault("continuous_days", stock.get("continue_num", height))
+                item.setdefault("height", height)
                 flattened.append(item)
 
         return flattened
@@ -268,46 +289,54 @@ class StockDataFetcher:
         if not isinstance(payload, dict):
             raise ValueError(f"limit_up_pool 返回格式异常: {type(payload).__name__}")
 
-        status_code = payload.get('status_code')
+        status_code = payload.get("status_code")
         if status_code not in (None, 0):
-            error_msg = payload.get('message', '未知错误')
+            error_msg = payload.get("message", "未知错误")
             logger.error(f"❌ API返回错误: {error_msg}")
             raise Exception(f"API错误: {error_msg}")
 
-        data = payload.get('data', {})
+        data = payload.get("data", {})
         if isinstance(data, list):
             records = [item for item in data if isinstance(item, dict)]
-            return {'data': records, 'has_more': len(records) >= limit}
+            return {"data": records, "has_more": len(records) >= limit}
 
         if not isinstance(data, dict):
             raise ValueError(f"limit_up_pool data字段格式异常: {type(data).__name__}")
 
         records = []
-        for key in ('data', 'info', 'list', 'items'):
+        for key in ("data", "info", "list", "items"):
             value = data.get(key)
             if isinstance(value, list):
                 records = [item for item in value if isinstance(item, dict)]
                 break
 
-        has_more = data.get('has_more')
+        has_more = data.get("has_more")
         if has_more is None:
-            page_info = data.get('page') if isinstance(data.get('page'), dict) else {}
+            page_info = data.get("page") if isinstance(data.get("page"), dict) else {}
             total = self._safe_positive_int(
-                data.get('total')
-                or data.get('count')
-                or data.get('total_count')
-                or page_info.get('total')
-                or page_info.get('count')
+                data.get("total")
+                or data.get("count")
+                or data.get("total_count")
+                or page_info.get("total")
+                or page_info.get("count")
             )
-            current_page = self._safe_positive_int(
-                data.get('page')
-                if not isinstance(data.get('page'), dict)
-                else page_info.get('page')
-            ) or page
-            page_size = self._safe_positive_int(data.get('limit') or page_info.get('limit')) or limit
-            has_more = (current_page * page_size < total) if total else len(records) >= limit
+            current_page = (
+                self._safe_positive_int(
+                    data.get("page")
+                    if not isinstance(data.get("page"), dict)
+                    else page_info.get("page")
+                )
+                or page
+            )
+            page_size = (
+                self._safe_positive_int(data.get("limit") or page_info.get("limit"))
+                or limit
+            )
+            has_more = (
+                (current_page * page_size < total) if total else len(records) >= limit
+            )
 
-        return {'data': records, 'has_more': bool(has_more)}
+        return {"data": records, "has_more": bool(has_more)}
 
     @staticmethod
     def _safe_positive_int(value: Any) -> int:
@@ -320,7 +349,7 @@ class StockDataFetcher:
     async def fetch_continuous_limit_up(
         self,
         target_date: Optional[str] = None,
-        filter_params: str = "HS,GEM2STAR,ST,NEW"
+        filter_params: str = "HS,GEM2STAR,ST,NEW",
     ) -> List[Dict[str, Any]]:
         """
         获取连板天梯数据
@@ -336,13 +365,10 @@ class StockDataFetcher:
             连板天梯数据列表
         """
         if not target_date:
-            target_date = date.today().strftime('%Y%m%d')
+            target_date = date.today().strftime("%Y%m%d")
 
         url = "https://data.10jqka.com.cn/dataapi/limit_up/continuous_limit_up"
-        params = {
-            'filter': filter_params,
-            'date': target_date
-        }
+        params = {"filter": filter_params, "date": target_date}
 
         headers = self._get_headers_with_referer(
             "https://data.10jqka.com.cn/datacenterph/limitup/limtupInfo.html"
@@ -351,14 +377,14 @@ class StockDataFetcher:
         logger.info(f"📊 获取连板天梯数据: date={target_date}")
 
         data = await self._request_json(url, params=params, headers=headers)
-        result = self._extract_api_records(data, 'continuous_limit_up')
+        result = self._extract_api_records(data, "continuous_limit_up")
         logger.info(f"✅ 获取连板天梯数据成功: {len(result)}条记录")
         return result
 
     async def fetch_block_top(
         self,
         target_date: Optional[str] = None,
-        filter_params: str = "HS,GEM2STAR,ST,NEW"
+        filter_params: str = "HS,GEM2STAR,ST,NEW",
     ) -> List[Dict[str, Any]]:
         """
         获取最强风口数据
@@ -374,13 +400,10 @@ class StockDataFetcher:
             最强风口数据列表
         """
         if not target_date:
-            target_date = date.today().strftime('%Y%m%d')
+            target_date = date.today().strftime("%Y%m%d")
 
         url = "https://data.10jqka.com.cn/dataapi/limit_up/block_top"
-        params = {
-            'filter': filter_params,
-            'date': target_date
-        }
+        params = {"filter": filter_params, "date": target_date}
 
         headers = self._get_headers_with_referer(
             "https://data.10jqka.com.cn/datacenterph/limitup/limtupInfo.html"
@@ -389,7 +412,7 @@ class StockDataFetcher:
         logger.info(f"📊 获取最强风口数据: date={target_date}")
 
         data = await self._request_json(url, params=params, headers=headers)
-        result = self._extract_api_records(data, 'block_top')
+        result = self._extract_api_records(data, "block_top")
         logger.info(f"✅ 获取最强风口数据成功: {len(result)}条记录")
         return result
 
@@ -401,7 +424,7 @@ class StockDataFetcher:
         filter_params: str = "HS,GEM2STAR,ST,NEW",
         order_field: str = "330324",
         order_type: int = 0,
-        timestamp: Optional[int] = None
+        timestamp: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         获取涨停强度数据（单页）
@@ -422,7 +445,7 @@ class StockDataFetcher:
             API返回的原始数据，包含data和has_more字段
         """
         if not target_date:
-            target_date = date.today().strftime('%Y%m%d')
+            target_date = date.today().strftime("%Y%m%d")
 
         url = "https://data.10jqka.com.cn/dataapi/limit_up/limit_up_pool"
 
@@ -430,23 +453,25 @@ class StockDataFetcher:
         fields = "199112,10,9001,330323,330324,330325,9002,330329,133971,133970,1968584,3475914,9003,9004"
 
         params = {
-            'page': page,
-            'limit': limit,
-            'field': fields,
-            'filter': filter_params,
-            'date': target_date,
-            'order_field': order_field,
-            'order_type': order_type,
+            "page": page,
+            "limit": limit,
+            "field": fields,
+            "filter": filter_params,
+            "date": target_date,
+            "order_field": order_field,
+            "order_type": order_type,
         }
 
         if timestamp:
-            params['_'] = timestamp
+            params["_"] = timestamp
 
         headers = self._get_headers_with_referer(
             "https://data.10jqka.com.cn/datacenterph/limitup/limtupInfo.html"
         )
 
-        logger.debug(f"获取涨停强度数据: page={page}, limit={limit}, date={target_date}")
+        logger.debug(
+            f"获取涨停强度数据: page={page}, limit={limit}, date={target_date}"
+        )
 
         data = await self._request_json(url, params=params, headers=headers)
         return self._extract_limit_up_pool_page(data, page, limit)
@@ -457,7 +482,7 @@ class StockDataFetcher:
         filter_params: str = "HS,GEM2STAR,ST,NEW",
         batch_size: int = 15,
         max_pages: int = 100,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> List[Dict[str, Any]]:
         """
         获取所有涨停强度数据（自动分页）
@@ -473,7 +498,7 @@ class StockDataFetcher:
             所有涨停强度数据列表
         """
         if not target_date:
-            target_date = date.today().strftime('%Y%m%d')
+            target_date = date.today().strftime("%Y%m%d")
 
         all_data = []
         page = 1
@@ -486,14 +511,14 @@ class StockDataFetcher:
                 page=page,
                 limit=batch_size,
                 target_date=target_date,
-                filter_params=filter_params
+                filter_params=filter_params,
             )
 
-            page_data = result.get('data', [])
+            page_data = result.get("data", [])
             all_data.extend(page_data)
 
             # 判断是否还有下一页
-            has_more = result.get('has_more', False)
+            has_more = result.get("has_more", False)
 
             if progress_callback:
                 progress_callback(page, page)
@@ -520,14 +545,14 @@ class StockDataFetcher:
         """
         try:
             # 找到第一个(和最后一个)的位置
-            start_idx = jsonp_str.find('(')
-            end_idx = jsonp_str.rfind(')')
+            start_idx = jsonp_str.find("(")
+            end_idx = jsonp_str.rfind(")")
 
             if start_idx == -1 or end_idx == -1:
                 raise ValueError(f"无效的JSONP格式: {jsonp_str[:100]}")
 
             # 提取JSON部分
-            json_str = jsonp_str[start_idx + 1:end_idx]
+            json_str = jsonp_str[start_idx + 1 : end_idx]
             return json.loads(json_str)
         except Exception as e:
             logger.error(f"解析JSONP失败: {e}, 原始数据: {jsonp_str[:200]}")
@@ -538,7 +563,7 @@ class StockDataFetcher:
         page_index: int = 0,
         page_size: int = 20,
         target_date: Optional[str] = None,
-        sort: str = "fbt:asc"
+        sort: str = "fbt:asc",
     ) -> Dict[str, Any]:
         """
         获取东方财富涨停池数据（单页）
@@ -556,7 +581,7 @@ class StockDataFetcher:
             API返回的原始数据字典，包含data和tc字段
         """
         if not target_date:
-            target_date = date.today().strftime('%Y%m%d')
+            target_date = date.today().strftime("%Y%m%d")
 
         url = "https://push2ex.eastmoney.com/getTopicZTPool"
 
@@ -567,20 +592,22 @@ class StockDataFetcher:
         callback_name = f"callbackdata{timestamp % 10000000}"
 
         params = {
-            'cb': callback_name,
-            'ut': '7eea3edcaed734bea9cbfc24409ed989',
-            'dpt': 'wz.ztzt',
-            'Pageindex': page_index,
-            'pagesize': page_size,
-            'sort': sort,
-            'date': target_date,
-            '_': timestamp,
+            "cb": callback_name,
+            "ut": "7eea3edcaed734bea9cbfc24409ed989",
+            "dpt": "wz.ztzt",
+            "Pageindex": page_index,
+            "pagesize": page_size,
+            "sort": sort,
+            "date": target_date,
+            "_": timestamp,
         }
 
         # 使用东方财富专用请求头（完全保留curl参数）
         headers = self.EASTMONEY_HEADERS.copy()
 
-        logger.debug(f"获取东方财富涨停池: date={target_date}, page={page_index}, size={page_size}")
+        logger.debug(
+            f"获取东方财富涨停池: date={target_date}, page={page_index}, size={page_size}"
+        )
 
         data = await self._request_json(
             url,
@@ -592,9 +619,7 @@ class StockDataFetcher:
         return data
 
     async def fetch_eastmoney_zt_pool(
-        self,
-        target_date: Optional[str] = None,
-        sort: str = "fbt:asc"
+        self, target_date: Optional[str] = None, sort: str = "fbt:asc"
     ) -> List[Dict[str, Any]]:
         """
         获取东方财富涨停池全部数据（两步调用）
@@ -611,27 +636,24 @@ class StockDataFetcher:
             所有涨停池数据列表
         """
         if not target_date:
-            target_date = date.today().strftime('%Y%m%d')
+            target_date = date.today().strftime("%Y%m%d")
 
         logger.info(f"开始获取东方财富涨停池数据: date={target_date}")
 
         # 第一步：获取总条数（tc）
         logger.info("第一步：获取总条数（tc）")
         first_page = await self.fetch_eastmoney_zt_pool_page(
-            page_index=0,
-            page_size=20,
-            target_date=target_date,
-            sort=sort
+            page_index=0, page_size=20, target_date=target_date, sort=sort
         )
 
         # 提取tc参数（总条数）
-        tc = first_page.get('tc', 0)
+        tc = first_page.get("tc", 0)
         if not tc:
-            tc = first_page.get('data', {}).get('tc', 0)
+            tc = first_page.get("data", {}).get("tc", 0)
 
         if not tc:
             logger.warning("无法获取tc参数，使用第一页数据")
-            return first_page.get('data', {}).get('pool', [])
+            return first_page.get("data", {}).get("pool", [])
 
         logger.info(f"获取到总条数 tc={tc}")
 
@@ -641,18 +663,17 @@ class StockDataFetcher:
             page_index=0,
             page_size=tc,  # 使用tc作为pagesize，一次性拉取全部
             target_date=target_date,
-            sort=sort
+            sort=sort,
         )
 
         # 提取数据
-        pool_data = full_data.get('data', {}).get('pool', [])
+        pool_data = full_data.get("data", {}).get("pool", [])
 
         logger.info(f"东方财富涨停池数据获取完成: 共{len(pool_data)}条记录")
         return pool_data
 
     async def fetch_all_data(
-        self,
-        target_date: Optional[str] = None
+        self, target_date: Optional[str] = None
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         获取所有股票数据
@@ -670,7 +691,7 @@ class StockDataFetcher:
             }
         """
         if not target_date:
-            target_date = date.today().strftime('%Y%m%d')
+            target_date = date.today().strftime("%Y%m%d")
 
         logger.info(f"🚀 开始获取所有股票数据: date={target_date}")
 
@@ -685,47 +706,53 @@ class StockDataFetcher:
             block_task,
             pool_task,
             eastmoney_task,
-            return_exceptions=True
+            return_exceptions=True,
         )
 
         result: Dict[str, List[Dict[str, Any]]] = {
-            'continuous_limit_up': [],
-            'block_top': [],
-            'limit_up_pool': [],
-            'eastmoney_zt_pool': [],
-            'errors': []
+            "continuous_limit_up": [],
+            "block_top": [],
+            "limit_up_pool": [],
+            "eastmoney_zt_pool": [],
+            "errors": [],
         }
 
         # 处理结果，记录异常
         if isinstance(continuous_data, Exception):
             logger.error(f"连板天梯数据获取失败: {continuous_data}")
-            result['errors'].append({'type': 'continuous_limit_up', 'error': str(continuous_data)})
+            result["errors"].append(
+                {"type": "continuous_limit_up", "error": str(continuous_data)}
+            )
         else:
-            result['continuous_limit_up'] = continuous_data
+            result["continuous_limit_up"] = continuous_data
 
         if isinstance(block_data, Exception):
             logger.error(f"最强风口数据获取失败: {block_data}")
-            result['errors'].append({'type': 'block_top', 'error': str(block_data)})
+            result["errors"].append({"type": "block_top", "error": str(block_data)})
         else:
-            result['block_top'] = block_data
+            result["block_top"] = block_data
 
         if isinstance(pool_data, Exception):
             logger.error(f"涨停强度数据获取失败: {pool_data}")
-            result['errors'].append({'type': 'limit_up_pool', 'error': str(pool_data)})
+            result["errors"].append({"type": "limit_up_pool", "error": str(pool_data)})
         else:
-            result['limit_up_pool'] = pool_data
+            result["limit_up_pool"] = pool_data
 
         if isinstance(eastmoney_data, Exception):
             logger.error(f"东方财富涨停池数据获取失败: {eastmoney_data}")
-            result['errors'].append({'type': 'eastmoney_zt_pool', 'error': str(eastmoney_data)})
+            result["errors"].append(
+                {"type": "eastmoney_zt_pool", "error": str(eastmoney_data)}
+            )
         else:
-            result['eastmoney_zt_pool'] = eastmoney_data
+            result["eastmoney_zt_pool"] = eastmoney_data
 
-        logger.info(f"✅ 所有数据获取完成: "
-                   f"连板天梯{len(result['continuous_limit_up'])}条, "
-                   f"最强风口{len(result['block_top'])}条, "
-                   f"涨停强度{len(result['limit_up_pool'])}条, "
-                   f"东财涨停池{len(result['eastmoney_zt_pool'])}条")
+        logger.info(
+            f"✅ 所有数据获取完成: "
+            f"连板天梯{len(result['continuous_limit_up'])}条, "
+            f"最强风口{len(result['block_top'])}条, "
+            f"涨停强度{len(result['limit_up_pool'])}条, "
+            f"东财涨停池{len(result['eastmoney_zt_pool'])}条"
+        )
 
         return result
 
@@ -750,53 +777,54 @@ class StockDataFetcherSync:
     def fetch_continuous_limit_up(
         self,
         target_date: Optional[str] = None,
-        filter_params: str = "HS,GEM2STAR,ST,NEW"
+        filter_params: str = "HS,GEM2STAR,ST,NEW",
     ) -> List[Dict[str, Any]]:
         """同步获取连板天梯数据"""
-        return asyncio.run(self._async_fetch(
-            self.fetcher.fetch_continuous_limit_up(target_date, filter_params)
-        ))
+        return asyncio.run(
+            self._async_fetch(
+                self.fetcher.fetch_continuous_limit_up(target_date, filter_params)
+            )
+        )
 
     def fetch_block_top(
         self,
         target_date: Optional[str] = None,
-        filter_params: str = "HS,GEM2STAR,ST,NEW"
+        filter_params: str = "HS,GEM2STAR,ST,NEW",
     ) -> List[Dict[str, Any]]:
         """同步获取最强风口数据"""
-        return asyncio.run(self._async_fetch(
-            self.fetcher.fetch_block_top(target_date, filter_params)
-        ))
+        return asyncio.run(
+            self._async_fetch(self.fetcher.fetch_block_top(target_date, filter_params))
+        )
 
     def fetch_limit_up_pool(
         self,
         target_date: Optional[str] = None,
         filter_params: str = "HS,GEM2STAR,ST,NEW",
         batch_size: int = 15,
-        max_pages: int = 100
+        max_pages: int = 100,
     ) -> List[Dict[str, Any]]:
         """同步获取涨停强度数据"""
-        return asyncio.run(self._async_fetch(
-            self.fetcher.fetch_limit_up_pool(target_date, filter_params, batch_size, max_pages)
-        ))
+        return asyncio.run(
+            self._async_fetch(
+                self.fetcher.fetch_limit_up_pool(
+                    target_date, filter_params, batch_size, max_pages
+                )
+            )
+        )
 
     def fetch_eastmoney_zt_pool(
-        self,
-        target_date: Optional[str] = None,
-        sort: str = "fbt:asc"
+        self, target_date: Optional[str] = None, sort: str = "fbt:asc"
     ) -> List[Dict[str, Any]]:
         """同步获取东方财富涨停池数据（两步调用）"""
-        return asyncio.run(self._async_fetch(
-            self.fetcher.fetch_eastmoney_zt_pool(target_date, sort)
-        ))
+        return asyncio.run(
+            self._async_fetch(self.fetcher.fetch_eastmoney_zt_pool(target_date, sort))
+        )
 
     def fetch_all_data(
-        self,
-        target_date: Optional[str] = None
+        self, target_date: Optional[str] = None
     ) -> Dict[str, List[Dict[str, Any]]]:
         """同步获取所有数据"""
-        return asyncio.run(self._async_fetch(
-            self.fetcher.fetch_all_data(target_date)
-        ))
+        return asyncio.run(self._async_fetch(self.fetcher.fetch_all_data(target_date)))
 
     async def _async_fetch(self, coro):
         """辅助方法：执行异步协程"""

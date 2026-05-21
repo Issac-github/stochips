@@ -2,6 +2,7 @@
 股票选股及风控Agent系统主入口
 
 Usage:
+    python main.py agent "目标" [date]       # 目标驱动StockAgent
     python main.py fetch [date]             # 抓取数据
     python main.py assess [date]            # 风险评估（规则引擎）
     python main.py ai-analyze [date]        # AI智能分析
@@ -38,6 +39,7 @@ from chain.stock.agents import (
     create_ai_analyzer,
     create_enhanced_risk_agent,
     create_risk_agent,
+    create_stock_agent,
     create_wiki_agent,
 )
 from chain.stock.data import create_fetcher
@@ -292,6 +294,32 @@ def cmd_run(target_date: Optional[str] = None):
     print("✅ 所有任务完成")
 
 
+def cmd_agent(goal: Optional[str] = None, target_date: Optional[str] = None):
+    """运行目标驱动 StockAgent"""
+    if not goal:
+        print('错误：缺少目标，例如 python main.py agent "完成每日风险巡检" 20260506')
+        sys.exit(1)
+
+    date_obj = parse_date(target_date)
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        print("错误：未设置DATABASE_URL环境变量")
+        sys.exit(1)
+
+    print(f"启动 StockAgent: {goal}")
+    print(f"日期: {date_obj}")
+    print("=" * 60)
+
+    try:
+        agent = create_stock_agent(database_url)
+        result = agent.run(goal, date_obj)
+        print(result.summary)
+    except Exception as e:
+        print(f"错误：{e}")
+        logging.exception("StockAgent执行失败")
+        sys.exit(1)
+
+
 def cmd_schedule():
     """启动定时任务"""
     print("启动定时任务调度器...")
@@ -438,6 +466,20 @@ def main():
 
     command = sys.argv[1]
     date_arg = sys.argv[2] if len(sys.argv) > 2 else None
+
+    if command == "agent":
+        args = sys.argv[2:]
+        if not args:
+            cmd_agent(None)
+            return
+
+        target_date = None
+        if args[-1].replace("-", "").isdigit() and len(args[-1].replace("-", "")) == 8:
+            target_date = args[-1]
+            args = args[:-1]
+
+        cmd_agent(" ".join(args), target_date)
+        return
 
     if command == "wiki":
         wiki_action = sys.argv[2] if len(sys.argv) > 2 else None
