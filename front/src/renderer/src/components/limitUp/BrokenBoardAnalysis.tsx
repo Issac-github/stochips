@@ -1,11 +1,13 @@
 import type React from 'react'
-import { Card, Col, Row, Statistic, Table, Tag, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
+import DataTable, {
+  type DataColumn
+} from '@renderer/components/shared/DataTable'
+import StatTile from '@renderer/components/shared/StatTile'
+import { Badge } from '@renderer/components/ui/badge'
+import { Card, CardContent } from '@renderer/components/ui/card'
 
-const { Text } = Typography
-
-interface BrokenBoardRecord {
+export interface BrokenBoardRecord {
   code: string
   name: string
   firstLimitUpDate: string
@@ -21,13 +23,24 @@ interface BrokenBoardAnalysisProps {
   loading?: boolean
 }
 
+const marketBadge = (marketType: string) => {
+  const marketInfo = [
+    { text: '主板', value: 'HS', variant: 'success' as const },
+    { text: '科创', value: 'STAR', variant: 'purple' as const },
+    { text: '创业板', value: 'GEM', variant: 'info' as const }
+  ].find((item) => item.value === marketType)
+  return (
+    <Badge variant={marketInfo?.variant ?? 'outline'}>
+      {marketInfo?.text || marketType}
+    </Badge>
+  )
+}
+
 const BrokenBoardAnalysis: React.FC<BrokenBoardAnalysisProps> = ({
   data = [],
   loading = false
 }) => {
-  // 统计数据
   const totalCount = data.length
-  // 按市场类型统计
   const hsCount = data.filter(
     (item) => item.secondLimitUpData.market_type === 'HS'
   ).length
@@ -37,183 +50,125 @@ const BrokenBoardAnalysis: React.FC<BrokenBoardAnalysisProps> = ({
   const gemCount = data.filter(
     (item) => item.secondLimitUpData.market_type === 'GEM'
   ).length
-
-  // 按间隔天数统计
   const days3Count = data.filter((item) => item.daysBetween <= 3).length
   const days46Count = data.filter(
     (item) => item.daysBetween >= 4 && item.daysBetween <= 6
   ).length
   const days7Count = data.filter((item) => item.daysBetween >= 7).length
 
-  const columns: ColumnsType<BrokenBoardRecord> = [
-    {
-      title: '代码',
-      dataIndex: 'code',
-      key: 'code',
-      width: 80,
-      align: 'center' as const,
-      fixed: 'left' as const,
-      sorter: (a, b) => a.code.localeCompare(b.code)
-    },
-    {
-      title: '名称',
-      dataIndex: 'name',
-      key: 'name',
-      width: 100,
-      align: 'center' as const,
-      fixed: 'left' as const
-    },
+  const columns: DataColumn<BrokenBoardRecord>[] = [
+    { title: '代码', key: 'code', width: 80, render: (record) => record.code },
+    { title: '名称', key: 'name', width: 100, render: (record) => record.name },
     {
       title: '市场',
       key: 'market_type',
       width: 100,
-      align: 'center' as const,
-      render: (_, record) => {
-        const marketType = record.secondLimitUpData.market_type
-        const marketInfo = [
-          { text: '主板', value: 'HS', color: 'green' },
-          { text: '科创', value: 'STAR', color: 'purple' },
-          { text: '创业板', value: 'GEM', color: 'cyan' }
-        ].find((item) => item.value === marketType)
-        return (
-          <Tag color={marketInfo?.color || 'default'}>
-            {marketInfo?.text || marketType}
-          </Tag>
-        )
-      },
-      filters: [
-        { text: '主板', value: 'HS' },
-        { text: '科创', value: 'STAR' },
-        { text: '创业板', value: 'GEM' }
-      ],
-      onFilter: (value, record) =>
-        record.secondLimitUpData.market_type === value,
-      sorter: (a, b) => {
-        const order = { STAR: 1, GEM: 2, HS: 3 }
-        return (
-          (order[a.secondLimitUpData.market_type] || 999) -
-          (order[b.secondLimitUpData.market_type] || 999)
-        )
-      },
-      defaultSortOrder: 'ascend' as const
+      render: (record) => marketBadge(record.secondLimitUpData.market_type)
     },
     {
-      title: '首次涨停日期',
-      dataIndex: 'firstLimitUpDate',
+      title: '首次涨停',
       key: 'firstLimitUpDate',
-      width: 130,
-      align: 'center' as const,
-      render: (date: string) => dayjs(date, 'YYYYMMDD').format('MM-DD'),
-      sorter: (a, b) => Number(a.firstLimitUpDate) - Number(b.firstLimitUpDate)
+      width: 110,
+      render: (record) =>
+        dayjs(record.firstLimitUpDate, 'YYYYMMDD').format('MM-DD')
     },
     {
-      title: '断板日期',
-      dataIndex: 'brokenDate',
+      title: '断板',
       key: 'brokenDate',
-      width: 120,
-      align: 'center' as const,
-      render: (date: string) => (
-        <Text type="warning">{dayjs(date, 'YYYYMMDD').format('MM-DD')}</Text>
+      width: 90,
+      render: (record) => (
+        <span className="text-amber-600">
+          {dayjs(record.brokenDate, 'YYYYMMDD').format('MM-DD')}
+        </span>
       )
     },
     {
-      title: '再次涨停日期',
-      dataIndex: 'secondLimitUpDate',
+      title: '再次涨停',
       key: 'secondLimitUpDate',
-      width: 130,
-      align: 'center' as const,
-      render: (date: string) => (
-        <Text type="success">{dayjs(date, 'YYYYMMDD').format('MM-DD')}</Text>
-      ),
-      sorter: (a, b) =>
-        Number(a.secondLimitUpDate) - Number(b.secondLimitUpDate)
-    },
-    {
-      title: '间隔天数',
-      dataIndex: 'daysBetween',
-      key: 'daysBetween',
-      width: 120,
-      align: 'center' as const,
-      render: (days: number) => (
-        <Tag color={days <= 3 ? 'red' : days === 4 ? 'orange' : 'blue'}>
-          {days}天
-        </Tag>
-      ),
-      sorter: (a, b) => a.daysBetween - b.daysBetween,
-      filters: [
-        { text: '2天', value: 2 },
-        { text: '3天', value: 3 },
-        { text: '4天', value: 4 },
-        { text: '5天', value: 5 }
-      ],
-      onFilter: (value, record) => record.daysBetween === value
-    },
-    {
-      title: '首次涨停原因',
-      key: 'firstReason',
-      width: 150,
-      align: 'center' as const,
-      ellipsis: true,
-      render: (_, record) => record.firstLimitUpData.reason_type || '-'
-    },
-    {
-      title: '再次涨停原因',
-      key: 'secondReason',
-      width: 150,
-      align: 'center' as const,
-      ellipsis: true,
-      render: (_, record) => record.secondLimitUpData.reason_type || '-'
-    },
-    {
-      title: '首次开板数',
-      key: 'firstOpenNum',
-      width: 100,
-      align: 'center' as const,
-      render: (_, record) => record.firstLimitUpData.open_num
-    },
-    {
-      title: '再次开板数',
-      key: 'secondOpenNum',
-      width: 120,
-      align: 'center' as const,
-      render: (_, record) => record.secondLimitUpData.open_num,
-      sorter: (a, b) =>
-        a.secondLimitUpData.open_num - b.secondLimitUpData.open_num
-    },
-    {
-      title: '首次换手率',
-      key: 'firstTurnover',
       width: 110,
-      align: 'center' as const,
-      render: (_, record) =>
-        `${record.firstLimitUpData.turnover_rate.toFixed(2)}%`
+      render: (record) => (
+        <span className="text-emerald-600">
+          {dayjs(record.secondLimitUpDate, 'YYYYMMDD').format('MM-DD')}
+        </span>
+      )
     },
     {
-      title: '再次换手率',
+      title: '间隔',
+      key: 'daysBetween',
+      width: 80,
+      render: (record) => (
+        <Badge
+          variant={
+            record.daysBetween <= 3
+              ? 'destructive'
+              : record.daysBetween === 4
+                ? 'warning'
+                : 'info'
+          }
+        >
+          {record.daysBetween}天
+        </Badge>
+      )
+    },
+    {
+      title: '首次原因',
+      key: 'firstReason',
+      width: 160,
+      render: (record) => (
+        <span className="line-clamp-2">
+          {record.firstLimitUpData.reason_type || '-'}
+        </span>
+      )
+    },
+    {
+      title: '再次原因',
+      key: 'secondReason',
+      width: 160,
+      render: (record) => (
+        <span className="line-clamp-2">
+          {record.secondLimitUpData.reason_type || '-'}
+        </span>
+      )
+    },
+    {
+      title: '首次开板',
+      key: 'firstOpenNum',
+      width: 90,
+      render: (record) => record.firstLimitUpData.open_num
+    },
+    {
+      title: '再次开板',
+      key: 'secondOpenNum',
+      width: 90,
+      render: (record) => record.secondLimitUpData.open_num
+    },
+    {
+      title: '首次换手',
+      key: 'firstTurnover',
+      width: 100,
+      render: (record) => `${record.firstLimitUpData.turnover_rate.toFixed(2)}%`
+    },
+    {
+      title: '再次换手',
       key: 'secondTurnover',
-      width: 120,
-      align: 'center' as const,
-      render: (_, record) =>
-        `${record.secondLimitUpData.turnover_rate.toFixed(2)}%`,
-      sorter: (a, b) =>
-        a.secondLimitUpData.turnover_rate - b.secondLimitUpData.turnover_rate
+      width: 100,
+      render: (record) =>
+        `${record.secondLimitUpData.turnover_rate.toFixed(2)}%`
     },
     {
-      title: '首次涨停时间',
+      title: '首次时间',
       key: 'firstLimitUpTime',
-      width: 120,
-      align: 'center' as const,
-      render: (_, record) =>
+      width: 100,
+      render: (record) =>
         dayjs(
           Number(record.firstLimitUpData.first_limit_up_time) * 1000
         ).format('HH:mm:ss')
     },
     {
-      title: '再次涨停时间',
+      title: '再次时间',
       key: 'secondLimitUpTime',
-      width: 120,
-      align: 'center' as const,
-      render: (_, record) =>
+      width: 100,
+      render: (record) =>
         dayjs(
           Number(record.secondLimitUpData.first_limit_up_time) * 1000
         ).format('HH:mm:ss')
@@ -221,109 +176,41 @@ const BrokenBoardAnalysis: React.FC<BrokenBoardAnalysisProps> = ({
     {
       title: '流通市值',
       key: 'currencyValue',
-      width: 120,
-      align: 'center' as const,
-      render: (_, record) =>
+      width: 110,
+      render: (record) =>
         `${(record.secondLimitUpData.currency_value / 100000000).toFixed(2)}亿`
     }
   ]
 
   return (
-    <div className="flex h-full flex-col">
-      <Card className="mb-3 text-center" size="small">
-        <Row gutter={24}>
-          <Col span={3}>
-            <Statistic
-              title="符合条件个股"
-              value={totalCount}
-              valueStyle={{ color: '#1890ff', fontSize: '18px' }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="主板"
-              value={hsCount}
-              valueStyle={{ color: '#52c41a', fontSize: '16px' }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="科创板"
-              value={starCount}
-              valueStyle={{ color: '#722ed1', fontSize: '16px' }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="创业板"
-              value={gemCount}
-              valueStyle={{ color: '#fa541c', fontSize: '16px' }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="3天间隔"
-              value={days3Count}
-              valueStyle={{ color: '#fa8c16', fontSize: '16px' }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="4~6天间隔"
-              value={days46Count}
-              valueStyle={{ color: '#faad14', fontSize: '16px' }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="7天间隔"
-              value={days7Count}
-              valueStyle={{ color: '#f4a6f4', fontSize: '16px' }}
-            />
-          </Col>
-        </Row>
+    <div className="flex h-full flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+        <StatTile label="符合条件个股" value={totalCount} tone="blue" />
+        <StatTile label="主板" value={hsCount} tone="green" />
+        <StatTile label="科创板" value={starCount} tone="purple" />
+        <StatTile label="创业板" value={gemCount} tone="orange" />
+        <StatTile label="3天间隔" value={days3Count} tone="orange" />
+        <StatTile label="4~6天间隔" value={days46Count} tone="amber" />
+        <StatTile label="7天间隔" value={days7Count} tone="pink" />
+      </div>
+      <Card>
+        <CardContent className="text-muted-foreground p-3 text-sm">
+          <span className="text-foreground font-medium">说明：</span>
+          {
+            '统计前5天内有涨停，后某交易日断板，此后又涨停的个股。模式：涨停 -> 断板(未涨停) -> 再次涨停。'
+          }
+        </CardContent>
       </Card>
-
-      <Card
-        className="mb-3"
-        size="small"
-        title={
-          <Text strong>
-            说明：统计前5天内有涨停，后某交易日断板，此后又涨停的个股
-          </Text>
-        }
-      >
-        <Text type="secondary">
-          模式：涨停 → 断板(未涨停) →
-          再次涨停。此类个股可能显示出较强的市场韧性和资金关注度。
-        </Text>
-      </Card>
-
-      <div className="flex-1 overflow-hidden">
-        <Table<BrokenBoardRecord>
-          className="h-full"
+      <div className="min-h-0 flex-1">
+        <DataTable
+          data={data}
           columns={columns}
-          dataSource={data}
           loading={loading}
-          pagination={false}
           rowKey={(record) =>
             `${record.code}-${record.firstLimitUpDate}-${record.secondLimitUpDate}`
           }
-          scroll={{ x: 'max-content' }}
-          bordered
         />
       </div>
-      <style>
-        {`
-        .ant-spin-nested-loading, .ant-spin-container, .ant-table {
-          height: 100%;
-        }
-         .ant-spin-container {
-          display: flex;
-          flex-direction: column;
-        }
-      `}
-      </style>
     </div>
   )
 }

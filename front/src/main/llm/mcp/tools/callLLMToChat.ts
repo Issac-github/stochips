@@ -1,15 +1,11 @@
 import OpenAI from 'openai'
-import { z } from 'zod'
+import { z } from 'zod/v3'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { debugLog, errorLog } from '@shared/logger'
 import MCP_KEYS from '@shared/mcpKey'
 
 const OPENAI_MODEL = import.meta.env.MAIN_VITE_OPENAI_MODEL as string
 const OPENAI_TIMEOUT = parseInt(import.meta.env.MAIN_VITE_OPENAI_TIMEOUT) || 3e4
-
-const ChatInputSchema = z.object({
-  instruction: z.string().min(1)
-})
 
 const callLLMToChat = (openai: OpenAI) => {
   return async ({ instruction }) => {
@@ -44,12 +40,20 @@ const callLLMToChat = (openai: OpenAI) => {
 
 const registerCallTools = (openai: OpenAI) => {
   return (server: McpServer) => {
-    server.registerTool(
+    ;(
+      server.registerTool as unknown as (
+        name: string,
+        config: unknown,
+        cb: (args: { instruction: string }) => Promise<unknown>
+      ) => void
+    )(
       MCP_KEYS.chat_llm,
       {
         title: 'General Chat',
         description: 'A general-purpose chat function using an LLM',
-        inputSchema: ChatInputSchema.shape
+        inputSchema: {
+          instruction: z.string().min(1)
+        }
       },
       async ({ instruction }) => {
         debugLog('Chat tool called with:', { instruction })

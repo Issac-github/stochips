@@ -1,11 +1,21 @@
 import { FC, ReactNode, useState } from 'react'
-import { Modal, ModalProps } from 'antd'
+import { Button } from '@renderer/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 
-interface Props extends ModalProps {
+interface Props {
   open: boolean
   title: ReactNode
   modalContent: ReactNode
   onConfirm?: () => void
+  onOk?: () => void
+  onCancel?: () => void
+  okText?: string
+  footer?: ReactNode
 }
 
 export const StoModal: FC<Omit<Props, 'onConfirm'>> = ({
@@ -14,33 +24,26 @@ export const StoModal: FC<Omit<Props, 'onConfirm'>> = ({
   onOk,
   onCancel,
   modalContent,
-  confirmLoading = false,
   okText = 'OK',
-  okType = 'primary',
-  centered = true,
-  footer,
-  width = 520,
-  closeIcon = true,
-  maskClosable = true
+  footer
 }) => {
   return (
-    <Modal
-      title={title}
-      open={open}
-      onOk={onOk}
-      onCancel={onCancel}
-      centered={centered}
-      destroyOnHidden
-      confirmLoading={confirmLoading}
-      okText={okText}
-      okType={okType}
-      footer={footer}
-      width={width}
-      maskClosable={maskClosable}
-      closeIcon={closeIcon}
-    >
-      {modalContent}
-    </Modal>
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onCancel?.()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        {modalContent}
+        {footer ?? (
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button onClick={onOk}>{okText}</Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -53,25 +56,18 @@ const useModal = (props: Props) => {
       {...restProps}
       open={open}
       onOk={() => {
-        props.onConfirm?.()
+        onConfirm?.()
         setOpen(false)
       }}
-      onCancel={() => {
-        setOpen(false)
-      }}
+      onCancel={() => setOpen(false)}
     />
   )
 
   return {
     modal,
-    closeModal: () => {
-      setOpen(false)
-    },
-    openModal: () => {
-      setOpen(true)
-    }
+    closeModal: () => setOpen(false),
+    openModal: () => setOpen(true)
   }
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export default useModal

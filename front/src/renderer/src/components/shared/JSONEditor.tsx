@@ -1,8 +1,9 @@
 /* eslint-disable react/prop-types */
 import { useState } from 'react'
-import { Button, Space, message } from 'antd'
 import { JsonData, JsonEditor } from 'json-edit-react'
-import { DeleteOutlined, SaveOutlined } from '@ant-design/icons'
+import { Save, Trash2 } from 'lucide-react'
+import { toast } from '@renderer/components/shared/Toast'
+import { Button } from '@renderer/components/ui/button'
 
 interface JSONEditorProps {
   onSave?: (data: JsonData) => void | Promise<void>
@@ -15,7 +16,7 @@ const JSONEditor: React.FC<JSONEditorProps> = ({ onSave, loading = false }) => {
 
   const handleSave = async () => {
     if (!data) {
-      message.warning('No data to save')
+      toast.warning('No data to save')
       return
     }
     setIsSaving(true)
@@ -23,10 +24,10 @@ const JSONEditor: React.FC<JSONEditorProps> = ({ onSave, loading = false }) => {
       if (onSave) {
         await onSave(data)
       }
-      message.success('Data saved successfully')
+      toast.success('Data saved successfully')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-      message.error(`Failed to save data: ${errorMsg}`)
+      toast.error('Failed to save data', errorMsg)
     } finally {
       setIsSaving(false)
     }
@@ -34,36 +35,36 @@ const JSONEditor: React.FC<JSONEditorProps> = ({ onSave, loading = false }) => {
 
   const handleClear = () => {
     if (!data) {
-      message.info('No data to clear')
+      toast.info('No data to clear')
       return
     }
 
     setData(null)
-    message.success('Data cleared')
+    toast.success('Data cleared')
   }
 
   return (
-    <div className="flex h-full flex-col items-start gap-4">
-      <Space>
+    <div className="flex h-full flex-col items-start gap-5">
+      <div className="border-border bg-card flex gap-3 rounded-xl border p-3 shadow-[var(--shadow-md)]">
         <Button
-          type="primary"
-          icon={<SaveOutlined />}
+          type="button"
           onClick={handleSave}
-          loading={isSaving || loading}
-          disabled={!data}
+          disabled={!data || isSaving || loading}
         >
+          <Save className="h-4 w-4" />
           Save
         </Button>
         <Button
-          danger
-          icon={<DeleteOutlined />}
+          type="button"
+          variant="destructive"
           onClick={handleClear}
           disabled={!data}
         >
+          <Trash2 className="h-4 w-4" />
           Clear
         </Button>
-      </Space>
-      <div className="h-full w-full flex-1 overflow-auto">
+      </div>
+      <div className="border-border bg-card h-full w-full flex-1 overflow-auto rounded-2xl border p-4 shadow-[var(--shadow-lg)]">
         <JsonEditor
           data={data}
           setData={setData}

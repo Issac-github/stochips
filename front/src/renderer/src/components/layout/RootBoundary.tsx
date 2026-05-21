@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router'
-import { Button } from 'antd'
+import { Button } from '@renderer/components/ui/button'
 
 const RootBoundary: React.FC = () => {
   const navigate = useNavigate()

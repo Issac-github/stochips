@@ -1,25 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Button, Card, Space, Typography } from 'antd'
-import { ClearOutlined } from '@ant-design/icons'
-import { Sender } from '@ant-design/x'
+import React, { useState } from 'react'
+import { Trash2 } from 'lucide-react'
+import ChatComposer from '@renderer/components/shared/ChatComposer'
+import { type ChatMessage } from '@renderer/components/shared/ChatMessages'
+import { Button } from '@renderer/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import useSocketMcpClient from '@renderer/lib/hooks/useSocketMcpClient'
 import { errorLog } from '@shared/logger'
 import MCP_KEYS from '@shared/mcpKey'
 import McpMessage from './McpMessage'
 
-interface ChatMessage {
-  id: string
-  type: 'user' | 'assistant' | 'system'
-  content: string
-  timestamp: Date
-  error?: boolean
-}
-
 const McpChat: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const addMessage = (message: Omit<ChatMessage, 'id' | 'timestamp'>) => {
     const newMessage: ChatMessage = {
@@ -31,38 +29,28 @@ const McpChat: React.FC = () => {
   }
 
   const { isConnected, connectionError, setConnectionError, clientRef } =
-    useSocketMcpClient({
-      addMessage
-    })
+    useSocketMcpClient({ addMessage })
 
   const sendMessage = async (message: string) => {
-    if (!clientRef.current || !message.trim()) {
-      return
-    }
+    if (!clientRef.current || !message.trim()) return
     setIsLoading(true)
     addMessage({ type: 'user', content: message })
     try {
-      const toolName = MCP_KEYS.chat_llm
-      const args = { instruction: message }
       const res = await clientRef.current.callTool({
-        name: toolName,
-        arguments: args
+        name: MCP_KEYS.chat_llm,
+        arguments: { instruction: message }
       })
-
-      let responseContent = 'No response from server'
-      if (res?.content?.[0]?.text) {
-        responseContent = res.content[0].text
-      } else if (res?.content?.[0]) {
-        responseContent = JSON.stringify(res.content[0], null, 2)
-      }
+      const responseContent = res?.content?.[0]?.text
+        ? res.content[0].text
+        : res?.content?.[0]
+          ? JSON.stringify(res.content[0], null, 2)
+          : 'No response from server'
       addMessage({ type: 'assistant', content: responseContent })
     } catch (error) {
       errorLog(error)
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred'
       addMessage({
         type: 'assistant',
-        content: `Error: ${errorMessage}`,
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`,
         error: true
       })
     } finally {
@@ -77,48 +65,34 @@ const McpChat: React.FC = () => {
     }
   }
 
-  // Removed: Sender component handles Enter/Shift+Enter natively
-
-  const clearChat = () => {
-    setMessages([])
-  }
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
   return (
-    <div className="flex h-full flex-col overflow-auto">
-      <Card
-        title={
-          <Space>
-            <Typography.Title level={4} style={{ margin: 0 }}>
-              MCP Chat Interface
-            </Typography.Title>
-            <Typography.Text type={isConnected ? 'success' : 'secondary'}>
-              {isConnected ? '● Connected' : '○ Disconnected'}
-            </Typography.Text>
-          </Space>
-        }
-        extra={
-          <Button icon={<ClearOutlined />} onClick={clearChat} type="text">
-            Clear
-          </Button>
-        }
-        className="flex h-full flex-col"
-        classNames={{ body: 'flex-1 flex flex-col p-4 overflow-auto' }}
-      >
-        {connectionError && (
-          <div
-            className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3"
-            style={{ color: '#d4380d' }}
+    <Card className="flex h-full flex-col overflow-hidden">
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-4">
+        <div className="flex items-center gap-3">
+          <CardTitle>MCP Chat Interface</CardTitle>
+          <span
+            className={
+              isConnected
+                ? 'rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-600'
+                : 'border-border bg-muted text-muted-foreground rounded-full border px-3 py-1 text-xs font-bold'
+            }
           >
+            {isConnected ? 'Connected' : 'Disconnected'}
+          </span>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => setMessages([])}>
+          <Trash2 className="h-4 w-4" />
+          Clear
+        </Button>
+      </CardHeader>
+      <CardContent className="flex min-h-0 flex-1 flex-col p-4">
+        {connectionError && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-900">
             <div className="font-semibold">Connection Error</div>
             <div className="text-sm">{connectionError}</div>
             <Button
-              size="small"
-              type="text"
-              style={{ color: '#d4380d' }}
+              size="sm"
+              variant="ghost"
               onClick={() => setConnectionError(null)}
             >
               Close
@@ -126,16 +100,16 @@ const McpChat: React.FC = () => {
           </div>
         )}
         <McpMessage messageList={messages} />
-        <Sender
+        <ChatComposer
           value={inputValue}
-          onChange={(val) => setInputValue(val)}
+          onChange={setInputValue}
           onSubmit={handleSend}
           placeholder="Press Enter to send, Shift+Enter for new line"
           loading={isLoading}
           disabled={!isConnected || isLoading}
         />
-      </Card>
-    </div>
+      </CardContent>
+    </Card>
   )
 }
 

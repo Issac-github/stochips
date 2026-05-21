@@ -1,18 +1,15 @@
+import dayjs from 'dayjs'
+import DataTable, {
+  type DataColumn
+} from '@renderer/components/shared/DataTable'
+import StatTile from '@renderer/components/shared/StatTile'
+import { Badge } from '@renderer/components/ui/badge'
 import {
   Card,
-  Col,
-  Collapse,
-  Row,
-  Space,
-  Statistic,
-  Table,
-  type TableColumnsType,
-  Tag,
-  Typography
-} from 'antd'
-import dayjs from 'dayjs'
-
-const { Text } = Typography
+  CardContent,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 
 interface EmTableProps {
   data?: EMLimitUpData[]
@@ -25,8 +22,7 @@ interface EmTableProps {
   onChange?: (pagination: unknown, filters: unknown, sorter: unknown) => void
 }
 
-const EmTable = ({ data = [], loading = false, onChange }: EmTableProps) => {
-  // 计算统计数据
+const EmTable = ({ data = [], loading = false }: EmTableProps) => {
   const totalCount = data.length
   const avgAmount =
     data.length > 0
@@ -39,32 +35,21 @@ const EmTable = ({ data = [], loading = false, onChange }: EmTableProps) => {
   const totalAmount = (
     data.reduce((sum, item) => sum + item.amount, 0) / 100000000
   ).toFixed(2)
-  const highLbcCount = data.filter((item) => item.lbc >= 3).length // 3连板以上
-  const lowLbcCount = data.filter((item) => item.lbc <= 2).length // 2连板以下
-  const zeroZbcCount = data.filter((item) => (item.zbc || 0) === 0).length // 无炸板
-  const hasZbcCount = data.filter((item) => (item.zbc || 0) > 0).length // 有炸板
-  const highZbcCount = data.filter((item) => (item.zbc || 0) >= 3).length // 3次以上炸板
+  const highLbcCount = data.filter((item) => item.lbc >= 3).length
+  const lowLbcCount = data.filter((item) => item.lbc <= 2).length
+  const zeroZbcCount = data.filter((item) => (item.zbc || 0) === 0).length
+  const hasZbcCount = data.filter((item) => (item.zbc || 0) > 0).length
+  const highZbcCount = data.filter((item) => (item.zbc || 0) >= 3).length
 
-  // 统计行业板块涨停数量（类似高频词统计）
-  const getIndustryStats = () => {
-    const industryMap = new Map<string, number>()
+  const industryMap = new Map<string, number>()
+  data.forEach((item) => {
+    const industry = item.hybk || '未分类'
+    industryMap.set(industry, (industryMap.get(industry) || 0) + 1)
+  })
+  const topIndustries = Array.from(industryMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
 
-    data.forEach((item) => {
-      const industry = item.hybk || '未分类'
-      if (industry && industry.trim().length > 0) {
-        industryMap.set(industry, (industryMap.get(industry) || 0) + 1)
-      }
-    })
-
-    // 转换为数组并按涨停数量排序
-    return Array.from(industryMap.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20) // 只显示前20个热门板块
-  }
-
-  const topIndustries = getIndustryStats()
-
-  // 行业板块统计（保留原有详细统计用于折叠面板）
   const industryStats = data.reduce(
     (acc, item) => {
       const industry = item.hybk || '未分类'
@@ -75,20 +60,12 @@ const EmTable = ({ data = [], loading = false, onChange }: EmTableProps) => {
           highLbc: 0,
           zeroZbc: 0,
           hasZbc: 0,
-          avgAmount: 0,
-          avgHs: 0,
-          avgLbc: 0,
-          avgZbc: 0,
-          totalHs: 0,
-          totalLbc: 0,
-          totalZbc: 0
+          totalHs: 0
         }
       }
       acc[industry].count++
       acc[industry].totalAmount += item.amount
       acc[industry].totalHs += item.hs
-      acc[industry].totalLbc += item.lbc
-      acc[industry].totalZbc += item.zbc || 0
       if (item.lbc >= 3) acc[industry].highLbc++
       if ((item.zbc || 0) === 0) acc[industry].zeroZbc++
       if ((item.zbc || 0) > 0) acc[industry].hasZbc++
@@ -102,514 +79,226 @@ const EmTable = ({ data = [], loading = false, onChange }: EmTableProps) => {
         highLbc: number
         zeroZbc: number
         hasZbc: number
-        avgAmount: number
-        avgHs: number
-        avgLbc: number
-        avgZbc: number
         totalHs: number
-        totalLbc: number
-        totalZbc: number
       }
     >
   )
 
-  // 计算平均值
-  Object.keys(industryStats).forEach((industry) => {
-    const stats = industryStats[industry]
-    stats.avgAmount = stats.totalAmount / stats.count / 10000
-    stats.avgHs = stats.totalHs / stats.count
-    stats.avgLbc = stats.totalLbc / stats.count
-    stats.avgZbc = stats.totalZbc / stats.count
-  })
-
-  // 按数量排序的行业板块
   const sortedIndustries = Object.entries(industryStats)
     .sort(([, a], [, b]) => b.count - a.count)
-    .slice(0, 10) // 取前10个
-  const columns: TableColumnsType<EMLimitUpData> = [
+    .slice(0, 10)
+  const topIndustryNames = topIndustries
+    .slice(0, 10)
+    .map(([industry]) => industry)
+
+  const formatZttj = (zttj: EMLimitUpData['zttj']) => {
+    const value = Array.isArray(zttj) ? zttj[0] : zttj
+    return value ? `${value.ct}/${value.days}` : '-'
+  }
+
+  const columns: DataColumn<EMLimitUpData>[] = [
     {
       title: '日期',
-      dataIndex: 'qdate',
       key: 'qdate',
-      width: 120,
-      align: 'center' as const,
-      render: (qdate: number) =>
-        dayjs(String(qdate), 'YYYYMMDD').format('YYYY-MM-DD'),
-      sorter: (a, b) => a.qdate - b.qdate
+      width: 112,
+      render: (record) =>
+        dayjs(String(record.qdate), 'YYYYMMDD').format('YYYY-MM-DD')
     },
-    {
-      title: '代码',
-      dataIndex: 'c',
-      key: 'c',
-      width: 100,
-      align: 'center' as const
-    },
-    {
-      title: '名称',
-      dataIndex: 'n',
-      key: 'n',
-      width: 120,
-      align: 'center' as const
-    },
+    { title: '代码', key: 'c', width: 95, render: (record) => record.c },
+    { title: '名称', key: 'n', width: 110, render: (record) => record.n },
     {
       title: '最新价',
-      dataIndex: 'p',
       key: 'p',
       width: 80,
-      align: 'center' as const,
-      render: (p: number) => (p / 1000).toFixed(2)
+      render: (record) => (record.p / 1000).toFixed(2)
     },
     {
       title: '换手率',
-      dataIndex: 'hs',
       key: 'hs',
-      width: 100,
-      align: 'center' as const,
-      render: (hs: number) => `${hs.toFixed(2)}%`,
-      sorter: (a, b) => a.hs - b.hs
+      width: 90,
+      render: (record) => `${record.hs.toFixed(2)}%`
     },
-    {
-      title: '连板次数',
-      dataIndex: 'lbc',
-      key: 'lbc',
-      width: 110,
-      align: 'center' as const,
-      sorter: (a, b) => a.lbc - b.lbc
-    },
+    { title: '连板', key: 'lbc', width: 80, render: (record) => record.lbc },
     {
       title: '行业板块',
-      dataIndex: 'hybk',
       key: 'hybk',
-      width: 110,
-      align: 'center' as const,
-      ellipsis: {
-        showTitle: false
-      },
-      render: (text: string) => {
-        if (!text) {
-          return '-'
-        }
-        // 获取高频板块列表用于高亮显示
-        const topIndustryNames = topIndustries
-          .slice(0, 10)
-          .map(([industry]) => industry)
-        // 检查是否为高频板块
-        const isTopIndustry = topIndustryNames.includes(text)
-        return (
-          <div
-            title={text}
-            className={`text-center ${isTopIndustry ? 'text-amber-400' : ''}`}
-          >
-            {text}
-          </div>
-        )
-      },
-      sorter: (a, b) => {
-        // 计算每个板块的涨停数量
-        const aCount = data.filter((item) => item.hybk === a.hybk).length
-        const bCount = data.filter((item) => item.hybk === b.hybk).length
-        // 数量多的排前面（降序）
-        return bCount - aCount
-      },
-      defaultSortOrder: 'ascend' as const
-    },
-    {
-      title: '涨停统计',
-      dataIndex: 'zttj',
-      key: 'zttj',
-      width: 100,
-      align: 'center' as const,
-      render: (zttj: { days: number; ct: number }) => (
-        <div>{`${zttj.ct}/${zttj.days}`}</div>
+      width: 120,
+      render: (record) => (
+        <span
+          className={
+            topIndustryNames.includes(record.hybk)
+              ? 'font-semibold text-amber-600'
+              : ''
+          }
+        >
+          {record.hybk || '-'}
+        </span>
       )
     },
     {
-      title: '涨跌幅',
-      dataIndex: 'zdp',
-      key: 'zdp',
+      title: '涨停统计',
+      key: 'zttj',
       width: 100,
-      align: 'center' as const,
-      render: (zdp: number) => `${zdp.toFixed(2)}%`,
-      sorter: (a, b) => a.zdp - b.zdp
+      render: (record) => formatZttj(record.zttj)
+    },
+    {
+      title: '涨跌幅',
+      key: 'zdp',
+      width: 90,
+      render: (record) => `${record.zdp.toFixed(2)}%`
     },
     {
       title: '炸板数',
-      dataIndex: 'zbc',
       key: 'zbc',
-      width: 100,
-      align: 'center' as const,
-      sorter: (a, b) => (a.zbc || 0) - (b.zbc || 0),
-      render: (zbc: number) => (
+      width: 90,
+      render: (record) => (
         <span
-          style={{
-            color: zbc === 0 ? '#52c41a' : zbc <= 2 ? '#fa8c16' : '#ff4d4f',
-            fontWeight: zbc > 0 ? 'bold' : 'normal'
-          }}
+          className={
+            (record.zbc || 0) === 0
+              ? 'text-emerald-600'
+              : (record.zbc || 0) <= 2
+                ? 'text-amber-600'
+                : 'font-semibold text-red-600'
+          }
         >
-          {zbc || 0}
+          {record.zbc || 0}
         </span>
       )
     },
     {
       title: '流通市值',
-      dataIndex: 'ltsz',
       key: 'ltsz',
       width: 100,
-      align: 'center' as const,
-      render: (ltsz: number) => `${(ltsz / 100000 / 1000).toFixed(2)}亿`
+      render: (record) => `${(record.ltsz / 100000 / 1000).toFixed(2)}亿`
     },
     {
       title: '总市值',
-      dataIndex: 'tshare',
       key: 'tshare',
       width: 100,
-      align: 'center' as const,
-      render: (tshare: number) => `${(tshare / 100000 / 1000).toFixed(2)}亿`
+      render: (record) => `${(record.tshare / 100000 / 1000).toFixed(2)}亿`
     },
     {
       title: '交易额',
-      dataIndex: 'amount',
       key: 'amount',
       width: 100,
-      align: 'center' as const,
-      render: (amount: number) => `${(amount / 10000).toFixed(0)}万`
+      render: (record) => `${(record.amount / 10000).toFixed(0)}万`
     },
     {
       title: '首封时间',
-      dataIndex: 'fbt',
       key: 'fbt',
-      width: 80,
-      align: 'center' as const,
-      render: (fbt: number) =>
-        dayjs(String(fbt).padStart(6, '0'), 'Hmmss').format('HH:mm:ss')
+      width: 90,
+      render: (record) =>
+        dayjs(String(record.fbt).padStart(6, '0'), 'Hmmss').format('HH:mm:ss')
     },
     {
       title: '尾封时间',
-      dataIndex: 'lbt',
       key: 'lbt',
-      width: 80,
-      align: 'center' as const,
-      render: (lbt: number) =>
-        dayjs(String(lbt).padStart(6, '0'), 'Hmmss').format('HH:mm:ss')
+      width: 90,
+      render: (record) =>
+        dayjs(String(record.lbt).padStart(6, '0'), 'Hmmss').format('HH:mm:ss')
     },
     {
       title: '资金',
-      dataIndex: 'fund',
       key: 'fund',
       width: 100,
-      align: 'center' as const,
-      render: (fund: number) => `${(fund / 10000).toFixed(0)}万`
+      render: (record) => `${(record.fund / 10000).toFixed(0)}万`
     }
   ]
 
   return (
-    <div className="flex h-full flex-col">
-      <Card className="mb-3 text-center" size="small">
-        <Row gutter={16}>
-          <Col span={3}>
-            <Statistic
-              title="总数量"
-              value={totalCount}
-              styles={{
-                content: {
-                  color: '#1890ff',
-                  fontSize: '16px'
-                }
-              }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="平均金额"
-              value={avgAmount}
-              suffix="万"
-              styles={{
-                content: {
-                  color: '#52c41a',
-                  fontSize: '14px'
-                }
-              }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="总金额"
-              value={totalAmount}
-              suffix="亿"
-              styles={{
-                content: {
-                  color: '#722ed1',
-                  fontSize: '14px'
-                }
-              }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="高连板(≥3)"
-              value={highLbcCount}
-              styles={{
-                content: {
-                  color: '#f5222d',
-                  fontSize: '14px'
-                }
-              }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="低连板(≤2)"
-              value={lowLbcCount}
-              styles={{
-                content: {
-                  color: '#fa541c',
-                  fontSize: '14px'
-                }
-              }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="无炸板"
-              value={zeroZbcCount}
-              styles={{
-                content: {
-                  color: '#52c41a',
-                  fontSize: '14px'
-                }
-              }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="高炸板(≥3次)"
-              value={highZbcCount}
-              styles={{
-                content: {
-                  color: '#ff4d4f',
-                  fontSize: '14px'
-                }
-              }}
-            />
-          </Col>
-          <Col span={3}>
-            <Statistic
-              title="炸板率"
-              value={
-                totalCount > 0
-                  ? ((hasZbcCount / totalCount) * 100).toFixed(1)
-                  : '0'
-              }
-              suffix="%"
-              styles={{
-                content: {
-                  color: '#f759ab',
-                  fontSize: '14px'
-                }
-              }}
-            />
-          </Col>
-        </Row>
-      </Card>
+    <div className="flex h-full flex-col gap-3">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-8">
+        <StatTile label="总数量" value={totalCount} tone="blue" />
+        <StatTile label="平均金额" value={avgAmount} suffix="万" tone="green" />
+        <StatTile
+          label="总金额"
+          value={totalAmount}
+          suffix="亿"
+          tone="purple"
+        />
+        <StatTile label="高连板" value={highLbcCount} tone="red" />
+        <StatTile label="低连板" value={lowLbcCount} tone="orange" />
+        <StatTile label="无炸板" value={zeroZbcCount} tone="green" />
+        <StatTile label="高炸板" value={highZbcCount} tone="red" />
+        <StatTile
+          label="炸板率"
+          value={
+            totalCount > 0 ? ((hasZbcCount / totalCount) * 100).toFixed(1) : '0'
+          }
+          suffix="%"
+          tone="pink"
+        />
+      </div>
 
-      {/* 行业板块涨停数量统计 */}
       {topIndustries.length > 0 && (
-        <Card className="mb-3" size="small" title="行业板块涨停数量统计">
-          <Space wrap>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>行业板块涨停数量统计</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
             {topIndustries.map(([industry, count], index) => (
-              <Tag
+              <Badge
                 key={industry}
-                color={
+                variant={
                   index < 3
-                    ? 'red'
+                    ? 'destructive'
                     : index < 8
-                      ? 'orange'
+                      ? 'warning'
                       : index < 15
-                        ? 'blue'
-                        : 'default'
+                        ? 'info'
+                        : 'outline'
                 }
-                style={{
-                  fontSize: Math.max(12, 16 - Math.floor(index / 3)),
-                  padding: '2px 8px',
-                  margin: '2px'
-                }}
               >
-                <Text strong>{industry}</Text>
-                <Text type="secondary" style={{ marginLeft: 4 }}>
-                  ({count})
-                </Text>
-              </Tag>
+                <span className="font-semibold">{industry}</span>
+                <span className="ml-1 opacity-70">({count})</span>
+              </Badge>
             ))}
-          </Space>
+          </CardContent>
         </Card>
       )}
 
-      <Card className="mb-3" size="small">
-        <Collapse
-          ghost
-          defaultActiveKey={['1']}
-          items={[
-            {
-              key: '1',
-              label: `行业板块统计 (共 ${Object.keys(industryStats).length} 个板块)`,
-              children: (
-                <>
-                  <Row gutter={[16, 16]}>
-                    {sortedIndustries.map(([industry, stats]) => (
-                      <Col span={6} key={industry}>
-                        <Card size="small" className="text-center">
-                          <div
-                            style={{
-                              fontSize: '12px',
-                              fontWeight: 'bold',
-                              marginBottom: '8px'
-                            }}
-                          >
-                            {industry}
-                          </div>
-                          <Row gutter={8}>
-                            <Col span={12}>
-                              <Statistic
-                                title="数量"
-                                value={stats.count}
-                                styles={{
-                                  content: {
-                                    color: '#1890ff',
-                                    fontSize: '12px'
-                                  }
-                                }}
-                              />
-                            </Col>
-                            <Col span={12}>
-                              <Statistic
-                                title="平均金额"
-                                value={stats.avgAmount.toFixed(0)}
-                                suffix="万"
-                                styles={{
-                                  content: {
-                                    color: '#52c41a',
-                                    fontSize: '12px'
-                                  }
-                                }}
-                              />
-                            </Col>
-                            <Col span={12}>
-                              <Statistic
-                                title="高连板"
-                                value={stats.highLbc}
-                                styles={{
-                                  content: {
-                                    color: '#f5222d',
-                                    fontSize: '12px'
-                                  }
-                                }}
-                              />
-                            </Col>
-                            <Col span={12}>
-                              <Statistic
-                                title="无炸板"
-                                value={stats.zeroZbc}
-                                styles={{
-                                  content: {
-                                    color: '#52c41a',
-                                    fontSize: '12px'
-                                  }
-                                }}
-                              />
-                            </Col>
-                            <Col span={12}>
-                              <Statistic
-                                title="平均换手"
-                                value={stats.avgHs.toFixed(1)}
-                                suffix="%"
-                                styles={{
-                                  content: {
-                                    color: '#722ed1',
-                                    fontSize: '12px'
-                                  }
-                                }}
-                              />
-                            </Col>
-                            <Col span={12}>
-                              <Statistic
-                                title="炸板率"
-                                value={
-                                  stats.count > 0
-                                    ? (
-                                        (stats.hasZbc / stats.count) *
-                                        100
-                                      ).toFixed(1)
-                                    : '0'
-                                }
-                                suffix="%"
-                                styles={{
-                                  content: {
-                                    color: '#f759ab',
-                                    fontSize: '12px'
-                                  }
-                                }}
-                              />
-                            </Col>
-                          </Row>
-                        </Card>
-                      </Col>
-                    ))}
-                  </Row>
-                  {Object.keys(industryStats).length > 10 && (
-                    <div
-                      style={{
-                        textAlign: 'center',
-                        marginTop: '16px',
-                        color: '#666',
-                        fontSize: '12px'
-                      }}
-                    >
-                      {'显示前 10 个板块，总共 '}
-                      {Object.keys(industryStats).length} 个板块
-                    </div>
-                  )}
-                </>
-              )
-            }
-          ]}
-        />
-      </Card>
+      {sortedIndustries.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle>行业板块统计</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+            {sortedIndustries.map(([industry, stats]) => (
+              <div key={industry} className="rounded-md border p-2 text-xs">
+                <div className="mb-2 font-semibold">{industry}</div>
+                <div className="text-muted-foreground grid grid-cols-2 gap-1">
+                  <span>数量 {stats.count}</span>
+                  <span>
+                    均额 {(stats.totalAmount / stats.count / 10000).toFixed(0)}
+                    万
+                  </span>
+                  <span>高连 {stats.highLbc}</span>
+                  <span>无炸 {stats.zeroZbc}</span>
+                  <span>均手 {(stats.totalHs / stats.count).toFixed(1)}%</span>
+                  <span>
+                    炸板{' '}
+                    {stats.count > 0
+                      ? ((stats.hasZbc / stats.count) * 100).toFixed(1)
+                      : '0'}
+                    %
+                  </span>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
-      <div className="flex-1 overflow-hidden">
-        <Table<EMLimitUpData>
-          className="h-full"
+      <div className="min-h-0 flex-1">
+        <DataTable
+          data={data}
           columns={columns}
-          dataSource={data}
           loading={loading}
-          rowKey="id"
-          pagination={false}
-          onChange={onChange}
-          scroll={{ x: 'max-content' }}
-          bordered
+          rowKey={(record, index) =>
+            String(record.id ?? `${record.c}-${index}`)
+          }
         />
       </div>
-      <style>
-        {`
-        .ant-spin-nested-loading, .ant-spin-container, .ant-table {
-          height: 100%;
-        }
-         .ant-spin-container {
-          display: flex;
-          flex-direction: column;
-        }
-        .rc-virtual-list-holder::-webkit-scrollbar {
-          width: 0.25rem !important;
-          height: 0.25rem !important;
-        }
-        .rc-virtual-list-holder::-webkit-scrollbar-thumb {
-          background-color: var(--color-gray-300) !important;
-          border-radius: 0.125rem !important;
-        }
-        .ant-pagination {
-          margin-bottom: 0;
-        }
-      `}
-      </style>
     </div>
   )
 }

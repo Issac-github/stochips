@@ -1,5 +1,5 @@
 import { FC, useRef, useState } from 'react'
-import { Anchor } from 'antd'
+import { cn } from '@renderer/lib/utils/cn'
 
 interface Props {
   anchorList: { title: string; key: string; href: string }[]
@@ -61,15 +61,26 @@ const StoAnchor: FC<Props> = ({
       }}
       ref={anchorRef}
     >
-      <Anchor
-        onClick={(e, link) => {
-          e.preventDefault()
-          clickAnchor(link.href)
-          afterLink?.(link.href)
-        }}
-        getCurrentAnchor={() => currentAnchor}
-        items={anchorList}
-      />
+      <nav className="w-48 shrink-0 space-y-1">
+        {anchorList.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            className={cn(
+              'block w-full rounded-md px-3 py-2 text-left text-sm',
+              currentAnchor === item.href
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+            onClick={() => {
+              clickAnchor(item.href)
+              afterLink?.(item.href)
+            }}
+          >
+            {item.title}
+          </button>
+        ))}
+      </nav>
       <ol
         ref={contentRef}
         style={{

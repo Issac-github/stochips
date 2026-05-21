@@ -33,3 +33,4 @@ agent/examples/ai_analysis_example.md
 
 # Local runtime state
 agent/stock_agent.log
+.superpowers/

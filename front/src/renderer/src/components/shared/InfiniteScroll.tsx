@@ -3,7 +3,6 @@
 import { FC, useId } from 'react'
 import InfiniteScroll from 'react-infinite-scroll-component'
 import type { Props as InfiniteScrollProps } from 'react-infinite-scroll-component'
-import { Spin } from 'antd'
 
 interface Props extends Omit<InfiniteScrollProps, 'loader'> {
   componentId: string
@@ -12,7 +11,11 @@ interface Props extends Omit<InfiniteScrollProps, 'loader'> {
   loader?: React.ReactNode
 }
 
-const Loading = () => <Spin className="mx-auto block p-4" />
+const Loading = () => (
+  <div className="text-muted-foreground mx-auto block p-4 text-center text-sm">
+    Loading...
+  </div>
+)
 
 export const InfiniteScrollFC: FC<Props> = ({
   componentId,

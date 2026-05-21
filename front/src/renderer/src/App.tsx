@@ -1,21 +1,13 @@
 import { RouterProvider } from 'react-router'
-import { ConfigProvider } from 'antd'
-import { StyleProvider } from '@ant-design/cssinjs'
+import { Toaster } from '@renderer/components/shared/Toast'
 import router from './lib/router'
 
 const App: React.FC = () => {
   return (
-    <StyleProvider>
-      <ConfigProvider
-        theme={{
-          token: {
-            colorPrimary: '#faad14'
-          }
-        }}
-      >
-        <RouterProvider router={router} />
-      </ConfigProvider>
-    </StyleProvider>
+    <>
+      <RouterProvider router={router} />
+      <Toaster />
+    </>
   )
 }
 

@@ -1,16 +1,11 @@
 import OpenAI from 'openai'
-import { z } from 'zod'
+import { z } from 'zod/v3'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { debugLog, errorLog } from '@shared/logger'
 import MCP_KEYS from '@shared/mcpKey'
 
 const OPENAI_MODEL = import.meta.env.MAIN_VITE_OPENAI_MODEL as string
 const OPENAI_TIMEOUT = parseInt(import.meta.env.MAIN_VITE_OPENAI_TIMEOUT) || 3e4
-
-const FilterInputSchema = z.object({
-  data: z.any(),
-  instruction: z.string().min(1)
-})
 
 const FilterOutputSchema = z.object({
   result: z.any(),
@@ -99,13 +94,22 @@ const callLLMToFilter = (openai: OpenAI) => {
 
 const registerFilterTools = (openai: OpenAI) => {
   return (server: McpServer) => {
-    server.registerTool(
+    ;(
+      server.registerTool as unknown as (
+        name: string,
+        config: unknown,
+        cb: (args: { data: unknown; instruction: string }) => Promise<unknown>
+      ) => void
+    )(
       MCP_KEYS.filter_json_llm,
       {
         title: 'JSON Filter',
         description:
           'Filter input JSON using a natural language instruction via LLM',
-        inputSchema: FilterInputSchema.shape
+        inputSchema: {
+          data: z.any(),
+          instruction: z.string().min(1)
+        }
       },
       async ({ data, instruction }) => {
         debugLog('Tool called with:', { data, instruction })
