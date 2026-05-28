@@ -1,5 +1,5 @@
-import { ClientHttp2Stream, connect } from 'node:http2'
 import * as protobuf from 'protobufjs'
+import * as grpc from '@grpc/grpc-js'
 
 const SERVICE = 'stochips.stock.v1.StockService'
 
@@ -70,7 +70,7 @@ type RpcMethod = {
   responseType: string
 }
 
-const METHODS: Record<string, RpcMethod> = {
+const METHODS = {
   SubmitFetch: {
     path: `/${SERVICE}/SubmitFetch`,
     requestType: 'stochips.stock.v1.FetchRequest',
@@ -111,9 +111,9 @@ const METHODS: Record<string, RpcMethod> = {
     requestType: 'stochips.stock.v1.QueryRangeRequest',
     responseType: 'stochips.stock.v1.JsonReply'
   }
-}
+} as const satisfies Record<string, RpcMethod>
 
-let protoRootPromise: Promise<protobuf.Root> | null = null
+export type StockRpcMethod = keyof typeof METHODS
 
 const normalizeTarget = (target: string) => {
   if (target.startsWith(':')) {
@@ -125,49 +125,65 @@ const normalizeTarget = (target: string) => {
 const getTarget = () =>
   normalizeTarget(process.env.STOCK_RPC_ADDR || 'localhost:50051')
 
-const getProtoRoot = () => {
-  if (!protoRootPromise) {
-    protoRootPromise = Promise.resolve(protobuf.parse(STOCK_PROTO).root)
-  }
-  return protoRootPromise
+const DEFAULT_DEADLINE_MS = 60_000
+const getDeadlineMs = () => {
+  const raw = process.env.STOCK_RPC_DEADLINE_MS
+  if (!raw) return DEFAULT_DEADLINE_MS
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_DEADLINE_MS
 }
 
-const encodeFrame = (message: Uint8Array) => {
-  const frame = Buffer.alloc(5 + message.length)
-  frame.writeUInt8(0, 0)
-  frame.writeUInt32BE(message.length, 1)
-  Buffer.from(message).copy(frame, 5)
-  return frame
+const protoRoot = protobuf.parse(STOCK_PROTO).root
+
+let cachedClient: grpc.Client | null = null
+let cachedTarget = ''
+
+const getClient = (): grpc.Client => {
+  const target = getTarget()
+  if (cachedClient && cachedTarget === target) {
+    return cachedClient
+  }
+  if (cachedClient) {
+    cachedClient.close()
+  }
+  // TLS support is opt-in via STOCK_RPC_TLS=1; default to insecure for local dev.
+  const credentials =
+    process.env.STOCK_RPC_TLS === '1'
+      ? grpc.credentials.createSsl()
+      : grpc.credentials.createInsecure()
+  cachedClient = new grpc.Client(target, credentials, {
+    'grpc.keepalive_time_ms': 30_000,
+    'grpc.keepalive_timeout_ms': 10_000,
+    'grpc.keepalive_permit_without_calls': 1,
+    'grpc.max_receive_message_length': 32 * 1024 * 1024
+  })
+  cachedTarget = target
+  return cachedClient
 }
 
-const decodeFrame = (chunks: Buffer[]) => {
-  const body = Buffer.concat(chunks)
-  if (body.length < 5) {
-    throw new Error('Invalid gRPC response: missing frame header')
+export const closeStockRpcClient = () => {
+  if (cachedClient) {
+    cachedClient.close()
+    cachedClient = null
+    cachedTarget = ''
   }
-  const compressed = body.readUInt8(0)
-  if (compressed !== 0) {
-    throw new Error('Compressed gRPC responses are not supported')
-  }
-  const length = body.readUInt32BE(1)
-  if (body.length < 5 + length) {
-    throw new Error('Invalid gRPC response: incomplete frame')
-  }
-  return body.subarray(5, 5 + length)
 }
 
-const readGrpcStatus = (trailers: Record<string, unknown>) => {
-  const status = trailers['grpc-status']
-  return Array.isArray(status) ? status[0] : status
-}
-
-const readGrpcMessage = (trailers: Record<string, unknown>) => {
-  const message = trailers['grpc-message']
-  return Array.isArray(message) ? message[0] : message
+const buildRequestObject = (payload: RpcPayload): Record<string, unknown> => {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue
+    out[key] = value
+  }
+  // Allow callers to pass camelCase that maps onto snake_case proto fields.
+  if (payload.startDate !== undefined) out.start_date = payload.startDate
+  if (payload.endDate !== undefined) out.end_date = payload.endDate
+  if (payload.taskId !== undefined) out.task_id = payload.taskId
+  return out
 }
 
 export const callStockRpc = async (
-  methodName: keyof typeof METHODS,
+  methodName: StockRpcMethod,
   payload: RpcPayload
 ): Promise<Record<string, unknown>> => {
   const method = METHODS[methodName]
@@ -175,69 +191,38 @@ export const callStockRpc = async (
     throw new Error(`Unsupported stock_rpc method: ${methodName}`)
   }
 
-  const root = await getProtoRoot()
-  const requestType = root.lookupType(method.requestType)
-  const responseType = root.lookupType(method.responseType)
-  const requestMessage = requestType.create({
-    ...payload,
-    start_date: payload.startDate,
-    end_date: payload.endDate,
-    task_id: payload.taskId
-  })
-  const requestBuffer = requestType.encode(requestMessage).finish()
+  const requestType = protoRoot.lookupType(method.requestType)
+  const responseType = protoRoot.lookupType(method.responseType)
+
+  const requestMessage = requestType.create(buildRequestObject(payload))
+  const verifyError = requestType.verify(requestMessage)
+  if (verifyError) {
+    throw new Error(`Invalid ${method.requestType}: ${verifyError}`)
+  }
+
+  const serialize = (value: unknown): Buffer =>
+    Buffer.from(requestType.encode(value as protobuf.Message).finish())
+  const deserialize = (buffer: Buffer): Record<string, unknown> =>
+    responseType.toObject(responseType.decode(buffer), { defaults: true })
+
+  const client = getClient()
+  const deadline = Date.now() + getDeadlineMs()
 
   return new Promise((resolve, reject) => {
-    const session = connect(`http://${getTarget()}`)
-    const chunks: Buffer[] = []
-    let trailers: Record<string, unknown> = {}
-
-    const closeWithError = (error: Error) => {
-      session.close()
-      reject(error)
-    }
-
-    session.on('error', closeWithError)
-
-    const stream: ClientHttp2Stream = session.request({
-      ':method': 'POST',
-      ':path': method.path,
-      'content-type': 'application/grpc',
-      te: 'trailers'
-    })
-
-    stream.on('response', (headers) => {
-      trailers = { ...trailers, ...headers }
-    })
-    stream.on('trailers', (headers) => {
-      trailers = { ...trailers, ...headers }
-    })
-    stream.on('data', (chunk: Buffer) => {
-      chunks.push(chunk)
-    })
-    stream.on('error', closeWithError)
-    stream.on('end', () => {
-      session.close()
-      const grpcStatus = readGrpcStatus(trailers)
-      if (grpcStatus && grpcStatus !== '0') {
-        reject(
-          new Error(
-            `stock_rpc failed with grpc-status ${grpcStatus}: ${
-              readGrpcMessage(trailers) || 'unknown error'
-            }`
-          )
-        )
-        return
+    client.makeUnaryRequest(
+      method.path,
+      serialize,
+      deserialize,
+      requestMessage,
+      new grpc.Metadata(),
+      { deadline },
+      (error, value) => {
+        if (error) {
+          reject(error)
+          return
+        }
+        resolve(value ?? {})
       }
-
-      try {
-        const responseBuffer = decodeFrame(chunks)
-        const response = responseType.decode(responseBuffer)
-        resolve(responseType.toObject(response, { defaults: true }))
-      } catch (error) {
-        reject(error)
-      }
-    })
-
-    stream.end(encodeFrame(requestBuffer))
+    )
   })
 }

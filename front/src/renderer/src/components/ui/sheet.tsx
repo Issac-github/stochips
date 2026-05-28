@@ -38,7 +38,7 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'surface-card fixed z-50 gap-4 bg-background p-8',
+        'surface-card bg-background fixed z-50 gap-4 p-8',
         side === 'right' &&
           'inset-y-4 right-4 h-[calc(100%-2rem)] w-3/4 rounded-2xl sm:max-w-xl',
         side === 'left' &&

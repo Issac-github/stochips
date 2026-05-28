@@ -26,7 +26,7 @@ const MainLayout: FC = () => {
     <div className="bg-background text-foreground flex h-screen overflow-hidden p-4">
       <aside
         className={cn(
-          'dot-pattern bg-foreground relative mt-3 mb-2 flex h-[calc(100%-1.25rem)] shrink-0 flex-col overflow-hidden rounded-2xl p-3 text-white shadow-[var(--shadow-xl)] transition-all duration-300',
+          'dot-pattern bg-foreground relative mt-3 flex h-[calc(100%-0.75rem)] shrink-0 flex-col overflow-hidden rounded-2xl p-3 text-white shadow-[var(--shadow-xl)] transition-all duration-300',
           collapsed ? 'w-[86px]' : 'w-[252px]'
         )}
       >

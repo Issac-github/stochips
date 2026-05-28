@@ -31,6 +31,16 @@ type Task struct {
 	FinishedAt *time.Time
 }
 
+// Store is the abstraction the gRPC server uses to track task state.
+// Both MemoryStore (default) and SQLStore (production) satisfy it.
+type Store interface {
+	Create(taskType string, request map[string]string) Task
+	Get(id string) (Task, bool)
+	MarkRunning(id string) error
+	MarkSucceeded(id string, result string) error
+	MarkFailed(id string, err error) error
+}
+
 type MemoryStore struct {
 	mu    sync.RWMutex
 	next  atomic.Uint64

@@ -6,7 +6,11 @@
 import asyncio
 import json
 import logging
+import sys
 from datetime import date
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # 设置日志
 logging.basicConfig(
@@ -18,7 +22,7 @@ logger = logging.getLogger(__name__)
 from chain.stock.data.fetcher import StockDataFetcher
 
 
-async def test_eastmoney_zt_pool():
+async def eastmoney_zt_pool_smoke():
     """测试东方财富涨停池接口"""
     target_date = "20260412"
 
@@ -55,7 +59,7 @@ async def test_eastmoney_zt_pool():
             raise
 
 
-def test_sync():
+def sync_smoke():
     """同步方式测试"""
     from chain.stock.data import create_fetcher
 
@@ -79,8 +83,8 @@ if __name__ == "__main__":
 
     if test_type == "async":
         logger.info("运行异步测试...")
-        asyncio.run(test_eastmoney_zt_pool())
+        asyncio.run(eastmoney_zt_pool_smoke())
     elif test_type == "sync":
-        test_sync()
+        sync_smoke()
     else:
         print("用法: python test_eastmoney.py [async|sync]")

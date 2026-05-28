@@ -17,7 +17,7 @@ type Repository struct {
 }
 
 func NewRepository(databaseURL string) (*Repository, error) {
-	dsn, err := mysqlURLToDSN(databaseURL)
+	dsn, err := MySQLURLToDSN(databaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +363,9 @@ func marshal(value any) (string, error) {
 	return string(data), nil
 }
 
-func mysqlURLToDSN(databaseURL string) (string, error) {
+// MySQLURLToDSN converts a "mysql+pymysql://..." URL (as used in Python config)
+// into the DSN format expected by go-sql-driver/mysql.
+func MySQLURLToDSN(databaseURL string) (string, error) {
 	const prefix = "mysql+pymysql://"
 	if !strings.HasPrefix(databaseURL, prefix) {
 		return "", fmt.Errorf("unsupported DATABASE_URL, expected %s", prefix)

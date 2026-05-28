@@ -12,11 +12,13 @@ import shutil
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from langchain_chroma import Chroma
-from langchain_core.documents import Document
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from langchain_huggingface import HuggingFaceEmbeddings
+if TYPE_CHECKING:
+    # Type-only imports — pulled in by IDEs and `mypy`, not at runtime.
+    from langchain_chroma import Chroma
+    from langchain_core.documents import Document
+    from langchain_huggingface import HuggingFaceEmbeddings
 
 # 项目路径
 RAG_DIR = Path(__file__).parent
@@ -39,7 +41,9 @@ def _clear_directory_contents(path: str):
             child.unlink()
 
 
-def _create_embeddings(local_files_only: bool) -> HuggingFaceEmbeddings:
+def _create_embeddings(local_files_only: bool) -> "HuggingFaceEmbeddings":
+    from langchain_huggingface import HuggingFaceEmbeddings
+
     return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL_NAME,
         model_kwargs={"device": "cpu", "local_files_only": local_files_only},
@@ -48,7 +52,7 @@ def _create_embeddings(local_files_only: bool) -> HuggingFaceEmbeddings:
 
 
 @lru_cache(maxsize=1)
-def get_embeddings() -> HuggingFaceEmbeddings:
+def get_embeddings() -> "HuggingFaceEmbeddings":
     """获取本地 HuggingFace Embedding 模型"""
     # 优先离线加载：命中缓存时不会访问 HuggingFace。
     try:
@@ -60,6 +64,8 @@ def get_embeddings() -> HuggingFaceEmbeddings:
 
 def load_documents():
     """加载 rag/ 目录下所有 .md/.txt 文件"""
+    from langchain_community.document_loaders import DirectoryLoader, TextLoader
+
     docs = []
     for glob in ("**/*.md", "**/*.txt"):
         loader = DirectoryLoader(
@@ -326,7 +332,7 @@ def _make_unit(text: str, section_path: tuple[str, ...], kind: str | None = None
     )
 
 
-def _document_units(doc: Document) -> list[SemanticUnit]:
+def _document_units(doc: "Document") -> list[SemanticUnit]:
     text = _clean_text(doc.page_content)
     lines = _logical_lines(text)
     units = []
@@ -426,12 +432,14 @@ def _merge_tiny_chunks(
 
 
 def _build_semantic_document(
-    source_doc: Document,
+    source_doc: "Document",
     chunk: SemanticChunk,
     index: int,
     total: int,
     previous_title: str | None,
-) -> Document:
+) -> "Document":
+    from langchain_core.documents import Document
+
     raw_content = chunk.text
     section_path = chunk.section_path
     section = " / ".join(section_path)
@@ -506,7 +514,7 @@ def split_documents(docs, chunk_size=560, chunk_overlap=100, min_chunk_size=160)
     return semantic_docs
 
 
-def build_vector_store(force_rebuild: bool = False) -> Chroma:
+def build_vector_store(force_rebuild: bool = False) -> "Chroma":
     """
     构建或加载向量数据库
 
@@ -516,6 +524,8 @@ def build_vector_store(force_rebuild: bool = False) -> Chroma:
     Returns:
         Chroma 向量数据库实例
     """
+    from langchain_chroma import Chroma
+
     embeddings = get_embeddings()
 
     # 如果已有持久化数据库且不强制重建，直接加载

@@ -18,12 +18,12 @@ type Executor interface {
 type StockService struct {
 	stockv1.UnimplementedStockServiceServer
 
-	store    *tasks.MemoryStore
+	store    tasks.Store
 	executor Executor
 	queries  *query.Repository
 }
 
-func NewStockService(store *tasks.MemoryStore, executor Executor, queries *query.Repository) *StockService {
+func NewStockService(store tasks.Store, executor Executor, queries *query.Repository) *StockService {
 	return &StockService{store: store, executor: executor, queries: queries}
 }
 

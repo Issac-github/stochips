@@ -55,8 +55,16 @@ services:
         condition: service_healthy
     networks:
       - stock_network
-    command: python main.py schedule
+    command: sh -c "python migrations/runner.py && python main.py schedule"
     stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import socket;socket.create_connection(('mysql',3306),timeout=2).close()" || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # Go gRPC gateway for task submission; executes existing Python stock commands.
   stock_rpc:
@@ -91,7 +99,16 @@ services:
         condition: service_healthy
     networks:
       - stock_network
+    command: sh -c "python migrations/runner.py && exec stock-rpc"
     stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import socket;socket.create_connection(('localhost',50051),timeout=2).close()" || exit 1
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   # Wiki/RAG服务（按需启动，CPU-only torch）
   rag_agent:

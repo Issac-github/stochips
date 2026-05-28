@@ -754,7 +754,38 @@ class StockDataFetcher:
             f"东财涨停池{len(result['eastmoney_zt_pool'])}条"
         )
 
+        self._warn_if_cookie_expired(result)
+
         return result
+
+    def _warn_if_cookie_expired(
+        self, result: Dict[str, List[Dict[str, Any]]]
+    ) -> None:
+        """Emit a loud warning when THS endpoints look like they lost auth.
+
+        THS (`continuous_limit_up`, `block_top`, `limit_up_pool`) depend on
+        STOCK_COOKIE; EastMoney does not. If THS comes back fully empty while
+        EastMoney has data, the cookie has almost certainly expired.
+        """
+        if not self.cookies:
+            logger.warning(
+                "⚠️ STOCK_COOKIE 未配置，同花顺接口数据将全部为空。"
+                "请在 .env 中设置 STOCK_COOKIE（从浏览器 data.10jqka.com.cn 复制 v=... 值）"
+            )
+            return
+
+        ths_total = (
+            len(result["continuous_limit_up"])
+            + len(result["block_top"])
+            + len(result["limit_up_pool"])
+        )
+        em_total = len(result["eastmoney_zt_pool"])
+        if ths_total == 0 and em_total > 0:
+            logger.warning(
+                "⚠️ 同花顺三个接口均返回 0 条但东方财富有数据 — "
+                "STOCK_COOKIE 大概率已过期。请到浏览器 DevTools 重新复制 "
+                "data.10jqka.com.cn 的 v=... cookie 写入 .env 并重启服务。"
+            )
 
 
 class StockDataFetcherSync:

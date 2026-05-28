@@ -9,6 +9,12 @@ out/
 /src/main/data
 
 __pycache__/
+**/__pycache__/
+**/*.pyc
+*.tmp
+*.new
+.backup-*
+**/.backup-*/
 
 # Local environment and secrets
 .env
@@ -34,3 +40,9 @@ agent/examples/ai_analysis_example.md
 # Local runtime state
 agent/stock_agent.log
 .superpowers/
+
+# Trellis local state
+.trellis/.developer
+.trellis/.runtime/
+.trellis/.current-task
+.trellis/workspace/*/journal-*
