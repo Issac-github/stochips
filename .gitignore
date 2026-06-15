@@ -28,14 +28,14 @@ __pycache__/
 .vscode/
 
 # Private trading knowledge and generated vector indexes
-agent/chain/wiki/README.md
-agent/chain/wiki/1.md
-agent/chain/wiki/WIKI.md
-agent/chain/wiki/raw/
-agent/chain/wiki/wiki/
-agent/chain/wiki/chroma_wiki_db/
-agent/chain/rag/chroma_db/
-agent/examples/ai_analysis_example.md
+services/agent/chain/wiki/README.md
+services/agent/chain/wiki/1.md
+services/agent/chain/wiki/WIKI.md
+services/agent/chain/wiki/raw/
+services/agent/chain/wiki/wiki/
+services/agent/chain/wiki/chroma_wiki_db/
+services/agent/chain/rag/chroma_db/
+services/agent/examples/ai_analysis_example.md
 
 # Local runtime state
 agent/stock_agent.log

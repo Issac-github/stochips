@@ -39,7 +39,7 @@
 ```bash
 # 克隆项目
 git clone <repository-url>
-cd agent
+cd stochips   # 仓库根目录，docker compose 与 .env 都在这里
 
 # 复制环境变量模板
 cp .env.example .env
@@ -245,12 +245,15 @@ TORCH_VERSION=2.7.1+cpu
 如果是已有数据库升级，并且需要补充增强版 AI 风险评估字段，启动后执行迁移：
 
 ```bash
-docker compose exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < migrations/20260506_add_risk_assessment_ai_fields.sql
+docker compose exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < services/agent/migrations/20260506_add_risk_assessment_ai_fields.sql
 ```
 
 ### 本地开发
 
 ```bash
+# 进入 agent 目录（本地开发命令都在这里执行）
+cd services/agent
+
 # 安装依赖
 pip install poetry
 poetry install
@@ -266,7 +269,7 @@ poetry run python -m main fetch 20260412
 
 ### CLI命令
 
-以下命令默认在 `agent/` 目录下执行。推荐使用 `poetry run python -m ...`，这样会固定使用 Poetry 管理的虚拟环境，并按模块路径运行入口。
+以下命令默认在 `services/agent/` 目录下执行。推荐使用 `poetry run python -m ...`，这样会固定使用 Poetry 管理的虚拟环境，并按模块路径运行入口。
 
 ```bash
 # 数据抓取

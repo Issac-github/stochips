@@ -10,7 +10,7 @@ import (
 )
 
 // SQLStore persists tasks to MySQL so status survives stock_rpc restarts.
-// Schema lives in agent/migrations/20260522_add_rpc_tasks.sql.
+// Schema lives in services/agent/migrations/20260522_add_rpc_tasks.sql.
 type SQLStore struct {
 	db     *sql.DB
 	prefix string

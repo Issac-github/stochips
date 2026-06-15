@@ -16,7 +16,7 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./services/agent/docker/mysql/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     networks:
@@ -31,7 +31,7 @@ services:
   # 股票Agent服务
   stock_agent:
     build:
-      context: .
+      context: ./services/agent
       args:
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
         DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}
@@ -49,7 +49,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - ./logs:/app/logs
+      - ./services/agent/logs:/app/logs
     depends_on:
       mysql:
         condition: service_healthy
@@ -69,7 +69,7 @@ services:
   # Go gRPC gateway for task submission; executes existing Python stock commands.
   stock_rpc:
     build:
-      context: ..
+      context: .
       dockerfile: services/stock-rpc/Dockerfile
       args:
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
@@ -91,7 +91,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - ./logs:/app/logs
+      - ./services/agent/logs:/app/logs
     ports:
       - "${STOCK_RPC_PORT:-50051}:50051"
     depends_on:
@@ -115,7 +115,7 @@ services:
     profiles:
       - rag
     build:
-      context: .
+      context: ./services/agent
       dockerfile: Dockerfile.rag
       args:
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
@@ -132,12 +132,12 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      - ./chain/wiki/raw:/app/chain/wiki/raw
-      - ./chain/wiki/wiki:/app/chain/wiki/wiki
+      - ./services/agent/chain/wiki/raw:/app/chain/wiki/raw
+      - ./services/agent/chain/wiki/wiki:/app/chain/wiki/wiki
       - wiki_chroma:/app/chain/wiki/chroma_wiki_db
       - rag_chroma:/app/chain/rag/chroma_db
       - hf_cache:/root/.cache/huggingface
-      - ./logs:/app/logs
+      - ./services/agent/logs:/app/logs
     networks:
       - stock_network
     command: python -m main wiki pages

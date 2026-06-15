@@ -1,17 +1,20 @@
 front/node_modules/
 node_modules/
-agent/.venv/
+services/agent/.venv/
 .venv/
 __pycache__/
 *.pyc
 
-agent/.env
-agent/.env.*
-!agent/.env.example
+.env
+.env.*
+!.env.example
+services/agent/.env
+services/agent/.env.*
+!services/agent/.env.example
 
 .git/
 .DS_Store
 *.log
-agent/logs/
-agent/chain/wiki/chroma_wiki_db/
-agent/chain/rag/chroma_db/
+services/agent/logs/
+services/agent/chain/wiki/chroma_wiki_db/
+services/agent/chain/rag/chroma_db/

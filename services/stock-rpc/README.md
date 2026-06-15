@@ -22,7 +22,7 @@ protoc -I proto \
 
 ```bash
 cd services/stock-rpc
-STOCK_RPC_AGENT_DIR=../../agent go run ./cmd/stock-rpc
+STOCK_RPC_AGENT_DIR=../agent go run ./cmd/stock-rpc
 ```
 
 The service listens on `:50051` by default.
@@ -30,7 +30,7 @@ The service listens on `:50051` by default.
 ## Docker Compose
 
 ```bash
-cd agent
+# from repo root
 docker compose up -d --build stock_rpc
 ```
 

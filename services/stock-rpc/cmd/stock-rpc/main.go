@@ -19,7 +19,7 @@ import (
 
 func main() {
 	addr := env("STOCK_RPC_ADDR", ":50051")
-	agentDir := env("STOCK_RPC_AGENT_DIR", "..")
+	agentDir := env("STOCK_RPC_AGENT_DIR", "../agent")
 	pythonBin := env("PYTHON_BIN", "python")
 	databaseURL := os.Getenv("DATABASE_URL")
 

@@ -37,12 +37,12 @@ RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://deb.debi
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-COPY agent/pyproject.toml agent/poetry.lock ./
+COPY services/agent/pyproject.toml services/agent/poetry.lock ./
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
     poetry install --no-interaction --no-ansi --without dev
 
-COPY agent/ ./
+COPY services/agent/ ./
 COPY --from=go-builder /out/stock-rpc /usr/local/bin/stock-rpc
 
 RUN mkdir -p logs && \
