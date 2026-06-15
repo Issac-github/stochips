@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
+- **Total Sessions**: 3
 - **Last Active**: 2026-06-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~71 | Active |
+| `journal-1.md` | ~104 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-06-15 | Add DEPLOY.md and one-click deploy.sh | `4f06582` | `main` |
 | 2 | 2026-06-15 | Relocate agent to services/agent; hoist compose to root | `4e678f3` | `main` |
 | 1 | 2026-06-15 | Relocate agent → services/agent (compose hoisted to root) | - | `main` |
 <!-- @@@/auto:session-history -->
