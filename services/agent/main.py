@@ -10,6 +10,7 @@ Usage:
     python main.py run [date]               # 完整流程（抓取+评估）
     python main.py schedule                 # 启动定时任务
     python main.py status [date]            # 查看数据状态
+    python main.py notify-feishu [date]     # 发送飞书涨停数据播报卡片
     python main.py wiki query "问题"        # 查询wiki知识库
     python main.py wiki ingest raw/xxx.md   # 摄入wiki原始素材
     python main.py wiki lint                # 检查wiki健康状态
@@ -20,6 +21,8 @@ Environment Variables:
     DATABASE_URL: MySQL连接URL (required)
     STOCK_COOKIE: 数据抓取的cookie (optional)
     MOONSHOT_API_KEY: Moonshot API Key (AI分析功能需要)
+    FEISHU_WEBHOOK_URL: 飞书自定义机器人Webhook (飞书播报需要)
+    FEISHU_WEBHOOK_SECRET: 飞书机器人签名密钥 (optional)
     AI_MAX_DAILY_CALLS: 每次增强评估最多新发起的AI分析数量 (default: 20)
     LOG_LEVEL: 日志级别 (default: INFO)
 """
@@ -39,6 +42,7 @@ load_dotenv()
 from chain.stock.agents import (
     create_ai_analyzer,
     create_enhanced_risk_agent,
+    create_feishu_notifier,
     create_risk_agent,
     create_stock_agent,
     create_wiki_agent,
@@ -411,6 +415,37 @@ def cmd_status(target_date: Optional[str] = None):
         sys.exit(1)
 
 
+def cmd_notify_feishu(target_date: Optional[str] = None):
+    """发送飞书涨停数据播报卡片"""
+    date_obj = parse_date(target_date)
+
+    print(f"发送飞书涨停播报: {date_obj}")
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        print("错误：未设置DATABASE_URL环境变量")
+        sys.exit(1)
+
+    if not os.getenv("FEISHU_WEBHOOK_URL"):
+        print("错误：未设置FEISHU_WEBHOOK_URL环境变量，无法发送飞书播报")
+        sys.exit(1)
+
+    notifier = create_feishu_notifier(database_url)
+    try:
+        result = notifier.send_report(date_obj)
+        print("\n飞书播报发送完成：")
+        print(f"  日期: {result['date']}")
+        print(f"  数据完整: {'是' if result['is_complete'] else '否'}")
+        print(f"  同花顺涨停: {result['hr_limit_up_count']} 条")
+        print(f"  东财涨停: {result['em_limit_up_count']} 条")
+        print(f"  风险评估: {result['assessed_count']} 条")
+        print("\n✅ 飞书播报完成")
+    except Exception as e:
+        print(f"错误：{e}")
+        logging.exception("飞书播报失败")
+        sys.exit(1)
+
+
 def cmd_wiki(action: Optional[str] = None, arg: Optional[str] = None):
     """Wiki 知识库操作命令"""
     if not action:
@@ -499,6 +534,7 @@ def main():
         "run": cmd_run,
         "schedule": cmd_schedule,
         "status": cmd_status,
+        "notify-feishu": cmd_notify_feishu,
     }
 
     if command in commands:
