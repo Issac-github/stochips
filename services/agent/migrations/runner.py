@@ -15,12 +15,7 @@ from sqlalchemy import create_engine, text
 
 
 MIGRATIONS_DIR = Path(__file__).parent
-TRACKING_DDL = """
-CREATE TABLE IF NOT EXISTS schema_migrations (
-    filename VARCHAR(255) NOT NULL PRIMARY KEY,
-    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-""".strip()
+TRACKING_SQL = MIGRATIONS_DIR / "00000000_schema_migrations.sql"
 
 
 def _split_statements(sql: str) -> list[str]:
@@ -48,14 +43,15 @@ def main() -> int:
         print("⚠️  DATABASE_URL not set, skipping migrations", file=sys.stderr)
         return 0
 
-    files = sorted(p for p in MIGRATIONS_DIR.glob("*.sql"))
+    files = sorted(p for p in MIGRATIONS_DIR.glob("*.sql") if p != TRACKING_SQL)
     if not files:
         print("ℹ️  no .sql migrations found")
         return 0
 
     engine = create_engine(database_url, pool_pre_ping=True)
     with engine.begin() as conn:
-        conn.execute(text(TRACKING_DDL))
+        for stmt in _split_statements(TRACKING_SQL.read_text(encoding="utf-8")):
+            conn.execute(text(stmt))
 
     # Hold a MySQL advisory lock so concurrent containers don't race.
     with engine.connect() as lock_conn:

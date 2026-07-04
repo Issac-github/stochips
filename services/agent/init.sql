@@ -8,6 +8,14 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 
 USE stock_analysis;
 
+-- 迁移记录表
+-- 初始化脚本已经包含部分历史迁移的最终表结构，因此需要同步记录，
+-- 避免 stock_agent/stock_rpc 启动时 migrations/runner.py 重复执行这些迁移。
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    filename VARCHAR(255) NOT NULL PRIMARY KEY,
+    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 连板天梯表
 CREATE TABLE IF NOT EXISTS continuous_limit_up (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '自增ID',
@@ -157,6 +165,10 @@ CREATE TABLE IF NOT EXISTS eastmoney_zt_pool (
     INDEX idx_date_first_time (date, first_limit_up_time),
     COMMENT '东方财富涨停池数据'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='东方财富涨停池数据';
+
+-- risk_assessment 已内置 AI 风控字段，对应迁移不需要再执行。
+INSERT IGNORE INTO schema_migrations (filename)
+VALUES ('20260506_add_risk_assessment_ai_fields.sql');
 
 -- 创建用户并授权（可选，根据环境修改密码）
 -- CREATE USER IF NOT EXISTS 'stock'@'%' IDENTIFIED BY 'stock123';
