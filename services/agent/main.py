@@ -52,6 +52,15 @@ from chain.stock.data.storage import StockDataStorage
 from chain.stock.scheduler import create_scheduler
 
 
+def env_is_configured(key: str, placeholders: Optional[set[str]] = None) -> bool:
+    value = os.getenv(key, "").strip()
+    if not value:
+        return False
+    if placeholders and value in placeholders:
+        return False
+    return True
+
+
 def setup_logging():
     """设置日志"""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -63,6 +72,17 @@ def setup_logging():
             logging.FileHandler("stock_agent.log", encoding="utf-8"),
         ],
     )
+
+
+def should_skip_after_fetch(database_url: str, date_obj: date, action: str) -> bool:
+    storage = StockDataStorage(database_url)
+    if storage.is_fetch_skipped(date_obj):
+        print(
+            f"跳过{action}: {date_obj} 已被抓取流程标记为非交易日/"
+            "上游旧数据，不执行后续流程"
+        )
+        return True
+    return False
 
 
 def parse_date(date_str: Optional[str]) -> date:
@@ -111,6 +131,9 @@ def cmd_fetch(target_date: Optional[str] = None):
 
         # 存储数据
         results = storage.save_all_data(data, date_obj)
+        if data.get("skipped"):
+            print(f"\n⏭️ 数据抓取跳过：{data.get('skip_reason', 'skipped')}")
+            return
 
         print("\n数据保存结果：")
         for data_type, (success, failed) in results.items():
@@ -150,6 +173,9 @@ def cmd_assess(target_date: Optional[str] = None):
         print("错误：未设置DATABASE_URL环境变量")
         sys.exit(1)
 
+    if should_skip_after_fetch(database_url, date_obj, "风险评估"):
+        return
+
     agent = create_risk_agent(database_url)
 
     try:
@@ -184,6 +210,9 @@ def cmd_ai_analyze(target_date: Optional[str] = None):
     if not database_url:
         print("错误：未设置DATABASE_URL环境变量")
         sys.exit(1)
+
+    if should_skip_after_fetch(database_url, date_obj, "AI智能分析"):
+        return
 
     api_key = os.getenv("MOONSHOT_API_KEY")
     if not api_key:
@@ -231,6 +260,9 @@ def cmd_assess_enhanced(target_date: Optional[str] = None):
     if not database_url:
         print("错误：未设置DATABASE_URL环境变量")
         sys.exit(1)
+
+    if should_skip_after_fetch(database_url, date_obj, "增强版风险评估"):
+        return
 
     agent = create_enhanced_risk_agent(database_url)
 
@@ -342,8 +374,20 @@ def cmd_schedule():
         # 数据抓取：每天 16:00
         scheduler.schedule_data_fetch(hour=16, minute=0)
 
-        # 风险评估：每天 16:30
-        scheduler.schedule_risk_assessment(hour=16, minute=30)
+        # 风险评估：每天 16:10
+        scheduler.schedule_risk_assessment(hour=16, minute=10)
+
+        # AI增强风险评估：每天 16:20（需要 Moonshot API Key）
+        if env_is_configured("MOONSHOT_API_KEY", {"your_moonshot_api_key_here"}):
+            scheduler.schedule_enhanced_risk_assessment(hour=16, minute=20)
+        else:
+            print("未配置 MOONSHOT_API_KEY，跳过 AI增强风险评估定时任务")
+
+        # 飞书播报：每天 16:30（需要飞书机器人 Webhook）
+        if os.getenv("FEISHU_WEBHOOK_URL"):
+            scheduler.schedule_feishu_report(hour=16, minute=30)
+        else:
+            print("未配置 FEISHU_WEBHOOK_URL，跳过飞书播报定时任务")
 
         print("\n已设置以下定时任务：")
         for job in scheduler.get_jobs():
@@ -429,6 +473,9 @@ def cmd_notify_feishu(target_date: Optional[str] = None):
     if not os.getenv("FEISHU_WEBHOOK_URL"):
         print("错误：未设置FEISHU_WEBHOOK_URL环境变量，无法发送飞书播报")
         sys.exit(1)
+
+    if should_skip_after_fetch(database_url, date_obj, "飞书播报"):
+        return
 
     notifier = create_feishu_notifier(database_url)
     try:

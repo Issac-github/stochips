@@ -159,7 +159,7 @@ class DataFetchLog(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False, index=True, comment='数据日期')
     data_type = Column(String(50), nullable=False, comment='数据类型')
-    status = Column(String(20), nullable=False, comment='状态(success/failed)')
+    status = Column(String(20), nullable=False, comment='状态(success/failed/skipped)')
     record_count = Column(Integer, default=0, comment='记录数')
     error_message = Column(Text, nullable=True, comment='错误信息')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')

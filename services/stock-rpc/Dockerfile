@@ -2,6 +2,8 @@
 FROM golang:1.23 AS go-builder
 
 WORKDIR /src/stock-rpc
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 COPY services/stock-rpc/go.mod services/stock-rpc/go.sum ./
 RUN go mod download
 COPY services/stock-rpc/ ./
@@ -27,7 +29,10 @@ ARG PIP_TRUSTED_HOST=mirrors.aliyun.com
 
 ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
     PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST} \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10 \
+    POETRY_REQUESTS_TIMEOUT=120
 
 RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://deb.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -40,6 +45,7 @@ RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://deb.debi
 COPY services/agent/pyproject.toml services/agent/poetry.lock ./
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
+    poetry config installer.max-workers 1 && \
     poetry install --no-interaction --no-ansi --without dev
 
 COPY services/agent/ ./

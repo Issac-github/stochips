@@ -4,7 +4,7 @@
 
 Use package-local commands:
 
-- Python agent tests: `cd agent && poetry run pytest`
+- Python agent tests: `cd services/agent && poetry run python -m pytest`
 - Go gateway tests: `cd services/stock-rpc && go test ./...`
 - Go protobuf generation after proto changes:
 
@@ -39,6 +39,56 @@ Backend behavior is environment-driven:
 - Docker Compose in `agent/docker-compose.yml` wires MySQL, `stock_agent`, optional `rag_agent`, and `stock_rpc`.
 
 Do not introduce untracked configuration keys without updating `.env.example`, README guidance, and any Docker Compose usage that needs the variable.
+
+## Scenario: Docker Build Proxy Wiring
+
+### 1. Scope / Trigger
+- Trigger: Docker build networking for `stock_agent`, `stock_rpc`, or `rag_agent`.
+
+### 2. Signatures
+- Compose build args must remain `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` because Docker, pip, apt, and Go tooling recognize those names inside build containers.
+- Project-facing env keys must be `BUILD_HTTP_PROXY`, `BUILD_HTTPS_PROXY`, and `BUILD_NO_PROXY`.
+
+### 3. Contracts
+- `BUILD_HTTP_PROXY`: optional HTTP proxy URL for image builds.
+- `BUILD_HTTPS_PROXY`: optional HTTPS proxy URL for image builds.
+- `BUILD_NO_PROXY`: optional no-proxy host list; defaults include local services.
+- Build definitions should map `BUILD_*` keys to the standard proxy build args and include `host.docker.internal:host-gateway` when host proxy access is supported.
+
+### 4. Validation & Error Matrix
+- Host shell has `HTTP_PROXY=http://127.0.0.1:7890`, but `.env` has no `BUILD_*` proxy -> Compose must render blank build proxy args.
+- `.env` sets `BUILD_HTTP_PROXY=http://host.docker.internal:7890` while host proxy is reachable -> pip/go/apt may use the proxy.
+- `.env` sets `BUILD_HTTP_PROXY=http://127.0.0.1:7890` -> build containers connect to themselves and usually fail with connection refused.
+- Poetry fails after reaching package installation with `Cannot install <package>` and a Requests traceback -> treat as transient package download failure; use longer request timeouts and single-worker installs in Dockerfiles.
+
+### 5. Good/Base/Bad Cases
+- Good: `BUILD_HTTP_PROXY=http://host.docker.internal:7890` for a proxy listening on the Docker host.
+- Base: leave `BUILD_HTTP_PROXY` and `BUILD_HTTPS_PROXY` unset; builds use configured mirrors directly.
+- Bad: mapping Compose args from `${HTTP_PROXY}` or `${HTTPS_PROXY}`, which silently imports the operator shell environment.
+
+### 6. Tests Required
+- Run `docker compose config --quiet` after changing build proxy wiring.
+- Search `docker-compose.yml` for `${HTTP_PROXY}`, `${HTTPS_PROXY}`, or `${NO_PROXY}` build arg interpolation; there should be no implicit shell-proxy mapping.
+- For proxy-related fixes, run or partially run `docker compose build stock_agent stock_rpc` far enough to verify `pip install poetry` does not retry a refused proxy.
+- For Dockerfile Poetry install changes, keep `POETRY_REQUESTS_TIMEOUT`, `PIP_DEFAULT_TIMEOUT`, `PIP_RETRIES`, and `poetry config installer.max-workers 1` consistent across `stock_agent`, `stock_rpc`, and `rag_agent`.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```yaml
+args:
+  HTTP_PROXY: ${HTTP_PROXY:-}
+```
+
+Correct:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+args:
+  HTTP_PROXY: ${BUILD_HTTP_PROXY:-}
+```
 
 ## Generated And Runtime Files
 

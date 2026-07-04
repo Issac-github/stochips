@@ -32,7 +32,12 @@ services:
   stock_agent:
     build:
       context: ./services/agent
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
+        HTTP_PROXY: ${BUILD_HTTP_PROXY:-}
+        HTTPS_PROXY: ${BUILD_HTTPS_PROXY:-}
+        NO_PROXY: ${BUILD_NO_PROXY:-localhost,127.0.0.1,mysql,stock_agent,stock_rpc,rag_agent}
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
         DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
@@ -73,11 +78,17 @@ services:
     build:
       context: .
       dockerfile: services/stock-rpc/Dockerfile
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
+        HTTP_PROXY: ${BUILD_HTTP_PROXY:-}
+        HTTPS_PROXY: ${BUILD_HTTPS_PROXY:-}
+        NO_PROXY: ${BUILD_NO_PROXY:-localhost,127.0.0.1,mysql,stock_agent,stock_rpc,rag_agent}
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
         DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-mirrors.aliyun.com}
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
     container_name: stock_rpc
     restart: unless-stopped
     environment:
@@ -121,7 +132,12 @@ services:
     build:
       context: ./services/agent
       dockerfile: Dockerfile.rag
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       args:
+        HTTP_PROXY: ${BUILD_HTTP_PROXY:-}
+        HTTPS_PROXY: ${BUILD_HTTPS_PROXY:-}
+        NO_PROXY: ${BUILD_NO_PROXY:-localhost,127.0.0.1,mysql,stock_agent,stock_rpc,rag_agent}
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.aliyun.com/debian}
         DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}

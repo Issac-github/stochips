@@ -40,3 +40,18 @@ Keep new Go packages under `internal/` unless they must be public API. Generated
 The Go gateway may add RPC methods, task tracking, or query adapters, but stock fetching, storage writes, rule scoring, AI scoring, and report generation stay in Python. If a new RPC action is needed, add it to `proto/stock.proto`, map it in `internal/server/service.go`, and dispatch to an existing or new `agent/main.py` command through `internal/runner/python.go`.
 
 Avoid placing Python business rules in Go query adapters. `internal/query/repository.go` may format rows for frontend compatibility, but it should not decide investment risk or mutate stock tables.
+
+## Primary Runtime Flow
+
+Read `.trellis/spec/backend/database-guidelines.md#scenario-stock-data-fetch-storage-and-feishu-report-flow` before changing the daily stock workflow.
+
+The current runtime path is:
+
+1. `agent/main.py fetch [date]`
+2. `chain/stock/data/fetcher.py` calls THS and Eastmoney upstream endpoints
+3. `chain/stock/data/storage.py` normalizes payload fields and upserts MySQL fact tables
+4. `agent/main.py assess` / `assess-ai` write `risk_assessment`
+5. `chain/stock/agents/feishu_notifier.py` reads MySQL rows and builds the Feishu card
+6. `chain/stock/scheduler/daily_job.py` runs the same commands on weekday cron triggers
+
+Do not bypass this path by writing report-specific SQL tables, Go-side business logic, or frontend-only derivations unless the spec is updated with the new contract first.

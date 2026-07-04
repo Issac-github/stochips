@@ -107,6 +107,12 @@ class StockDataStorage:
                 return value
         return None
 
+    def _first_list_item(self, item: Dict[str, Any], key: str) -> Dict[str, Any]:
+        value = item.get(key)
+        if isinstance(value, list) and value and isinstance(value[0], dict):
+            return value[0]
+        return {}
+
     def _upsert_by_keys(
         self,
         session: Session,
@@ -234,15 +240,24 @@ class StockDataStorage:
                         'date': target_date,
                         'block_code': block_code,
                         'block_name': block_name,
-                        'stock_count': self._safe_int(self._first_value(item, 'stock_count', 'num', 'count', 'limit_up_count')),
+                        'stock_count': self._safe_int(self._first_value(item, 'stock_count', 'num', 'count', 'limit_up_count', 'limit_up_num')),
                         'prev_stock_count': self._safe_int(self._first_value(item, 'prev_stock_count', 'pre_num', 'prev_count')),
-                        'change_percent': self._safe_decimal(self._first_value(item, 'change_percent', 'change_rate', 'rate')),
-                        'leading_stock': self._safe_str(self._first_value(item, 'leading_stock', 'leader_code', 'stock_code')),
-                        'leading_stock_name': self._safe_str(self._first_value(item, 'leading_stock_name', 'leader_name', 'stock_name')),
+                        'change_percent': self._safe_decimal(self._first_value(item, 'change_percent', 'change_rate', 'rate', 'change')),
+                        'leading_stock': self._safe_str(self._first_value(item, 'leading_stock', 'leader_code', 'stock_code', 'leader.code')),
+                        'leading_stock_name': self._safe_str(self._first_value(item, 'leading_stock_name', 'leader_name', 'stock_name', 'leader.name')),
                         'continuous_days': self._safe_int(self._first_value(item, 'continuous_days', 'days', 'high_days'), 1),
                         'avg_limit_up_time': self._safe_str(self._first_value(item, 'avg_limit_up_time', 'avg_time')),
                         'block_type': self._safe_str(self._first_value(item, 'block_type', 'type')),
                     }
+                    leader = self._first_list_item(item, 'stock_list')
+                    if not values['leading_stock']:
+                        values['leading_stock'] = self._safe_str(leader.get('code'))
+                    if not values['leading_stock_name']:
+                        values['leading_stock_name'] = self._safe_str(leader.get('name'))
+                    if not values['avg_limit_up_time']:
+                        values['avg_limit_up_time'] = self._safe_str(
+                            leader.get('first_limit_up_time')
+                        )
 
                     self._upsert_by_keys(session, BlockTop, values, ('date', 'block_code'))
                     success_count += 1
@@ -414,7 +429,7 @@ class StockDataStorage:
 
     def save_all_data(
         self,
-        data: Dict[str, List[Dict[str, Any]]],
+        data: Dict[str, Any],
         target_date: Optional[date] = None
     ) -> Dict[str, Tuple[int, int]]:
         """
@@ -429,6 +444,16 @@ class StockDataStorage:
         """
         if not target_date:
             target_date = date.today()
+
+        if data.get('skipped'):
+            reason = self._safe_str(data.get('skip_reason'), 'skipped')
+            self.mark_fetch_skipped(target_date, reason)
+            return {
+                'continuous_limit_up': (0, 0),
+                'block_top': (0, 0),
+                'limit_up_pool': (0, 0),
+                'eastmoney_zt_pool': (0, 0),
+            }
 
         results = {}
 
@@ -457,6 +482,45 @@ class StockDataStorage:
             )
 
         return results
+
+    def mark_fetch_skipped(self, target_date: date, reason: str) -> None:
+        session: Session = self.Session()
+        try:
+            for data_type in (
+                'continuous_limit_up',
+                'block_top',
+                'limit_up_pool',
+                'eastmoney_zt_pool',
+            ):
+                self._save_log(
+                    session,
+                    target_date,
+                    data_type,
+                    0,
+                    status='skipped',
+                    error_message=reason,
+                )
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def is_fetch_skipped(self, target_date: date) -> bool:
+        session: Session = self.Session()
+        try:
+            return (
+                session.query(DataFetchLog)
+                .filter(
+                    DataFetchLog.date == target_date,
+                    DataFetchLog.status == 'skipped',
+                )
+                .count()
+                > 0
+            )
+        finally:
+            session.close()
 
     def _save_log(
         self,

@@ -10,7 +10,7 @@ import json
 import logging
 import os
 from datetime import date, datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 import aiohttp
 
@@ -674,7 +674,7 @@ class StockDataFetcher:
 
     async def fetch_all_data(
         self, target_date: Optional[str] = None
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> Dict[str, Any]:
         """
         获取所有股票数据
 
@@ -694,6 +694,11 @@ class StockDataFetcher:
             target_date = date.today().strftime("%Y%m%d")
 
         logger.info(f"🚀 开始获取所有股票数据: date={target_date}")
+        target_date_obj = datetime.strptime(target_date, "%Y%m%d").date()
+        if target_date_obj.weekday() >= 5:
+            reason = f"{target_date} 为周末，跳过抓取与后续流程"
+            logger.info(reason)
+            return self._skipped_fetch_result(target_date, reason)
 
         # 并发获取数据
         continuous_task = self.fetch_continuous_limit_up(target_date)
@@ -754,9 +759,90 @@ class StockDataFetcher:
             f"东财涨停池{len(result['eastmoney_zt_pool'])}条"
         )
 
+        skip_reason = self._stale_fetch_reason(result, target_date_obj)
+        if skip_reason:
+            logger.warning(skip_reason)
+            return self._skipped_fetch_result(target_date, skip_reason)
+
         self._warn_if_cookie_expired(result)
 
         return result
+
+    @staticmethod
+    def _skipped_fetch_result(target_date: str, reason: str) -> Dict[str, Any]:
+        return {
+            "continuous_limit_up": [],
+            "block_top": [],
+            "limit_up_pool": [],
+            "eastmoney_zt_pool": [],
+            "errors": [],
+            "skipped": True,
+            "skip_reason": reason,
+            "requested_date": target_date,
+        }
+
+    def _stale_fetch_reason(
+        self, result: Dict[str, Any], target_date: date
+    ) -> Optional[str]:
+        actual_dates = self._infer_actual_trade_dates(result)
+        if actual_dates and target_date not in actual_dates:
+            actual_text = ", ".join(
+                sorted(item.strftime("%Y%m%d") for item in actual_dates)
+            )
+            return (
+                f"请求日期 {target_date:%Y%m%d} 与上游返回交易日期 {actual_text} 不一致，"
+                "可能为节假日或源站回退到上一交易日，跳过保存与后续流程"
+            )
+
+        ths_total = (
+            len(result["continuous_limit_up"])
+            + len(result["block_top"])
+            + len(result["limit_up_pool"])
+        )
+        em_total = len(result["eastmoney_zt_pool"])
+        if not actual_dates and ths_total == 0 and em_total > 0:
+            return (
+                f"请求日期 {target_date:%Y%m%d} 无法从上游返回中确认交易日期，"
+                "且同花顺为空但东财有数据，可能为节假日旧数据或同花顺 Cookie 失效，"
+                "跳过保存与后续流程"
+            )
+        return None
+
+    def _infer_actual_trade_dates(self, result: Dict[str, Any]) -> Set[date]:
+        dates: Set[date] = set()
+        for key in ("continuous_limit_up", "block_top", "limit_up_pool"):
+            for item in result.get(key, []):
+                dates.update(self._extract_dates_from_payload(item))
+        return dates
+
+    def _extract_dates_from_payload(self, value: Any) -> Set[date]:
+        dates: Set[date] = set()
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if self._looks_like_unix_time_key(key):
+                    parsed = self._date_from_unix_seconds(child)
+                    if parsed:
+                        dates.add(parsed)
+                dates.update(self._extract_dates_from_payload(child))
+        elif isinstance(value, list):
+            for child in value:
+                dates.update(self._extract_dates_from_payload(child))
+        return dates
+
+    @staticmethod
+    def _looks_like_unix_time_key(key: str) -> bool:
+        normalized = key.lower()
+        return "limit_up_time" in normalized or normalized.endswith("_time")
+
+    @staticmethod
+    def _date_from_unix_seconds(value: Any) -> Optional[date]:
+        try:
+            timestamp = int(value)
+        except (TypeError, ValueError):
+            return None
+        if timestamp < 1_000_000_000:
+            return None
+        return datetime.fromtimestamp(timestamp).date()
 
     def _warn_if_cookie_expired(
         self, result: Dict[str, List[Dict[str, Any]]]
@@ -853,7 +939,7 @@ class StockDataFetcherSync:
 
     def fetch_all_data(
         self, target_date: Optional[str] = None
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> Dict[str, Any]:
         """同步获取所有数据"""
         return asyncio.run(self._async_fetch(self.fetcher.fetch_all_data(target_date)))
 
