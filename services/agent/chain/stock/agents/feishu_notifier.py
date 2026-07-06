@@ -394,7 +394,7 @@ class FeishuStockNotifier:
         eastmoney_industry_lines = self._format_industries(
             report.eastmoney_industries
         )
-        stock_lines = self._format_stocks(report.top_stocks)
+        stock_lines = self._format_core_continuous(report.top_stocks)
         early_lines = self._format_stocks(report.early_stocks)
         weak_lines = self._format_weak_boards(report.weak_boards)
         breakout_lines = self._format_breakouts(report.breakout_stocks)
@@ -581,7 +581,10 @@ class FeishuStockNotifier:
         industries = []
         for industry_name, stock_count in rows:
             leader_rows = (
-                session.query(EastmoneyZTPool)
+                session.query(
+                    EastmoneyZTPool,
+                    func.coalesce(ContinuousLimitUp.continuous_days, 1),
+                )
                 .outerjoin(
                     ContinuousLimitUp,
                     (ContinuousLimitUp.date == EastmoneyZTPool.date)
@@ -596,7 +599,6 @@ class FeishuStockNotifier:
                     EastmoneyZTPool.first_limit_up_time.asc(),
                     EastmoneyZTPool.code.asc(),
                 )
-                .limit(3)
                 .all()
             )
             industries.append(
@@ -604,8 +606,8 @@ class FeishuStockNotifier:
                     industry_name=industry_name,
                     stock_count=int(stock_count),
                     leaders=[
-                        f"{item.name}({item.code})"
-                        for item in leader_rows
+                        f"{item.name}（{int(continuous_days or 1)}板）"
+                        for item, continuous_days in leader_rows
                     ],
                 )
             )
@@ -976,10 +978,24 @@ class FeishuStockNotifier:
             return "- 暂无东财行业数据"
         lines = []
         for index, item in enumerate(industries, 1):
-            leaders = f"，前三 {'、'.join(item.leaders)}" if item.leaders else ""
-            lines.append(
-                f"{index}. {item.industry_name}：{item.stock_count} 只涨停{leaders}"
+            leaders = "、".join(item.leaders) if item.leaders else "暂无个股"
+            lines.append(f"{index}. {item.industry_name}：{leaders}")
+        return "\n".join(lines)
+
+    def _format_core_continuous(self, stocks: List[StockSummary]) -> str:
+        if not stocks:
+            return "- 暂无连板数据"
+
+        grouped: Dict[int, List[StockSummary]] = {}
+        for item in stocks:
+            grouped.setdefault(item.continuous_days, []).append(item)
+
+        lines = []
+        for index, days in enumerate(sorted(grouped.keys(), reverse=True), 1):
+            labels = "、".join(
+                f"{item.name}({item.code})" for item in grouped[days]
             )
+            lines.append(f"{index}. {days}板：{labels}")
         return "\n".join(lines)
 
     def _format_stocks(self, stocks: List[StockSummary]) -> str:

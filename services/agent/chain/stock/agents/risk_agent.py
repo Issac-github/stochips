@@ -9,7 +9,7 @@
 
 import json
 import logging
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
@@ -144,7 +144,7 @@ class RiskAssessmentAgent:
         factors = []
         total_score = 0
 
-        # 1. 连板天数风险（权重40%）
+        # 1. 连板天数风险（权重35%）
         if continuous_data:
             days = continuous_data.get('continuous_days', 1)
             if days >= 7:
@@ -162,14 +162,47 @@ class RiskAssessmentAgent:
 
             factor = RiskFactor(
                 name="连板天数风险",
-                weight=0.40,
+                weight=0.35,
                 score=score,
                 description=f"连续{days}天涨停，{'风险极高' if days >= 7 else '风险较高' if days >= 5 else '中等风险' if days >= 3 else '风险可控'}"
             )
             factors.append(factor)
             total_score += score * factor.weight
 
-        # 2. 封单强度风险（权重25%）
+        # 2. 封板时间风险（权重15%）
+        limit_up_time = None
+        if pool_data:
+            limit_up_time = pool_data.get('limit_up_time')
+        if not limit_up_time and continuous_data:
+            limit_up_time = continuous_data.get('latest_limit_up_time')
+        time_minutes = self._parse_limit_up_time(limit_up_time)
+        if time_minutes is not None:
+            if time_minutes <= 9 * 60 + 35:
+                score = 20
+                desc = "早盘快速封板，资金主动性强"
+            elif time_minutes < 10 * 60:
+                score = 35
+                desc = "早盘封板，强度较好"
+            elif time_minutes <= 11 * 60 + 30:
+                score = 50
+                desc = "盘中封板，强度中等"
+            elif time_minutes < 14 * 60 + 30:
+                score = 65
+                desc = "午后封板，分歧偏大"
+            else:
+                score = 80
+                desc = "封板时间偏晚，尾盘抢筹风险高"
+
+            factor = RiskFactor(
+                name="封板时间风险",
+                weight=0.15,
+                score=score,
+                description=f"{desc}（{self._format_minutes(time_minutes)}）"
+            )
+            factors.append(factor)
+            total_score += score * factor.weight
+
+        # 3. 封单强度风险（权重20%）
         if pool_data:
             strength = pool_data.get('strength', 0)
             if strength:
@@ -190,7 +223,7 @@ class RiskAssessmentAgent:
 
                     factor = RiskFactor(
                         name="封单强度",
-                        weight=0.25,
+                        weight=0.20,
                         score=score,
                         description=f"{desc}（强度值：{strength_val}）"
                     )
@@ -199,7 +232,7 @@ class RiskAssessmentAgent:
                 except (ValueError, TypeError):
                     pass
 
-        # 3. 换手率风险（权重20%）
+        # 4. 换手率风险（权重20%）
         if pool_data:
             turnover = pool_data.get('turnover_rate', 0)
             if turnover:
@@ -229,7 +262,7 @@ class RiskAssessmentAgent:
                 except (ValueError, TypeError):
                     pass
 
-        # 4. 开板次数风险（权重15%）
+        # 5. 开板次数风险（权重10%）
         if pool_data:
             open_count = pool_data.get('open_count', 0)
             if open_count:
@@ -247,7 +280,7 @@ class RiskAssessmentAgent:
 
                     factor = RiskFactor(
                         name="开板次数风险",
-                        weight=0.15,
+                        weight=0.10,
                         score=score,
                         description=f"{desc}（{open_val}次）"
                     )
@@ -283,6 +316,58 @@ class RiskAssessmentAgent:
         reason = self._generate_assessment_reason(factors, risk_level, suggestion)
 
         return risk_level, final_score, factors, suggestion, reason
+
+    @staticmethod
+    def _parse_limit_up_time(value: Any) -> Optional[int]:
+        if value is None or value == "" or value == "-":
+            return None
+
+        if isinstance(value, datetime):
+            return value.hour * 60 + value.minute
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        if ":" in text:
+            parts = text.split(":")
+            if len(parts) < 2:
+                return None
+            try:
+                hour = int(parts[0])
+                minute = int(parts[1])
+            except ValueError:
+                return None
+            return RiskAssessmentAgent._valid_minutes(hour, minute)
+
+        try:
+            number = int(float(text))
+        except ValueError:
+            return None
+
+        if number >= 1_000_000_000:
+            parsed = datetime.fromtimestamp(number)
+            return parsed.hour * 60 + parsed.minute
+
+        digits = text.split(".")[0].zfill(4)
+        if len(digits) >= 5:
+            digits = digits.zfill(6)
+            hour = int(digits[:-4])
+            minute = int(digits[-4:-2])
+        else:
+            hour = int(digits[:-2])
+            minute = int(digits[-2:])
+        return RiskAssessmentAgent._valid_minutes(hour, minute)
+
+    @staticmethod
+    def _valid_minutes(hour: int, minute: int) -> Optional[int]:
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return None
+        return hour * 60 + minute
+
+    @staticmethod
+    def _format_minutes(minutes: int) -> str:
+        return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
     def _generate_assessment_reason(
         self,
@@ -363,6 +448,7 @@ class RiskAssessmentAgent:
                     'code': continuous_record.code,
                     'name': continuous_record.name,
                     'continuous_days': continuous_record.continuous_days,
+                    'latest_limit_up_time': continuous_record.latest_limit_up_time,
                 }
 
             pool_data = None
@@ -373,6 +459,7 @@ class RiskAssessmentAgent:
                     'strength': pool_record.strength,
                     'turnover_rate': pool_record.turnover_rate,
                     'open_count': pool_record.open_count,
+                    'limit_up_time': pool_record.limit_up_time,
                 }
 
             # 计算风险

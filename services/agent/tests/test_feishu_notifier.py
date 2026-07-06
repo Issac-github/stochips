@@ -54,12 +54,17 @@ def test_build_card_contains_daily_report_sections():
             IndustrySummary(
                 industry_name="专用设备",
                 stock_count=6,
-                leaders=["测试设备(000010)", "龙头设备(000011)", "强势设备(000012)"],
+                leaders=[
+                    "测试设备（3板）",
+                    "龙头设备（2板）",
+                    "强势设备（1板）",
+                    "补充设备（1板）",
+                ],
             ),
             IndustrySummary(
                 industry_name="汽车零部件",
                 stock_count=4,
-                leaders=["测试汽配(000013)"],
+                leaders=["测试汽配（1板）"],
             ),
         ],
         top_stocks=[
@@ -73,6 +78,17 @@ def test_build_card_contains_daily_report_sections():
                 risk_level="高",
                 risk_score=88.0,
                 suggestion="谨慎",
+            ),
+            StockSummary(
+                code="000007",
+                name="同板股份",
+                continuous_days=4,
+                limit_up_time="09:40",
+                block_name="机器人概念",
+                reason="连板延续",
+                risk_level="中",
+                risk_score=60.0,
+                suggestion="观察",
             )
         ],
         early_stocks=[
@@ -146,10 +162,11 @@ def test_build_card_contains_daily_report_sections():
     assert "同花顺板块热度" in content
     assert "机器人概念：4 家涨停" in content
     assert "东财行业涨停" in content
-    assert "专用设备：6 只涨停" in content
-    assert "前三 测试设备(000010)、龙头设备(000011)、强势设备(000012)" in content
+    assert "专用设备：测试设备（3板）、龙头设备（2板）、强势设备（1板）、补充设备（1板）" in content
+    assert "专用设备：6 只涨停" not in content
+    assert "前三" not in content
     assert "核心连板" in content
-    assert "测试股份(000001)：4板" in content
+    assert "4板：测试股份(000001)、同板股份(000007)" in content
     assert "早盘股份(000002)：1板" in content
     assert "分歧股份(000003)：开板 5 次" in content
     assert "突破股份(000006)：前期3板，断板6个交易日" in content
@@ -237,6 +254,52 @@ def test_format_stocks_keeps_special_risk_names_when_provided():
     assert "*ST东智(002175)：5板" in content
 
 
+def test_format_core_continuous_groups_by_board_count():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    content = notifier._format_core_continuous(
+        [
+            StockSummary(
+                code="000004",
+                name="国华退",
+                continuous_days=5,
+                limit_up_time="",
+                block_name="",
+                reason="",
+                risk_level="未评估",
+                risk_score=None,
+                suggestion="",
+            ),
+            StockSummary(
+                code="002175",
+                name="*ST东智",
+                continuous_days=5,
+                limit_up_time="",
+                block_name="",
+                reason="",
+                risk_level="未评估",
+                risk_score=None,
+                suggestion="",
+            ),
+            StockSummary(
+                code="603137",
+                name="恒尚节能",
+                continuous_days=4,
+                limit_up_time="",
+                block_name="",
+                reason="",
+                risk_level="未评估",
+                risk_score=None,
+                suggestion="",
+            ),
+        ]
+    )
+
+    assert "1. 5板：国华退(000004)、*ST东智(002175)" in content
+    assert "2. 4板：恒尚节能(603137)" in content
+    assert "风险 未评估/无评分" not in content
+
+
 def test_format_industries_renders_eastmoney_industry_counts():
     notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
 
@@ -245,19 +308,25 @@ def test_format_industries_renders_eastmoney_industry_counts():
             IndustrySummary(
                 industry_name="专用设备",
                 stock_count=6,
-                leaders=["测试设备(000010)", "龙头设备(000011)", "强势设备(000012)"],
+                leaders=[
+                    "测试设备（3板）",
+                    "龙头设备（2板）",
+                    "强势设备（1板）",
+                    "补充设备（1板）",
+                ],
             )
         ]
     )
 
-    assert "专用设备：6 只涨停" in content
-    assert "前三 测试设备(000010)、龙头设备(000011)、强势设备(000012)" in content
+    assert "专用设备：测试设备（3板）、龙头设备（2板）、强势设备（1板）、补充设备（1板）" in content
+    assert "专用设备：6 只涨停" not in content
+    assert "前三" not in content
     assert notifier._format_industries([]) == "- 暂无东财行业数据"
     assert (
         notifier._format_industries(
             [IndustrySummary(industry_name="未知行业", stock_count=1, leaders=[])]
         )
-        == "1. 未知行业：1 只涨停"
+        == "1. 未知行业：暂无个股"
     )
 
 
@@ -283,7 +352,7 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
         fetch_logs=[],
         top_blocks=[],
         eastmoney_industries=[
-            IndustrySummary(industry_name="电力", stock_count=8, leaders=["宝塔实业(000595)"])
+            IndustrySummary(industry_name="电力", stock_count=8, leaders=["宝塔实业（2板）"])
         ],
         top_stocks=[],
         early_stocks=[],
@@ -298,7 +367,7 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
     assert "同花顺板块热度" in content
     assert "暂无板块数据" in content
     assert "东财行业涨停" in content
-    assert "电力：8 只涨停" in content
+    assert "电力：宝塔实业（2板）" in content
     assert "行业热度请看东财行业涨停" in content
 
 

@@ -71,6 +71,12 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - THS tables drive short-term structure: limit-up overview, 连板梯队, 核心连板, 早盘强势, 分歧弱板, 涨停前高突破, and 同花顺板块热度.
   - Eastmoney drives the independent `东财行业涨停` section by grouping `eastmoney_zt_pool.block_name`.
   - Board/industry sections are all-item summaries; only stock-level sections such as 核心连板, 分歧弱板, 高风险, and 机会观察 use Top 10.
+  - `东财行业涨停` should render all grouped industries and all limit-up stocks within each industry. Use compact stock labels with board count, not codes or `前三`: `行业：股票A（3板）、股票B（1板）`.
+  - `核心连板` should group by `continuous_days` rather than render one line per stock, e.g. `5板：国华退(000004)、*ST东智(002175)`.
+- Rule risk assessment ownership:
+  - `assess` and the rule side of `assess-ai` evaluate `continuous_limit_up` rows with `continuous_days >= 2`.
+  - Rule factors are `continuous_days` 35%, `limit_up_time/latest_limit_up_time` 15%, seal strength 20%, turnover rate 20%, and open count 10%.
+  - Sealing-time risk treats early sealing as lower risk and late sealing as higher risk; parse `HH:MM`, `HH:MM:SS`, `92500`, and Unix-second timestamp values when available.
 - Scheduler default:
   - 16:00 fetch
   - 16:10 rule assessment
@@ -102,12 +108,18 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
 - Feishu report tests should assert:
   - `同花顺板块热度` and `东财行业涨停` are separate sections
   - board/industry section titles do not say Top 10
+  - Eastmoney industry rows do not include `前三` or `N 只涨停`, and render every stock as `名字（几板）`
+  - 核心连板 groups stocks by board count instead of repeating per-stock risk text
   - `分歧弱板` requires `open_count > 0`
   - 涨停前高突破 uses weekday trading-date windows and renders gap as trading days
 - Fetch guard tests should assert:
   - weekend target dates return `skipped=True` before network calls
   - THS timestamp dates different from the requested date skip save/downstream flow
   - THS empty plus Eastmoney non-empty is treated as unverified/stale and skipped
+- Rule assessment tests should assert:
+  - sealing time participates in the score and reason
+  - early sealing lowers risk relative to late sealing
+  - `latest_limit_up_time` is used when `limit_up_pool.limit_up_time` is missing
 - Docker/scheduler changes should still pass `docker compose config --quiet` and `python3 -m py_compile` for edited Python files.
 
 ### 7. Wrong vs Correct
@@ -141,6 +153,9 @@ Correct:
 ```text
 同花顺板块热度
 东财行业涨停
+专用设备：测试设备（3板）、龙头设备（1板）
+核心连板
+5板：国华退(000004)、*ST东智(002175)
 ```
 
 ## Dates And Keys
