@@ -78,10 +78,12 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - Rule factors are `continuous_days` 35%, `limit_up_time/latest_limit_up_time` 15%, seal strength 20%, turnover rate 20%, and open count 10%.
   - Sealing-time risk treats early sealing as lower risk and late sealing as higher risk; parse `HH:MM`, `HH:MM:SS`, `92500`, and Unix-second timestamp values when available.
 - Scheduler default:
-  - 16:00 fetch
+  - 16:03 fetch; scheduled fetch adds `STOCK_FETCH_START_JITTER_MIN/MAX` seconds before upstream calls.
+  - `fetch_all_data` calls THS/Eastmoney sources sequentially and waits `STOCK_FETCH_SOURCE_DELAY_MIN/MAX` seconds between sources.
+  - THS paginated `limit_up_pool` waits `STOCK_FETCH_PAGE_DELAY_MIN/MAX` seconds between pages.
   - 16:10 rule assessment
   - 16:20 AI enhanced assessment when `MOONSHOT_API_KEY` is configured
-  - 16:30 Feishu report when `FEISHU_WEBHOOK_URL` is configured
+  - 16:37 Feishu report when `FEISHU_WEBHOOK_URL` is configured
   - all scheduled jobs run Monday-Friday only.
   - assessment, AI assessment, and Feishu report jobs must check `data_fetch_log.status='skipped'` for the target date and exit when fetch marked the day as non-trading/stale.
 
@@ -116,11 +118,14 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - weekend target dates return `skipped=True` before network calls
   - THS timestamp dates different from the requested date skip save/downstream flow
   - THS empty plus Eastmoney non-empty is treated as unverified/stale and skipped
+  - source fetches run sequentially with configured source delays, not `asyncio.gather`
+  - paginated THS fetches use configured page delays between pages
 - Rule assessment tests should assert:
   - sealing time participates in the score and reason
   - early sealing lowers risk relative to late sealing
   - `latest_limit_up_time` is used when `limit_up_pool.limit_up_time` is missing
 - Docker/scheduler changes should still pass `docker compose config --quiet` and `python3 -m py_compile` for edited Python files.
+- Scheduler tests should assert default data fetch and Feishu report cron times stay away from exact hour/half-hour peaks.
 
 ### 7. Wrong vs Correct
 

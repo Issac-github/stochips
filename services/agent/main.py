@@ -371,8 +371,8 @@ def cmd_schedule():
         scheduler = create_scheduler(notification_callback=notification)
 
         # 设置定时任务
-        # 数据抓取：每天 16:00
-        scheduler.schedule_data_fetch(hour=16, minute=0)
+        # 数据抓取：避开整点，并在真正请求前增加随机秒级等待
+        scheduler.schedule_data_fetch()
 
         # 风险评估：每天 16:10
         scheduler.schedule_risk_assessment(hour=16, minute=10)
@@ -383,9 +383,9 @@ def cmd_schedule():
         else:
             print("未配置 MOONSHOT_API_KEY，跳过 AI增强风险评估定时任务")
 
-        # 飞书播报：每天 16:30（需要飞书机器人 Webhook）
+        # 飞书播报：避开半点高峰，降低飞书平台频控概率
         if os.getenv("FEISHU_WEBHOOK_URL"):
-            scheduler.schedule_feishu_report(hour=16, minute=30)
+            scheduler.schedule_feishu_report()
         else:
             print("未配置 FEISHU_WEBHOOK_URL，跳过飞书播报定时任务")
 

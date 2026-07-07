@@ -30,6 +30,10 @@ from ..models.database import (
 
 logger = logging.getLogger(__name__)
 
+FEISHU_FREQUENCY_LIMIT_CODE = 11232
+FEISHU_SEND_MAX_ATTEMPTS = 3
+FEISHU_SEND_RETRY_DELAYS = (20, 60)
+
 
 @dataclass
 class BlockSummary:
@@ -488,12 +492,7 @@ class FeishuStockNotifier:
             payload["timestamp"] = timestamp
             payload["sign"] = self._generate_sign(timestamp, self.webhook_secret)
 
-        response = requests.post(self.webhook_url, json=payload, timeout=10)
-        response.raise_for_status()
-        try:
-            result = response.json()
-        except ValueError as exc:
-            raise RuntimeError(f"飞书返回非JSON响应: {response.text}") from exc
+        result = self._post_with_retry(payload)
 
         if result.get("code", 0) != 0:
             raise RuntimeError(f"飞书发送失败: {result}")
@@ -507,6 +506,36 @@ class FeishuStockNotifier:
             "em_limit_up_count": report.em_limit_up_count,
             "assessed_count": report.assessed_count,
         }
+
+    def _post_with_retry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Post the Feishu payload, retrying recoverable platform rate limits."""
+        result: Dict[str, Any] = {}
+        for attempt in range(1, FEISHU_SEND_MAX_ATTEMPTS + 1):
+            response = requests.post(self.webhook_url, json=payload, timeout=10)
+            response.raise_for_status()
+            try:
+                result = response.json()
+            except ValueError as exc:
+                raise RuntimeError(f"飞书返回非JSON响应: {response.text}") from exc
+
+            if result.get("code", 0) != FEISHU_FREQUENCY_LIMIT_CODE:
+                return result
+
+            if attempt >= FEISHU_SEND_MAX_ATTEMPTS:
+                return result
+
+            delay = FEISHU_SEND_RETRY_DELAYS[attempt - 1]
+            logger.warning(
+                "飞书发送被限流，%s 秒后重试: attempt=%s/%s code=%s msg=%s",
+                delay,
+                attempt,
+                FEISHU_SEND_MAX_ATTEMPTS,
+                result.get("code"),
+                result.get("msg"),
+            )
+            time.sleep(delay)
+
+        return result
 
     def _aggregate_blocks_from_pool(
         self,

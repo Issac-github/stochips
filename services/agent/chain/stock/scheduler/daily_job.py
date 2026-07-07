@@ -2,7 +2,7 @@
 每日任务调度器
 
 使用APScheduler实现定时任务：
-1. 每天收盘后（16:00）抓取股票数据
+1. 每天收盘后避开整点抓取股票数据
 2. 数据抓取完成后运行风险评估
 3. 发送通知（可选）
 """
@@ -10,6 +10,7 @@
 import asyncio
 import logging
 import os
+import random
 from datetime import datetime, date
 from typing import Optional, Callable
 
@@ -28,6 +29,13 @@ from ..agents import (
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_DATA_FETCH_HOUR = 16
+DEFAULT_DATA_FETCH_MINUTE = 3
+DEFAULT_FETCH_START_JITTER_MIN = 5.0
+DEFAULT_FETCH_START_JITTER_MAX = 45.0
+DEFAULT_FEISHU_REPORT_HOUR = 16
+DEFAULT_FEISHU_REPORT_MINUTE = 37
+
 
 def _env_is_configured(key: str, placeholders: Optional[set[str]] = None) -> bool:
     value = os.getenv(key, "").strip()
@@ -40,6 +48,40 @@ def _env_is_configured(key: str, placeholders: Optional[set[str]] = None) -> boo
 
 def _weekday_trigger(hour: int, minute: int) -> CronTrigger:
     return CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute)
+
+
+def _env_float(key: str, default: float) -> float:
+    return float(os.getenv(key, str(default)))
+
+
+def _fetch_start_jitter_range() -> tuple[float, float]:
+    jitter_min = _env_float(
+        "STOCK_FETCH_START_JITTER_MIN",
+        DEFAULT_FETCH_START_JITTER_MIN,
+    )
+    jitter_max = _env_float(
+        "STOCK_FETCH_START_JITTER_MAX",
+        DEFAULT_FETCH_START_JITTER_MAX,
+    )
+    if jitter_min < 0 or jitter_max < 0:
+        raise ValueError("STOCK_FETCH_START_JITTER_MIN/MAX 不能为负数")
+    if jitter_min > jitter_max:
+        raise ValueError(
+            "STOCK_FETCH_START_JITTER_MIN 不能大于 "
+            "STOCK_FETCH_START_JITTER_MAX"
+        )
+    return jitter_min, jitter_max
+
+
+async def _sleep_fetch_start_jitter() -> None:
+    jitter_min, jitter_max = _fetch_start_jitter_range()
+    if jitter_max <= 0:
+        return
+    delay = random.uniform(jitter_min, jitter_max)
+    if delay <= 0:
+        return
+    logger.info("数据抓取启动前随机等待 %.2f 秒", delay)
+    await asyncio.sleep(delay)
 
 
 class DailyJobScheduler:
@@ -124,6 +166,7 @@ class DailyJobScheduler:
         Returns:
             执行结果
         """
+        should_jitter = target_date is None
         if not target_date:
             target_date = date.today()
 
@@ -131,6 +174,9 @@ class DailyJobScheduler:
         logger.info(f"开始抓取数据: {date_str}")
 
         try:
+            if should_jitter:
+                await _sleep_fetch_start_jitter()
+
             # 抓取数据（使用同步版本）
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(
@@ -377,7 +423,11 @@ class DailyJobScheduler:
 
         logger.info(f"已设置工作日每日定时任务: {hour:02d}:{minute:02d}")
 
-    def schedule_data_fetch(self, hour: int = 16, minute: int = 0):
+    def schedule_data_fetch(
+        self,
+        hour: int = DEFAULT_DATA_FETCH_HOUR,
+        minute: int = DEFAULT_DATA_FETCH_MINUTE,
+    ):
         """
         设置数据抓取定时任务
 
@@ -437,7 +487,11 @@ class DailyJobScheduler:
 
         logger.info(f"已设置工作日AI增强风险评估任务: {hour:02d}:{minute:02d}")
 
-    def schedule_feishu_report(self, hour: int = 17, minute: int = 0):
+    def schedule_feishu_report(
+        self,
+        hour: int = DEFAULT_FEISHU_REPORT_HOUR,
+        minute: int = DEFAULT_FEISHU_REPORT_MINUTE,
+    ):
         """
         设置飞书播报定时任务
 

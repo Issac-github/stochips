@@ -32,7 +32,7 @@
 ### 🐳 容器化部署
 
 - **Docker Compose**：一键启动MySQL + Agent服务
-- **自动定时任务**：工作日16:00抓取，16:10规则评估，16:20可选AI增强，16:30可选飞书播报
+- **自动定时任务**：工作日16:03抓取，16:10规则评估，16:20可选AI增强，16:37可选飞书播报
 - **数据持久化**：MySQL存储，支持历史回溯
 - **日志监控**：完整日志记录和状态监控
 
@@ -121,6 +121,12 @@ MYSQL_PASSWORD=your_password
 MYSQL_PORT=3306
 
 STOCK_COOKIE=your_ths_cookie
+STOCK_FETCH_START_JITTER_MIN=5
+STOCK_FETCH_START_JITTER_MAX=45
+STOCK_FETCH_SOURCE_DELAY_MIN=3
+STOCK_FETCH_SOURCE_DELAY_MAX=8
+STOCK_FETCH_PAGE_DELAY_MIN=0.8
+STOCK_FETCH_PAGE_DELAY_MAX=2.0
 
 # 可选：启用 AI 分析和定时 AI 增强评估
 MOONSHOT_API_KEY=your_api_key
@@ -447,10 +453,10 @@ AI权重调整：
 默认调度策略（周一到周五执行，周六日不执行）：
 
 ```
-16:00 - 抓取同花顺/东方财富数据
+16:03 - 抓取同花顺/东方财富数据（启动前随机等待 5-45 秒，数据源之间随机等待 3-8 秒）
 16:10 - 运行规则引擎评估
 16:20 - 运行AI增强评估（仅当 MOONSHOT_API_KEY 已配置）
-16:30 - 发送飞书涨停播报（仅当 FEISHU_WEBHOOK_URL 已配置）
+16:37 - 发送飞书涨停播报（仅当 FEISHU_WEBHOOK_URL 已配置，避开半点飞书频控高峰）
 ```
 
 抓取阶段发现目标日期为非交易日或上游回退到上一交易日时，会标记为 `skipped`；同一天的规则评估、AI增强评估和飞书播报都会跳过。
@@ -461,10 +467,10 @@ AI权重调整：
 from chain.stock.scheduler import create_scheduler
 
 scheduler = create_scheduler()
-scheduler.schedule_data_fetch(hour=16, minute=0)
+scheduler.schedule_data_fetch(hour=16, minute=3)
 scheduler.schedule_risk_assessment(hour=16, minute=10)
 scheduler.schedule_enhanced_risk_assessment(hour=16, minute=20)
-scheduler.schedule_feishu_report(hour=16, minute=30)
+scheduler.schedule_feishu_report(hour=16, minute=37)
 scheduler.start()
 ```
 
@@ -507,6 +513,9 @@ ORDER BY risk_score DESC;
 | -------------------- | ---- | ---------------------------- |
 | `DATABASE_URL`     | ✅   | MySQL连接URL                 |
 | `STOCK_COOKIE`     | ✅   | 同花顺Cookie                 |
+| `STOCK_FETCH_START_JITTER_MIN/MAX` | ❌   | 定时抓取启动前随机等待范围，默认 5-45 秒 |
+| `STOCK_FETCH_SOURCE_DELAY_MIN/MAX` | ❌   | 数据源之间随机等待范围，默认 3-8 秒 |
+| `STOCK_FETCH_PAGE_DELAY_MIN/MAX` | ❌   | 分页请求之间随机等待范围，默认 0.8-2 秒 |
 | `MOONSHOT_API_KEY` | ❌   | Moonshot API Key             |
 | `LOG_LEVEL`        | ❌   | 日志级别(DEBUG/INFO/WARNING) |
 | `TZ`               | ❌   | 时区(默认Asia/Shanghai)      |
@@ -518,7 +527,9 @@ ORDER BY risk_score DESC;
 fetcher = create_fetcher(
     cookie="your_cookie",  # 自定义cookie
     timeout=30,            # 超时时间
-    max_retry=3           # 最大重试次数
+    max_retries=3,         # 最大重试次数
+    source_delay_range=(3, 8),
+    page_delay_range=(0.8, 2.0),
 )
 ```
 

@@ -9,6 +9,7 @@ import functools
 import json
 import logging
 import os
+import random
 from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, Set
 
@@ -95,6 +96,8 @@ class StockDataFetcher:
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
         retry_delay: Optional[float] = None,
+        source_delay_range: Optional[tuple[float, float]] = None,
+        page_delay_range: Optional[tuple[float, float]] = None,
     ):
         """
         初始化抓取器
@@ -104,6 +107,8 @@ class StockDataFetcher:
             timeout: 请求超时时间（秒）
             max_retries: 最大重试次数
             retry_delay: 重试延迟（秒）
+            source_delay_range: 数据源之间的随机延迟范围（秒）
+            page_delay_range: 分页请求之间的随机延迟范围（秒）
         """
         cookie = cookie or os.getenv("STOCK_COOKIE")
         self.cookies = self._parse_cookie(cookie, default_name="v")
@@ -112,7 +117,48 @@ class StockDataFetcher:
         self.retry_delay = retry_delay or float(
             os.getenv("STOCK_FETCH_RETRY_DELAY", "1.0")
         )
+        self.source_delay_range = source_delay_range or self._read_delay_range(
+            "STOCK_FETCH_SOURCE_DELAY_MIN",
+            "STOCK_FETCH_SOURCE_DELAY_MAX",
+            3.0,
+            8.0,
+        )
+        self.page_delay_range = page_delay_range or self._read_delay_range(
+            "STOCK_FETCH_PAGE_DELAY_MIN",
+            "STOCK_FETCH_PAGE_DELAY_MAX",
+            0.8,
+            2.0,
+        )
         self.session: Optional[aiohttp.ClientSession] = None
+
+    @staticmethod
+    def _read_delay_range(
+        min_key: str,
+        max_key: str,
+        default_min: float,
+        default_max: float,
+    ) -> tuple[float, float]:
+        delay_min = float(os.getenv(min_key, str(default_min)))
+        delay_max = float(os.getenv(max_key, str(default_max)))
+        if delay_min < 0 or delay_max < 0:
+            raise ValueError(f"{min_key}/{max_key} 不能为负数")
+        if delay_min > delay_max:
+            raise ValueError(f"{min_key} 不能大于 {max_key}")
+        return delay_min, delay_max
+
+    async def _sleep_random_delay(
+        self,
+        delay_range: tuple[float, float],
+        reason: str,
+    ) -> None:
+        delay_min, delay_max = delay_range
+        if delay_max <= 0:
+            return
+        delay = random.uniform(delay_min, delay_max)
+        if delay <= 0:
+            return
+        logger.debug("%s，随机等待 %.2f 秒", reason, delay)
+        await asyncio.sleep(delay)
 
     @staticmethod
     def _parse_cookie(cookie: Optional[str], default_name: str) -> Dict[str, str]:
@@ -527,8 +573,10 @@ class StockDataFetcher:
 
             if has_more:
                 page += 1
-                # 添加短暂延迟，避免请求过快
-                await asyncio.sleep(0.5)
+                await self._sleep_random_delay(
+                    self.page_delay_range,
+                    "涨停强度分页继续抓取前",
+                )
 
         logger.info(f"涨停强度数据获取完成: 共{page}页，{len(all_data)}条记录")
         return all_data
@@ -700,20 +748,6 @@ class StockDataFetcher:
             logger.info(reason)
             return self._skipped_fetch_result(target_date, reason)
 
-        # 并发获取数据
-        continuous_task = self.fetch_continuous_limit_up(target_date)
-        block_task = self.fetch_block_top(target_date)
-        pool_task = self.fetch_limit_up_pool(target_date)
-        eastmoney_task = self.fetch_eastmoney_zt_pool(target_date)
-
-        continuous_data, block_data, pool_data, eastmoney_data = await asyncio.gather(
-            continuous_task,
-            block_task,
-            pool_task,
-            eastmoney_task,
-            return_exceptions=True,
-        )
-
         result: Dict[str, List[Dict[str, Any]]] = {
             "continuous_limit_up": [],
             "block_top": [],
@@ -722,34 +756,24 @@ class StockDataFetcher:
             "errors": [],
         }
 
-        # 处理结果，记录异常
-        if isinstance(continuous_data, Exception):
-            logger.error(f"连板天梯数据获取失败: {continuous_data}")
-            result["errors"].append(
-                {"type": "continuous_limit_up", "error": str(continuous_data)}
-            )
-        else:
-            result["continuous_limit_up"] = continuous_data
+        fetch_steps = [
+            ("continuous_limit_up", "连板天梯", self.fetch_continuous_limit_up),
+            ("block_top", "最强风口", self.fetch_block_top),
+            ("limit_up_pool", "涨停强度", self.fetch_limit_up_pool),
+            ("eastmoney_zt_pool", "东方财富涨停池", self.fetch_eastmoney_zt_pool),
+        ]
+        for index, (data_type, label, fetch_func) in enumerate(fetch_steps):
+            if index > 0:
+                await self._sleep_random_delay(
+                    self.source_delay_range,
+                    f"{label}数据获取前",
+                )
 
-        if isinstance(block_data, Exception):
-            logger.error(f"最强风口数据获取失败: {block_data}")
-            result["errors"].append({"type": "block_top", "error": str(block_data)})
-        else:
-            result["block_top"] = block_data
-
-        if isinstance(pool_data, Exception):
-            logger.error(f"涨停强度数据获取失败: {pool_data}")
-            result["errors"].append({"type": "limit_up_pool", "error": str(pool_data)})
-        else:
-            result["limit_up_pool"] = pool_data
-
-        if isinstance(eastmoney_data, Exception):
-            logger.error(f"东方财富涨停池数据获取失败: {eastmoney_data}")
-            result["errors"].append(
-                {"type": "eastmoney_zt_pool", "error": str(eastmoney_data)}
-            )
-        else:
-            result["eastmoney_zt_pool"] = eastmoney_data
+            try:
+                result[data_type] = await fetch_func(target_date)
+            except Exception as exc:
+                logger.error("%s数据获取失败: %s", label, exc)
+                result["errors"].append({"type": data_type, "error": str(exc)})
 
         logger.info(
             f"✅ 所有数据获取完成: "
@@ -883,12 +907,16 @@ class StockDataFetcherSync:
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
         retry_delay: Optional[float] = None,
+        source_delay_range: Optional[tuple[float, float]] = None,
+        page_delay_range: Optional[tuple[float, float]] = None,
     ):
         self.fetcher = StockDataFetcher(
             cookie=cookie,
             timeout=timeout,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            source_delay_range=source_delay_range,
+            page_delay_range=page_delay_range,
         )
 
     def fetch_continuous_limit_up(
@@ -954,6 +982,8 @@ def create_fetcher(
     timeout: Optional[int] = None,
     max_retries: Optional[int] = None,
     retry_delay: Optional[float] = None,
+    source_delay_range: Optional[tuple[float, float]] = None,
+    page_delay_range: Optional[tuple[float, float]] = None,
 ) -> StockDataFetcherSync:
     """
     工厂函数：创建同步数据抓取器
@@ -963,8 +993,17 @@ def create_fetcher(
         timeout: 请求超时时间（秒）
         max_retries: 最大重试次数
         retry_delay: 重试延迟（秒）
+        source_delay_range: 数据源之间的随机延迟范围（秒）
+        page_delay_range: 分页请求之间的随机延迟范围（秒）
 
     Returns:
         StockDataFetcherSync实例
     """
-    return StockDataFetcherSync(cookie, timeout, max_retries, retry_delay)
+    return StockDataFetcherSync(
+        cookie,
+        timeout,
+        max_retries,
+        retry_delay,
+        source_delay_range,
+        page_delay_range,
+    )

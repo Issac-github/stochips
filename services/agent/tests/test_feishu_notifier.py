@@ -17,6 +17,18 @@ from chain.stock.agents.feishu_notifier import (
 )
 
 
+class FakeFeishuResponse:
+    def __init__(self, payload):
+        self.payload = payload
+        self.text = str(payload)
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.payload
+
+
 def test_build_card_contains_daily_report_sections():
     notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
     report = FeishuStockReport(
@@ -180,6 +192,47 @@ def test_generate_sign_matches_feishu_custom_bot_algorithm():
         FeishuStockNotifier._generate_sign("1600000000", "secret")
         == "vvU1S4ucHy95pQ90meMW66yQJ+Szge4s9g7hQUu9yP8="
     )
+
+
+def test_post_with_retry_recovers_from_feishu_frequency_limit(monkeypatch):
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    notifier.webhook_url = "https://example.test/hook"
+    responses = [
+        {"code": 11232, "data": {}, "msg": "frequency limited"},
+        {"code": 11232, "data": {}, "msg": "frequency limited"},
+        {"code": 0, "data": {}, "msg": "success"},
+    ]
+    sleeps = []
+
+    def fake_post(*args, **kwargs):
+        return FakeFeishuResponse(responses.pop(0))
+
+    monkeypatch.setattr("chain.stock.agents.feishu_notifier.requests.post", fake_post)
+    monkeypatch.setattr("chain.stock.agents.feishu_notifier.time.sleep", sleeps.append)
+
+    result = notifier._post_with_retry({"msg_type": "interactive", "card": {}})
+
+    assert result["code"] == 0
+    assert sleeps == [20, 60]
+    assert responses == []
+
+
+def test_post_with_retry_does_not_retry_non_rate_limit_error(monkeypatch):
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    notifier.webhook_url = "https://example.test/hook"
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        return FakeFeishuResponse({"code": 19021, "data": {}, "msg": "bad sign"})
+
+    monkeypatch.setattr("chain.stock.agents.feishu_notifier.requests.post", fake_post)
+    monkeypatch.setattr("chain.stock.agents.feishu_notifier.time.sleep", lambda delay: None)
+
+    result = notifier._post_with_retry({"msg_type": "interactive", "card": {}})
+
+    assert result["code"] == 19021
+    assert len(calls) == 1
 
 
 def test_prefer_regular_stocks_before_st_and_delisting_names():
