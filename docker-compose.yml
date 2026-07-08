@@ -31,7 +31,9 @@ services:
   # 股票Agent服务
   stock_agent:
     build:
-      context: ./services/agent
+      context: .
+      dockerfile: Dockerfile
+      target: stock_agent
       extra_hosts:
         - "host.docker.internal:host-gateway"
       args:
@@ -83,7 +85,8 @@ services:
   stock_rpc:
     build:
       context: .
-      dockerfile: services/stock-rpc/Dockerfile
+      dockerfile: Dockerfile
+      target: stock_rpc
       extra_hosts:
         - "host.docker.internal:host-gateway"
       args:

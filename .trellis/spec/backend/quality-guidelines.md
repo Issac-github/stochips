@@ -54,6 +54,8 @@ Do not introduce untracked configuration keys without updating `.env.example`, R
 - `BUILD_HTTPS_PROXY`: optional HTTPS proxy URL for image builds.
 - `BUILD_NO_PROXY`: optional no-proxy host list; defaults include local services.
 - Build definitions should map `BUILD_*` keys to the standard proxy build args and include `host.docker.internal:host-gateway` when host proxy access is supported.
+- `stock_agent` and `stock_rpc` Compose builds should use the root multi-target `Dockerfile` and share the `python-runtime-base` stage so Poetry dependencies install once per dependency-lock change.
+- Python dependency install steps should use BuildKit cache mounts for pip/Poetry caches while preserving `POETRY_REQUESTS_TIMEOUT`, `PIP_DEFAULT_TIMEOUT`, `PIP_RETRIES`, and `poetry config installer.max-workers 1`.
 
 ### 4. Validation & Error Matrix
 - Host shell has `HTTP_PROXY=http://127.0.0.1:7890`, but `.env` has no `BUILD_*` proxy -> Compose must render blank build proxy args.
@@ -70,7 +72,8 @@ Do not introduce untracked configuration keys without updating `.env.example`, R
 - Run `docker compose config --quiet` after changing build proxy wiring.
 - Search `docker-compose.yml` for `${HTTP_PROXY}`, `${HTTPS_PROXY}`, or `${NO_PROXY}` build arg interpolation; there should be no implicit shell-proxy mapping.
 - For proxy-related fixes, run or partially run `docker compose build stock_agent stock_rpc` far enough to verify `pip install poetry` does not retry a refused proxy.
-- For Dockerfile Poetry install changes, keep `POETRY_REQUESTS_TIMEOUT`, `PIP_DEFAULT_TIMEOUT`, `PIP_RETRIES`, and `poetry config installer.max-workers 1` consistent across `stock_agent`, `stock_rpc`, and `rag_agent`.
+- For Dockerfile Poetry install changes, keep `POETRY_REQUESTS_TIMEOUT`, `PIP_DEFAULT_TIMEOUT`, `PIP_RETRIES`, and `poetry config installer.max-workers 1` consistent across the shared root `Dockerfile` and `rag_agent`.
+- For shared Python base changes, run `docker compose config --quiet` and verify both `stock_agent` and `stock_rpc` build entries point at `dockerfile: Dockerfile` with different `target` values.
 
 ### 7. Wrong vs Correct
 

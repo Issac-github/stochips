@@ -191,6 +191,9 @@ docker compose exec stock_agent python main.py notify-feishu 20260703
 
 如果 `fetch` 输出“数据抓取跳过”，说明该日期被判断为周末、节假日或上游旧数据，后续不需要再手动执行 `assess-ai` / `notify-feishu`。
 
+`stock_agent` 和 `stock_rpc` 都使用仓库根目录的多目标 `Dockerfile`，
+共享同一个 Python 依赖 base 层；同时构建两个服务时，Poetry 依赖不会再各装一遍。
+
 如果只改了服务器 `.env`，没有同步新代码，可以不加 `--build`：
 
 ```bash
@@ -222,4 +225,5 @@ docker compose --profile rag up -d --build rag_agent
 - **AI 分析未生效**：`MOONSHOT_API_KEY` 为空或仍是占位值时只运行规则引擎，填入有效密钥后重启服务。
 - **构建时 pip/go 连接到失效代理**：Compose 只读取 `.env` 中的 `BUILD_HTTP_PROXY` / `BUILD_HTTPS_PROXY` 作为构建代理。若不需要代理，保持这两个变量为空；若 7890 代理在服务器宿主机上，不要写 `127.0.0.1`，写 `http://host.docker.internal:7890`。
 - **构建 `stock_rpc` 时 `go mod download` 访问 `proxy.golang.org` 超时**：默认 `.env` 使用 `GOPROXY=https://goproxy.cn,direct`，Compose 会透传到 Go builder。若仍超时，确认服务器 `.env` 没覆盖成空值，或改用其他可访问的 Go 模块代理。
-- **构建时 `Cannot install langchain`**：通常是 Poetry 下载依赖时网络中断。Dockerfile 已提高 pip/Poetry 超时并改为单线程安装；如果服务器 7890 代理可用，可在 `.env` 设置 `BUILD_HTTP_PROXY=http://host.docker.internal:7890` 和 `BUILD_HTTPS_PROXY=http://host.docker.internal:7890` 后重新构建。
+- **构建时 `Cannot install langchain`**：通常是 Poetry 下载依赖时网络中断。Dockerfile 已提高 pip/Poetry 超时、改为单线程安装，并启用 BuildKit pip/Poetry 缓存；如果服务器 7890 代理可用，可在 `.env` 设置 `BUILD_HTTP_PROXY=http://host.docker.internal:7890` 和 `BUILD_HTTPS_PROXY=http://host.docker.internal:7890` 后重新构建。
+- **`stock_agent` / `stock_rpc` 构建很慢**：首次冷构建仍需要下载 Python 依赖；之后两个服务应复用根级 `Dockerfile` 的 `python-runtime-base` 缓存层。若每次都重新执行 `poetry install`，检查是否执行过 `docker builder prune`、是否换了构建机，或 `services/agent/pyproject.toml` / `poetry.lock` 是否变更。
