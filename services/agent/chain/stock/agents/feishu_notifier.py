@@ -8,7 +8,7 @@ import hmac
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from ..models.database import (
     BlockTop,
+    BlockTopStock,
     ContinuousLimitUp,
     DataFetchLog,
     EastmoneyZTPool,
@@ -42,6 +43,8 @@ class BlockSummary:
     leading_stock_name: str
     change_percent: Optional[float]
     source: str = "block_top"
+    stocks: List[str] = field(default_factory=list)
+    block_code: str = ""
 
 
 @dataclass
@@ -253,6 +256,12 @@ class FeishuStockNotifier:
                         item.leading_stock_name or item.leading_stock or ""
                     ),
                     change_percent=self._to_float(item.change_percent),
+                    stocks=self._block_stock_labels(
+                        session,
+                        target_date,
+                        item.block_code,
+                    ),
+                    block_code=item.block_code,
                 )
                 for item in session.query(BlockTop)
                 .filter(BlockTop.date == target_date)
@@ -583,6 +592,31 @@ class FeishuStockNotifier:
             if limit is not None and len(blocks) >= limit:
                 break
         return blocks
+
+    def _block_stock_labels(
+        self, session: Session, target_date: date, block_code: str
+    ) -> List[str]:
+        if not block_code:
+            return []
+
+        rows = (
+            session.query(BlockTopStock)
+            .filter(
+                BlockTopStock.date == target_date,
+                BlockTopStock.block_code == block_code,
+            )
+            .order_by(
+                BlockTopStock.continuous_days.desc(),
+                BlockTopStock.first_limit_up_time.asc(),
+                BlockTopStock.sort_order.asc(),
+                BlockTopStock.code.asc(),
+            )
+            .all()
+        )
+        return [
+            f"{item.name}（{item.limit_up_type or f'{int(item.continuous_days or 1)}板'}）"
+            for item in rows
+        ]
 
     def _aggregate_eastmoney_industries(
         self, session: Session, target_date: date, limit: Optional[int] = None
@@ -992,15 +1026,26 @@ class FeishuStockNotifier:
             return "- 暂无板块数据"
         lines = []
         for index, item in enumerate(blocks, 1):
-            change = self._format_percent(item.change_percent)
-            leader = f"，龙头 {item.leading_stock_name}" if item.leading_stock_name else ""
-            source = "涨停池聚合" if item.source == "limit_up_pool" else "风口接口"
-            change = f"，涨幅 {change}" if item.change_percent is not None else ""
-            lines.append(
-                f"{index}. {item.block_name}："
-                f"{item.stock_count} 家涨停{change}{leader}（{source}）"
-            )
+            summary = self._format_block_summary(item, include_leader=not item.stocks)
+            stock_text = "、".join(item.stocks)
+            if summary and stock_text:
+                stock_text = f"{summary}，{stock_text}"
+            elif summary:
+                stock_text = summary
+            lines.append(f"{index}. {item.block_name}：{stock_text}")
         return "\n".join(lines)
+
+    def _format_block_summary(
+        self, item: BlockSummary, include_leader: bool = True
+    ) -> str:
+        parts = []
+        if item.stock_count:
+            parts.append(f"{item.stock_count} 家涨停")
+        if item.change_percent is not None:
+            parts.append(f"涨幅 {self._format_percent(item.change_percent)}")
+        if include_leader and item.leading_stock_name:
+            parts.append(f"龙头 {item.leading_stock_name}")
+        return "，".join(parts) if parts else "暂无个股"
 
     def _format_industries(self, industries: List[IndustrySummary]) -> str:
         if not industries:

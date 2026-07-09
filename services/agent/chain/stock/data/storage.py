@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from ..models.database import (
     ContinuousLimitUp,
     BlockTop,
+    BlockTopStock,
     LimitUpPool,
     DataFetchLog,
     EastmoneyZTPool,
@@ -112,6 +113,12 @@ class StockDataStorage:
         if isinstance(value, list) and value and isinstance(value[0], dict):
             return value[0]
         return {}
+
+    def _list_items(self, item: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
+        value = item.get(key)
+        if not isinstance(value, list):
+            return []
+        return [entry for entry in value if isinstance(entry, dict)]
 
     def _upsert_by_keys(
         self,
@@ -243,6 +250,9 @@ class StockDataStorage:
                         'stock_count': self._safe_int(self._first_value(item, 'stock_count', 'num', 'count', 'limit_up_count', 'limit_up_num')),
                         'prev_stock_count': self._safe_int(self._first_value(item, 'prev_stock_count', 'pre_num', 'prev_count')),
                         'change_percent': self._safe_decimal(self._first_value(item, 'change_percent', 'change_rate', 'rate', 'change')),
+                        'continuous_plate_num': self._safe_int(self._first_value(item, 'continuous_plate_num'), None),
+                        'high_text': self._safe_str(self._first_value(item, 'high')),
+                        'high_num': self._safe_int(self._first_value(item, 'high_num'), None),
                         'leading_stock': self._safe_str(self._first_value(item, 'leading_stock', 'leader_code', 'stock_code', 'leader.code')),
                         'leading_stock_name': self._safe_str(self._first_value(item, 'leading_stock_name', 'leader_name', 'stock_name', 'leader.name')),
                         'continuous_days': self._safe_int(self._first_value(item, 'continuous_days', 'days', 'high_days'), 1),
@@ -260,6 +270,13 @@ class StockDataStorage:
                         )
 
                     self._upsert_by_keys(session, BlockTop, values, ('date', 'block_code'))
+                    self._save_block_top_stocks(
+                        session,
+                        item,
+                        target_date,
+                        block_code,
+                        block_name,
+                    )
                     success_count += 1
 
                 except Exception as e:
@@ -279,6 +296,123 @@ class StockDataStorage:
             session.close()
 
         return success_count, failed_count
+
+    def _save_block_top_stocks(
+        self,
+        session: Session,
+        item: Dict[str, Any],
+        target_date: date,
+        block_code: str,
+        block_name: str,
+    ) -> int:
+        if not isinstance(item.get('stock_list'), list):
+            return 0
+
+        stock_list = self._list_items(item, 'stock_list')
+        seen_codes = set()
+        saved_count = 0
+
+        for index, stock in enumerate(stock_list, 1):
+            code = self._safe_str(
+                self._first_value(stock, 'code', 'stock_code', 'symbol')
+            )
+            name = self._safe_str(
+                self._first_value(stock, 'name', 'stock_name')
+            )
+            if not code or not name or code in seen_codes:
+                continue
+
+            values = {
+                'date': target_date,
+                'block_code': block_code,
+                'block_name': block_name,
+                'code': code,
+                'name': name,
+                'continuous_days': self._safe_int(
+                    self._first_value(
+                        stock,
+                        'continuous_days',
+                        'continue_num',
+                        'high_days',
+                        'limit_up_days',
+                    ),
+                    1,
+                ),
+                'limit_up_type': self._safe_str(
+                    self._first_value(stock, 'high', 'limit_up_type')
+                ),
+                'high_days': self._safe_int(
+                    self._first_value(stock, 'high_days'),
+                    None,
+                ),
+                'first_limit_up_time': self._safe_str(
+                    self._first_value(
+                        stock,
+                        'first_limit_up_time',
+                        'limit_up_time',
+                        'time',
+                    )
+                ),
+                'last_limit_up_time': self._safe_str(
+                    self._first_value(stock, 'last_limit_up_time', 'last_time')
+                ),
+                'change_percent': self._safe_decimal(
+                    self._first_value(stock, 'change_percent', 'change_rate')
+                ),
+                'latest_price': self._safe_decimal(
+                    self._first_value(stock, 'latest_price', 'latest')
+                ),
+                'reason_type': self._safe_str(
+                    self._first_value(stock, 'reason_type')
+                ),
+                'reason_info': self._safe_str(
+                    self._first_value(stock, 'reason_info', 'reason')
+                ),
+                'concept': self._safe_str(
+                    self._first_value(stock, 'concept')
+                ),
+                'market_id': self._safe_int(
+                    self._first_value(stock, 'market_id'),
+                    None,
+                ),
+                'market_type': self._safe_str(
+                    self._first_value(stock, 'market_type')
+                ),
+                'is_new': self._safe_int(
+                    self._first_value(stock, 'is_new'),
+                    None,
+                ),
+                'is_st': self._safe_int(
+                    self._first_value(stock, 'is_st'),
+                    None,
+                ),
+                'change_tag': self._safe_str(
+                    self._first_value(stock, 'change_tag')
+                ),
+                'raw_json': json.dumps(
+                    stock,
+                    ensure_ascii=False,
+                    cls=DecimalEncoder,
+                ),
+                'sort_order': index,
+            }
+            self._upsert_by_keys(
+                session,
+                BlockTopStock,
+                values,
+                ('date', 'block_code', 'code'),
+            )
+            seen_codes.add(code)
+            saved_count += 1
+
+        stale_query = session.query(BlockTopStock).filter(
+            BlockTopStock.date == target_date,
+            BlockTopStock.block_code == block_code,
+        )
+        if seen_codes:
+            stale_query = stale_query.filter(BlockTopStock.code.notin_(seen_codes))
+        stale_query.delete(synchronize_session=False)
+        return saved_count
 
     def save_limit_up_pool(
         self,

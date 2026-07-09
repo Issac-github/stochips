@@ -64,6 +64,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - `stock_list[0].code` -> `leading_stock`
   - `stock_list[0].name` -> `leading_stock_name`
   - `stock_list[0].first_limit_up_time` -> `avg_limit_up_time` fallback
+- `block_top_stock` stores every member from THS `block_top.stock_list`, keyed by `(date, block_code, code)`. It is the source for expanding `同花顺板块热度` stock lists in Feishu and should preserve analysis fields: first/last limit-up time, `continue_num`, `high`, `high_days`, `change_rate`, `latest`, `reason_type`, `reason_info`, `concept`, `market_id`, `market_type`, `is_new`, `is_st`, `change_tag`, and raw JSON.
 - `limit_up_pool` is the THS 涨停强度 table. It stores limit-up type, time, open count, seal strength/amount, volume ratio, turnover rate, market value, concept/reason, and optional block name.
 - `eastmoney_zt_pool` is the Eastmoney 涨停池 table. Feishu uses its `block_name` as the industry/sector dimension and reports all grouped industries, not Top 10.
 - `fetch_all_data` must not save or advance stale holiday data. If the target date is a weekend, or THS payload timestamps prove the upstream returned a different trading date, return `skipped=True` with `skip_reason`; `save_all_data` writes `data_fetch_log.status='skipped'` for every data type and does not upsert stock rows.
@@ -71,6 +72,9 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - THS tables drive short-term structure: limit-up overview, 连板梯队, 核心连板, 早盘强势, 分歧弱板, 涨停前高突破, and 同花顺板块热度.
   - Eastmoney drives the independent `东财行业涨停` section by grouping `eastmoney_zt_pool.block_name`.
   - Board/industry sections are all-item summaries; only stock-level sections such as 核心连板, 分歧弱板, 高风险, and 机会观察 use Top 10.
+  - `同花顺板块热度` should keep the board summary and then render every stock available from `block_top_stock` for each THS board. Use compact labels with board count, not source labels: `板块：31 家涨停，涨幅 3.22%，股票A（3板）、股票B（1板）`. Do not match `block_top.block_name` against `limit_up_pool.block_name` to infer concept-board membership; those names are not a stable one-to-one contract.
+  - Prefer THS `stock_list[].high` as the Feishu stock label when available, e.g. `华天科技（3天2板）`; fall back to `continue_num` as `N板`.
+  - If historical `block_top` rows have no `block_top_stock` details yet, Feishu should render the count/change/leader summary without source labels. Do not present `leading_stock_name` alone as if it were the full stock list.
   - `东财行业涨停` should render all grouped industries and all limit-up stocks within each industry. Use compact stock labels with board count, not codes or `前三`: `行业：股票A（3板）、股票B（1板）`.
   - `核心连板` should group by `continuous_days` rather than render one line per stock, e.g. `5板：国华退(000004)、*ST东智(002175)`.
 - Rule risk assessment ownership:
@@ -107,9 +111,12 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - `limit_up_num` becomes `stock_count`
   - `change` becomes `change_percent`
   - `stock_list[0].code/name` becomes leader fields
+  - all `stock_list` members and their analysis fields are persisted to `block_top_stock`, including `reason_info` and raw JSON
 - Feishu report tests should assert:
   - `同花顺板块热度` and `东财行业涨停` are separate sections
   - board/industry section titles do not say Top 10
+  - `同花顺板块热度` rows do not include source labels such as `风口接口` or `涨停池聚合`, and render every `block_top_stock` member as `名字（几板）`
+  - `同花顺板块热度` fallback rows summarize count/change/leader instead of showing a one-stock fake list
   - Eastmoney industry rows do not include `前三` or `N 只涨停`, and render every stock as `名字（几板）`
   - 核心连板 groups stocks by board count instead of repeating per-stock risk text
   - `分歧弱板` requires `open_count > 0`

@@ -60,6 +60,12 @@ def test_build_card_contains_daily_report_sections():
                 stock_count=4,
                 leading_stock_name="测试龙头",
                 change_percent=3.21,
+                stocks=[
+                    "测试股份（4板）",
+                    "同板股份（4板）",
+                    "补涨股份（1板）",
+                    "低位股份（1板）",
+                ],
             )
         ],
         eastmoney_industries=[
@@ -172,7 +178,9 @@ def test_build_card_contains_daily_report_sections():
     assert "涨停结构" in content
     assert "4板 1只" in content
     assert "同花顺板块热度" in content
-    assert "机器人概念：4 家涨停" in content
+    assert "机器人概念：4 家涨停，涨幅 3.21%，测试股份（4板）、同板股份（4板）、补涨股份（1板）、低位股份（1板）" in content
+    assert "风口接口" not in content
+    assert "涨停池聚合" not in content
     assert "东财行业涨停" in content
     assert "专用设备：测试设备（3板）、龙头设备（2板）、强势设备（1板）、补充设备（1板）" in content
     assert "专用设备：6 只涨停" not in content
@@ -381,6 +389,55 @@ def test_format_industries_renders_eastmoney_industry_counts():
         )
         == "1. 未知行业：暂无个股"
     )
+
+
+def test_format_blocks_renders_all_stocks_without_source_label():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    content = notifier._format_blocks(
+        [
+            BlockSummary(
+                block_name="芯片概念",
+                stock_count=2,
+                leading_stock_name="龙头芯片",
+                change_percent=2.5,
+                stocks=["龙头芯片（3板）", "跟涨芯片（1板）"],
+            ),
+            BlockSummary(
+                block_name="机器人概念",
+                stock_count=1,
+                leading_stock_name="机器龙头",
+                change_percent=None,
+                source="limit_up_pool",
+                stocks=[],
+            ),
+        ]
+    )
+
+    assert "芯片概念：2 家涨停，涨幅 2.50%，龙头芯片（3板）、跟涨芯片（1板）" in content
+    assert "机器人概念：1 家涨停，龙头 机器龙头" in content
+    assert "风口接口" not in content
+    assert "涨停池聚合" not in content
+
+
+def test_format_blocks_without_stock_detail_falls_back_to_summary_not_fake_list():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    content = notifier._format_blocks(
+        [
+            BlockSummary(
+                block_name="芯片概念",
+                stock_count=31,
+                leading_stock_name="华天科技",
+                change_percent=3.22,
+                stocks=[],
+            )
+        ]
+    )
+
+    assert "芯片概念：31 家涨停，涨幅 3.22%，龙头 华天科技" in content
+    assert "芯片概念：华天科技" not in content
+    assert "风口接口" not in content
 
 
 def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():

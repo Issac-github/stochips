@@ -60,6 +60,9 @@ class BlockTop(Base):
     stock_count = Column(Integer, default=0, comment='涨停家数')
     prev_stock_count = Column(Integer, default=0, comment='上一日涨停家数')
     change_percent = Column(Decimal(10, 2), nullable=True, comment='板块涨跌幅%')
+    continuous_plate_num = Column(Integer, nullable=True, comment='连续上榜板块数')
+    high_text = Column(String(50), nullable=True, comment='板块高度')
+    high_num = Column(Integer, nullable=True, comment='板块高度编码')
     leading_stock = Column(String(20), nullable=True, comment='龙头股代码')
     leading_stock_name = Column(String(100), nullable=True, comment='龙头股名称')
     continuous_days = Column(Integer, default=1, comment='持续天数')
@@ -72,6 +75,46 @@ class BlockTop(Base):
         Index('idx_date_block', 'date', 'block_code', unique=True),
         Index('idx_date_count', 'date', 'stock_count'),
         {'comment': '最强风口数据'}
+    )
+
+
+class BlockTopStock(Base):
+    """
+    最强风口板块内股票明细表
+    存储 THS block_top.stock_list 的完整成员列表
+    """
+    __tablename__ = 'block_top_stock'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False, index=True, comment='数据日期')
+    block_code = Column(String(20), nullable=False, index=True, comment='板块代码')
+    block_name = Column(String(100), nullable=False, comment='板块名称')
+    code = Column(String(20), nullable=False, index=True, comment='股票代码')
+    name = Column(String(100), nullable=False, comment='股票名称')
+    continuous_days = Column(Integer, default=1, comment='连板天数')
+    limit_up_type = Column(String(50), nullable=True, comment='涨停高度')
+    high_days = Column(Integer, nullable=True, comment='同花顺高度编码')
+    first_limit_up_time = Column(String(20), nullable=True, comment='首次涨停时间')
+    last_limit_up_time = Column(String(20), nullable=True, comment='最后涨停时间')
+    change_percent = Column(Decimal(10, 4), nullable=True, comment='涨跌幅%')
+    latest_price = Column(Decimal(10, 2), nullable=True, comment='最新价')
+    reason_type = Column(String(255), nullable=True, comment='涨停原因标签')
+    reason_info = Column(Text, nullable=True, comment='涨停原因详情')
+    concept = Column(Text, nullable=True, comment='概念')
+    market_id = Column(Integer, nullable=True, comment='市场ID')
+    market_type = Column(String(20), nullable=True, comment='市场类型')
+    is_new = Column(Integer, nullable=True, comment='是否新标记')
+    is_st = Column(Integer, nullable=True, comment='是否ST')
+    change_tag = Column(String(50), nullable=True, comment='涨停状态标签')
+    raw_json = Column(Text, nullable=True, comment='原始JSON')
+    sort_order = Column(Integer, default=0, comment='接口返回顺序')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    __table_args__ = (
+        Index('idx_date_block_stock', 'date', 'block_code', 'code', unique=True),
+        Index('idx_date_block_order', 'date', 'block_code', 'sort_order'),
+        {'comment': '最强风口板块股票明细'}
     )
 
 
