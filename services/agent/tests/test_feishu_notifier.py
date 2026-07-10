@@ -3,6 +3,9 @@ from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chain.stock.agents.feishu_notifier import (
@@ -17,6 +20,7 @@ from chain.stock.agents.feishu_notifier import (
     WeakBoardSummary,
     next_feishu_send_at,
 )
+from chain.stock.models.database import DataFetchLog
 
 
 class FakeFeishuResponse:
@@ -170,6 +174,8 @@ def test_build_card_contains_daily_report_sections():
     assert "早盘股份(000002)：1板" in content
     assert "分歧股份(000003)：开板 5 次" in content
     assert "突破股份(000006)：前期3板，断板6个交易日" in content
+    assert "涨停前高突破 Top 10" not in content
+    assert "6-10个交易日内涨停前高突破" in content
     assert "风险评估" not in content
     assert "未评估/无评分" not in content
     assert "建议分布" not in content
@@ -180,6 +186,12 @@ def test_build_card_contains_daily_report_sections():
     assert "Agent: main | Model: gpt-test-codex" in content
     assert "Provider: openai-codex" in content
     assert "行业原因：机器人产业提速" not in content
+
+    empty_early = notifier._format_stocks(
+        [],
+        empty_message="暂无早盘强势数据",
+    )
+    assert empty_early == "- 暂无早盘强势数据"
 
     material = notifier.build_analysis_material(report)
     assert "Codex 市场复盘" not in material
@@ -344,29 +356,123 @@ def test_prefer_regular_stocks_before_st_and_delisting_names():
     assert [item.name for item in selected] == ["正常股份", "*ST测试"]
 
 
-def test_format_breakouts_renders_previous_limit_up_breakout():
+def test_format_breakouts_groups_all_stocks_by_trading_day_window():
     notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
     content = notifier._format_breakouts(
         [
             BreakoutSummary(
                 code="000006",
-                name="突破股份",
+                name="五日突破",
                 breakout_price=12.5,
                 previous_high_price=11.2,
                 breakout_ratio=11.607,
                 previous_max_days=3,
-                gap_trading_days=6,
+                gap_trading_days=5,
                 block_name="低空经济",
                 reason="涨停突破前高",
-            )
+            ),
+            BreakoutSummary(
+                code="000007",
+                name="十日突破",
+                breakout_price=13.5,
+                previous_high_price=11.2,
+                breakout_ratio=20.536,
+                previous_max_days=2,
+                gap_trading_days=6,
+                block_name="商业航天",
+                reason="涨停突破前高",
+            ),
+            BreakoutSummary(
+                code="000008",
+                name="三十日突破",
+                breakout_price=14.5,
+                previous_high_price=11.2,
+                breakout_ratio=29.464,
+                previous_max_days=2,
+                gap_trading_days=11,
+                block_name="芯片",
+                reason="涨停突破前高",
+            ),
+            BreakoutSummary(
+                code="000009",
+                name="六十日突破",
+                breakout_price=15.5,
+                previous_high_price=11.2,
+                breakout_ratio=38.393,
+                previous_max_days=2,
+                gap_trading_days=60,
+                block_name="机器人",
+                reason="涨停突破前高",
+            ),
         ]
     )
 
+    assert "5个交易日内涨停前高突破" in content
+    assert "6-10个交易日内涨停前高突破" in content
+    assert "11-30个交易日内涨停前高突破" in content
+    assert "31-60个交易日内涨停前高突破" in content
+    assert all(name in content for name in ["五日突破", "十日突破", "三十日突破", "六十日突破"])
     assert "前期3板" in content
-    assert "断板6个交易日" in content
+    assert "断板5个交易日" in content
     assert "前高11.20" in content
     assert "今涨停12.50" in content
     assert "突破11.6%" in content
+
+
+def test_format_breakouts_keeps_all_windows_when_there_are_no_stocks():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    content = notifier._format_breakouts([])
+
+    assert "5个交易日内涨停前高突破" in content
+    assert "6-10个交易日内涨停前高突破" in content
+    assert "11-30个交易日内涨停前高突破" in content
+    assert "31-60个交易日内涨停前高突破" in content
+    assert content.count("- 暂无") == 4
+    assert content == (
+        "**5个交易日内涨停前高突破**\n\n- 暂无\n\n"
+        "**6-10个交易日内涨停前高突破**\n\n- 暂无\n\n"
+        "**11-30个交易日内涨停前高突破**\n\n- 暂无\n\n"
+        "**31-60个交易日内涨停前高突破**\n\n- 暂无"
+    )
+
+
+def test_recent_trading_dates_uses_successful_fetch_logs_and_skips_weekends():
+    engine = create_engine("sqlite://")
+    DataFetchLog.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        for identifier, item in enumerate([
+            date(2026, 7, 9),
+            date(2026, 7, 10),
+            date(2026, 7, 11),
+            date(2026, 7, 13),
+        ], 1):
+            session.add(
+                DataFetchLog(
+                    id=identifier,
+                    date=item,
+                    data_type="limit_up_pool",
+                    status="success",
+                    record_count=1,
+                )
+            )
+        session.commit()
+
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        trading_dates = notifier._recent_trading_dates(
+            session,
+            date(2026, 7, 13),
+            lookback=2,
+        )
+    finally:
+        session.close()
+
+    assert trading_dates == [
+        date(2026, 7, 13),
+        date(2026, 7, 10),
+        date(2026, 7, 9),
+    ]
 
 
 def test_format_stocks_keeps_special_names_when_provided():

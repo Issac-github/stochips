@@ -79,6 +79,10 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
     assert fresh.model == "gpt-test-codex"
     assert len(client.prompts) == 1
     assert STRATEGY_RELATIVE_PATH.as_posix() in client.prompts[0]
+    assert "天量弱转强是检验真龙的标准" in client.prompts[0]
+    assert "不要调用 shell、文件读取或 MCP 工具" in client.prompts[0]
+    assert "绝不能归入“2板梯队”" in client.prompts[0]
+    assert "只以事实材料中的 `continuous_days` 为准" in client.prompts[0]
     assert "**涨停概览**：2026-07-10，连板 6 只" in client.prompts[0]
     assert "简略原因（reason_type）：先进封装+存储芯片" in client.prompts[0]
     assert "详细原因（reason_info）：行业原因：先进封装景气度提升" in client.prompts[0]
@@ -173,3 +177,28 @@ def test_failed_review_releases_codex_runtime(tmp_path):
 
     assert client.closed is True
     assert agent.codex_client is None
+
+
+def test_empty_strategy_file_fails_before_starting_codex(tmp_path, monkeypatch):
+    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path.parent.mkdir(parents=True)
+    strategy_path.write_text("\n", encoding="utf-8")
+    database_path = tmp_path / "review.db"
+    session_factory = create_review_session(database_path)
+
+    def fail_if_started(*args, **kwargs):
+        raise AssertionError("empty strategy must not start Codex")
+
+    monkeypatch.setattr(
+        "chain.stock.agents.daily_market_review_agent.CodexSubscriptionClient",
+        fail_if_started,
+    )
+    agent = DailyMarketReviewAgent(
+        f"sqlite:///{database_path}",
+        notifier=FakeNotifier(),
+        project_root=tmp_path,
+        session_factory=session_factory,
+    )
+
+    with pytest.raises(RuntimeError, match="交易体系文件为空"):
+        agent.run(date(2026, 7, 10))

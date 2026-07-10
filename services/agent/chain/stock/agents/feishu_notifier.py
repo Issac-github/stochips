@@ -427,7 +427,10 @@ class FeishuStockNotifier:
             report.eastmoney_industries
         )
         stock_lines = self._format_core_continuous(report.top_stocks)
-        early_lines = self._format_stocks(report.early_stocks)
+        early_lines = self._format_stocks(
+            report.early_stocks,
+            empty_message="暂无早盘强势数据",
+        )
         weak_lines = self._format_weak_boards(report.weak_boards)
         breakout_lines = self._format_breakouts(report.breakout_stocks)
         warning_lines = self._format_warnings(report.data_warnings)
@@ -460,7 +463,7 @@ class FeishuStockNotifier:
                 "**分歧弱板 Top 10**",
                 weak_lines,
                 "",
-                "**涨停前高突破 Top 10**",
+                "**涨停前高突破**",
                 breakout_lines,
                 "",
                 "**抓取日志**",
@@ -873,7 +876,7 @@ class FeishuStockNotifier:
     def _build_breakout_stocks(
         self, session: Session, target_date: date
     ) -> List[BreakoutSummary]:
-        trading_dates = self._recent_trading_dates(session, target_date, lookback=20)
+        trading_dates = self._recent_trading_dates(session, target_date, lookback=60)
         previous_dates = [item for item in trading_dates if item < target_date]
         if not previous_dates:
             return []
@@ -958,20 +961,37 @@ class FeishuStockNotifier:
                 -item.gap_trading_days,
             ),
             reverse=True,
-        )[:10]
+        )
 
     def _recent_trading_dates(
         self, session: Session, target_date: date, lookback: int
     ) -> List[date]:
-        rows = (
-            session.query(LimitUpPool.date)
-            .filter(LimitUpPool.date <= target_date)
-            .group_by(LimitUpPool.date)
-            .order_by(LimitUpPool.date.desc())
-            .all()
-        )
-        weekday_dates = [item[0] for item in rows if item[0].weekday() < 5]
-        return sorted(weekday_dates, reverse=True)[: lookback + 1]
+        fetch_dates = {
+            item[0]
+            for item in (
+                session.query(DataFetchLog.date)
+                .filter(
+                    DataFetchLog.date <= target_date,
+                    DataFetchLog.data_type == "limit_up_pool",
+                    DataFetchLog.status == "success",
+                )
+                .group_by(DataFetchLog.date)
+                .all()
+            )
+            if item[0].weekday() < 5
+        }
+        if len(fetch_dates) < lookback + 1:
+            fetch_dates.update(
+                item[0]
+                for item in (
+                    session.query(LimitUpPool.date)
+                    .filter(LimitUpPool.date <= target_date)
+                    .group_by(LimitUpPool.date)
+                    .all()
+                )
+                if item[0].weekday() < 5
+            )
+        return sorted(fetch_dates, reverse=True)[: lookback + 1]
 
     def _latest_chain_segment(
         self, chain_rows: List[ContinuousLimitUp], previous_dates: List[date]
@@ -1111,9 +1131,14 @@ class FeishuStockNotifier:
             lines.append(f"{index}. {days}板：{labels}")
         return "\n".join(lines)
 
-    def _format_stocks(self, stocks: List[StockSummary]) -> str:
+    def _format_stocks(
+        self,
+        stocks: List[StockSummary],
+        *,
+        empty_message: str = "暂无股票数据",
+    ) -> str:
         if not stocks:
-            return "- 暂无连板数据"
+            return f"- {empty_message}"
         lines = []
         for index, item in enumerate(stocks, 1):
             reason = f"，{item.reason}" if item.reason else ""
@@ -1140,20 +1165,38 @@ class FeishuStockNotifier:
         return "\n".join(lines)
 
     def _format_breakouts(self, stocks: List[BreakoutSummary]) -> str:
-        if not stocks:
-            return "- 暂无涨停前高突破数据"
-        lines = []
-        for index, item in enumerate(stocks, 1):
-            block = f"，{item.block_name}" if item.block_name else ""
-            reason = f"，{item.reason}" if item.reason else ""
-            lines.append(
-                f"{index}. {item.name}({item.code})："
-                f"前期{item.previous_max_days}板，断板{item.gap_trading_days}个交易日，"
-                f"前高{item.previous_high_price:.2f}，"
-                f"今涨停{item.breakout_price:.2f}，"
-                f"突破{item.breakout_ratio:.1f}%{block}{reason}"
-            )
-        return "\n".join(lines)
+        windows = (
+            (5, "5个交易日内涨停前高突破"),
+            (10, "6-10个交易日内涨停前高突破"),
+            (30, "11-30个交易日内涨停前高突破"),
+            (60, "31-60个交易日内涨停前高突破"),
+        )
+        lines: List[str] = []
+        lower_bound = 0
+        for upper_bound, title in windows:
+            grouped = [
+                item
+                for item in stocks
+                if lower_bound < item.gap_trading_days <= upper_bound
+            ]
+            lines.append(f"**{title}**")
+            if not grouped:
+                lines.append("- 暂无")
+            else:
+                for index, item in enumerate(grouped, 1):
+                    block = f"，{item.block_name}" if item.block_name else ""
+                    reason = f"，{item.reason}" if item.reason else ""
+                    lines.append(
+                        f"{index}. {item.name}({item.code})："
+                        f"前期{item.previous_max_days}板，断板{item.gap_trading_days}个交易日，"
+                        f"前高{item.previous_high_price:.2f}，"
+                        f"今涨停{item.breakout_price:.2f}，"
+                        f"突破{item.breakout_ratio:.1f}%{block}{reason}"
+                    )
+            lower_bound = upper_bound
+        # Feishu Markdown collapses single line breaks, so each time window must
+        # be a separate block rather than a run-on sequence of headings and text.
+        return "\n\n".join(lines)
 
     def _format_logs(self, logs: List[Dict[str, Any]]) -> str:
         if not logs:
