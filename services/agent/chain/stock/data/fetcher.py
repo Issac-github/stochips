@@ -496,7 +496,11 @@ class StockDataFetcher:
         url = "https://data.10jqka.com.cn/dataapi/limit_up/limit_up_pool"
 
         # 必需字段列表（与curl中的field参数一致）
-        fields = "199112,10,9001,330323,330324,330325,9002,330329,133971,133970,1968584,3475914,9003,9004"
+        fields = (
+            "199112,10,9001,330323,330324,9002,330329,133971,133970,"
+            "1968584,3475914,9003,9004,currency_value,open_num,first_limit_up_time,last_limit_up_time,"
+            "reason_type,reason_info"
+        )
 
         params = {
             "page": page,

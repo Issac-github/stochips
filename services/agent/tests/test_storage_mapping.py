@@ -137,3 +137,77 @@ def test_save_block_top_persists_full_ths_stock_list():
     assert first_stock["is_st"] == 0
     assert first_stock["change_tag"] == "FIRST_LIMIT"
     assert json.loads(first_stock["raw_json"])["reason_type"] == "先进封装+存储芯片"
+
+
+def test_limit_up_pool_prefers_ths_reason_and_first_last_time_fields():
+    storage = StockDataStorage.__new__(StockDataStorage)
+    item = {
+        "first_limit_up_time": "1783563090",
+        "last_limit_up_time": "1783567537",
+        "open_num": 3,
+        "currency_value": 67472008000,
+        "reason_type": "中报预增+交互智能平板+AI教育+机器人",
+        "reason_info": "公司聚焦智能交互显示与AI教育。",
+        "330324": "09:31",
+        "330329": "10:12",
+        "9004": "旧原因",
+    }
+
+    assert storage._first_value(
+        item, "first_limit_up_time", "limit_up_time", "330324"
+    ) == "1783563090"
+    assert storage._first_value(
+        item, "last_limit_up_time", "last_time", "330329"
+    ) == "1783567537"
+    assert storage._safe_int(item.get("open_num")) == 3
+    assert storage._safe_int({"open_num": None}.get("open_num")) == 0
+    assert storage._safe_decimal(
+        storage._first_value(item, "currency_value", "market_value", "9003")
+    ) == 67472008000
+    assert storage._first_value(item, "reason_type", "concept") == item["reason_type"]
+    assert storage._first_value(item, "reason_info", "reason", "9004") == item["reason_info"]
+
+
+def test_save_limit_up_pool_persists_open_num_and_currency_value_without_fallback():
+    storage = StockDataStorage.__new__(StockDataStorage)
+    saved_values = []
+
+    class Session:
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            return None
+
+    storage.Session = lambda: Session()
+    storage._upsert_by_keys = (
+        lambda _session, _model, values, _keys: saved_values.append(values)
+    )
+    storage._save_log = lambda *_args: None
+
+    success, failed = storage.save_limit_up_pool(
+        [
+            {
+                "code": "000001",
+                "name": "开板股份",
+                "open_num": 3,
+                "currency_value": 67472008000,
+            },
+            {
+                "code": "000002",
+                "name": "无开板数据股份",
+                "open_num": None,
+                "open_count": 9,
+                "330325": 8,
+            },
+        ],
+        date(2026, 7, 10),
+    )
+
+    assert (success, failed) == (2, 0)
+    assert saved_values[0]["open_count"] == 3
+    assert str(saved_values[0]["market_value"]) == "67472008000"
+    assert saved_values[1]["open_count"] == 0

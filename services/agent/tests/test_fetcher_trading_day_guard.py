@@ -99,6 +99,31 @@ def test_limit_up_pool_uses_configured_page_delay():
     assert result == [{"code": "1"}, {"code": "2"}]
 
 
+def test_limit_up_pool_requests_ths_time_and_reason_fields():
+    fetcher = StockDataFetcher.__new__(StockDataFetcher)
+    captured = {}
+
+    def headers(_referer):
+        return {}
+
+    async def request_json(_url, *, params, headers):
+        captured.update(params)
+        return {"data": {"data": [], "has_more": False}}
+
+    fetcher._get_headers_with_referer = headers
+    fetcher._request_json = request_json
+
+    result = asyncio.run(fetcher.fetch_limit_up_pool_page(target_date="20260710"))
+
+    assert result == {"data": [], "has_more": False}
+    assert "first_limit_up_time" in captured["field"]
+    assert "last_limit_up_time" in captured["field"]
+    assert "open_num" in captured["field"]
+    assert "currency_value" in captured["field"]
+    assert "reason_type" in captured["field"]
+    assert "reason_info" in captured["field"]
+
+
 def test_stale_fetch_reason_skips_when_ths_payload_date_differs():
     fetcher = StockDataFetcher.__new__(StockDataFetcher)
     friday_timestamp = int(datetime(2026, 7, 3, 9, 25).timestamp())

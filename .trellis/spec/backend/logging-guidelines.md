@@ -18,7 +18,7 @@ Reference files:
 - `agent/chain/stock/data/fetcher.py`
 - `agent/chain/stock/data/storage.py`
 - `agent/chain/stock/scheduler/daily_job.py`
-- `agent/chain/stock/agents/enhanced_risk_agent.py`
+- `agent/chain/stock/agents/daily_market_review_agent.py`
 
 ## Do Not Log Secrets
 

@@ -87,8 +87,13 @@ class DailyMarketReviewAgent:
 
         report = self.notifier.build_report(target_date)
         feishu_material = self.notifier.build_analysis_material(report)
+        previous_day_material = self.notifier.build_previous_trading_day_material(
+            report
+        )
         reason_material = self.notifier.build_codex_reason_material(report)
-        material = f"{feishu_material}\n\n{reason_material}"
+        material = (
+            f"{feishu_material}\n\n{previous_day_material}\n\n{reason_material}"
+        )
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()
         prompt = self._build_prompt(target_date, strategy_content, material)
         codex_client = self._get_codex_client()
@@ -142,6 +147,7 @@ class DailyMarketReviewAgent:
 - 连板梯队、核心连板、最高板只以事实材料中的 `continuous_days` 为准。
 - `3天2板`、`4天2板` 等是阶段高度标签，不是连续板数；可以单独写作阶段高度，但绝不能归入“2板梯队”、不能与连续 2 板混写。
 - 早盘强势、分歧弱板、封板时间和一字板只在事实材料明确提供时分析；材料显示“暂无”时，直接说明该维度缺数据。
+- 前一交易日对照包含完整事实与原因材料，只用于判断情绪、连板和热点的变化；不得把昨日数据当作今日事实，且不得对缺失的昨日字段作推断。
 
 请用适合直接追加到飞书的简洁 Markdown，至少覆盖：
 1. 市场情绪阶段与依据

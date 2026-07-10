@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from chain.stock.agents.feishu_notifier import (
     BlockSummary,
     BlockStockReasonSummary,
+    BoardOverlapSummary,
     BreakoutSummary,
     DailyReviewSummary,
     FeishuStockNotifier,
@@ -20,7 +21,12 @@ from chain.stock.agents.feishu_notifier import (
     WeakBoardSummary,
     next_feishu_send_at,
 )
-from chain.stock.models.database import DataFetchLog
+from chain.stock.models.database import (
+    BlockTopStock,
+    ContinuousLimitUp,
+    DataFetchLog,
+    LimitUpPool,
+)
 
 
 class FakeFeishuResponse:
@@ -162,6 +168,7 @@ def test_build_card_contains_daily_report_sections():
     assert "涨停结构" in content
     assert "4板 1只" in content
     assert "同花顺板块热度" in content
+    assert "热点板块交集（同花顺成员去重）" in content
     assert "机器人概念：4 家涨停，涨幅 3.21%，测试股份（4板）、同板股份（4板）、补涨股份（1板）、低位股份（1板）" in content
     assert "风口接口" not in content
     assert "涨停池聚合" not in content
@@ -171,6 +178,9 @@ def test_build_card_contains_daily_report_sections():
     assert "前三" not in content
     assert "核心连板" in content
     assert "4板：测试股份(000001)、同板股份(000007)" in content
+    assert "昨日高标反馈（收盘涨停口径）" in content
+    assert "一字板明细" in content
+    assert "早盘强势（同花顺首次涨停时间）" in content
     assert "早盘股份(000002)：1板" in content
     assert "分歧股份(000003)：开板 5 次" in content
     assert "突破股份(000006)：前期3板，断板6个交易日" in content
@@ -182,6 +192,7 @@ def test_build_card_contains_daily_report_sections():
     assert "高风险关注" not in content
     assert "机会观察" not in content
     assert "Codex 市场复盘" in content
+    assert "**抓取日志**\n- limit_up_pool：success，10 条\n\n\n**Codex 市场复盘**" in content
     assert "市场处于试错修复期" in content
     assert "Agent: main | Model: gpt-test-codex" in content
     assert "Provider: openai-codex" in content
@@ -435,6 +446,370 @@ def test_format_breakouts_keeps_all_windows_when_there_are_no_stocks():
         "**11-30个交易日内涨停前高突破**\n\n- 暂无\n\n"
         "**31-60个交易日内涨停前高突破**\n\n- 暂无"
     )
+
+
+def test_normalize_limit_up_time_accepts_ths_timestamp_and_clock_values():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    assert notifier._normalize_limit_up_time("09:31") == "09:31"
+    assert notifier._normalize_limit_up_time("093000") == "09:30"
+    assert notifier._normalize_limit_up_time("09:31:00") == "09:31"
+    assert notifier._normalize_limit_up_time("1783563090") == "10:11"
+
+
+def test_format_board_overlaps_shows_shared_count_and_coverage():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    content = notifier._format_board_overlaps(
+        [
+            BoardOverlapSummary(
+                first_block_name="商业航天",
+                second_block_name="军工",
+                shared_stock_count=20,
+                first_stock_count=29,
+                second_stock_count=24,
+            )
+        ]
+    )
+
+    assert "商业航天 ∩ 军工：20 只共同涨停" in content
+    assert "占前者 69%" in content
+    assert "占后者 83%" in content
+    assert notifier._format_board_overlaps([]) == "- 暂无显著交集数据"
+
+
+def test_previous_trading_day_material_is_compact_and_compares_shared_boards():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    notifier._get_session = lambda: SimpleNamespace(close=lambda: None)
+    notifier._recent_trading_dates = lambda *_args, **_kwargs: [
+        date(2026, 7, 10),
+        date(2026, 7, 9),
+    ]
+    previous = SimpleNamespace(
+        target_date=date(2026, 7, 9),
+        hr_limit_up_count=80,
+        em_limit_up_count=81,
+        continuous_count=8,
+        max_continuous_days=4,
+        limit_up_type_distribution={"首板": 70, "连板": 10},
+        continuous_distribution={4: 1, 2: 7},
+        top_stocks=[
+            StockSummary(
+                code="000001",
+                name="昨日龙头",
+                continuous_days=4,
+                limit_up_time="",
+                block_name="商业航天",
+                reason="",
+            )
+        ],
+        top_blocks=[
+            BlockSummary("商业航天", 20, "昨日龙头", 1.5),
+            BlockSummary("军工", 10, "昨日军工", 1.0),
+        ],
+    )
+    notifier.build_report = lambda _target_date: previous
+    notifier.build_analysis_material = (
+        lambda report: f"前一日完整事实：{report.target_date.isoformat()}"
+    )
+    notifier.build_codex_reason_material = (
+        lambda report: f"前一日完整原因：{report.target_date.isoformat()}"
+    )
+    current = SimpleNamespace(
+        target_date=date(2026, 7, 10),
+        top_blocks=[
+            BlockSummary("商业航天", 29, "今日龙头", 2.0),
+            BlockSummary("军工", 24, "今日军工", 1.7),
+        ],
+    )
+
+    content = notifier.build_previous_trading_day_material(current)
+
+    assert "前一交易日对照（2026-07-09）" in content
+    assert "同花顺 80 只" in content
+    assert "核心连板：1. 4板：昨日龙头(000001)" in content
+    assert "全部热点板块：商业航天 20家、军工 10家" in content
+    assert "商业航天 20->29家" in content
+    assert "军工 10->24家" in content
+    assert "前一交易日完整事实材料（2026-07-09）" in content
+    assert "前一日完整事实：2026-07-09" in content
+    assert "前一日完整原因：2026-07-09" in content
+
+
+def test_format_weak_boards_marks_time_based_samples_as_inferred():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    content = notifier._format_weak_boards(
+        [
+            WeakBoardSummary(
+                code="000003",
+                name="回封股份",
+                open_count=0,
+                turnover_rate=None,
+                block_name="商业航天",
+                reason="回封样本",
+                first_limit_up_time="09:31",
+                last_limit_up_time="10:12",
+            )
+        ]
+    )
+
+    assert "同花顺开板次数缺失" in content
+    assert "首次涨停 09:31，最后涨停 10:12，间隔 41 分钟" in content
+
+
+def test_codex_reason_material_includes_ths_pool_reason_fields():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    report = SimpleNamespace(
+        top_blocks=[],
+        pool_stock_reasons=[
+            BlockStockReasonSummary(
+                code="002841",
+                name="视源股份",
+                reason_type="中报预增+交互智能平板+AI教育+机器人",
+                reason_info="公司聚焦智能交互显示与AI教育。",
+            )
+        ],
+    )
+
+    content = notifier.build_codex_reason_material(report)
+
+    assert "中报预增+交互智能平板+AI教育+机器人" in content
+    assert "公司聚焦智能交互显示与AI教育" in content
+
+
+def test_ths_pool_supplies_early_strength_and_previous_high_feedback():
+    engine = create_engine("sqlite://")
+    for model in (ContinuousLimitUp, LimitUpPool):
+        model.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        session.add_all(
+            [
+                ContinuousLimitUp(
+                    id=1,
+                    date=date(2026, 7, 9),
+                    code="000001",
+                    name="昨日龙头",
+                    continuous_days=3,
+                ),
+                ContinuousLimitUp(
+                    id=2,
+                    date=date(2026, 7, 10),
+                    code="000001",
+                    name="昨日龙头",
+                    continuous_days=4,
+                ),
+                LimitUpPool(
+                    id=1,
+                    date=date(2026, 7, 10),
+                    code="000001",
+                    name="昨日龙头",
+                    limit_up_time="093500",
+                ),
+                LimitUpPool(
+                    id=2,
+                    date=date(2026, 7, 10),
+                    code="000002",
+                    name="早盘股份",
+                    limit_up_time="093100",
+                ),
+            ]
+        )
+        session.commit()
+
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        notifier._recent_trading_dates = lambda *_args, **_kwargs: [
+            date(2026, 7, 10),
+            date(2026, 7, 9),
+        ]
+        early = notifier._build_early_stocks(session, date(2026, 7, 10))
+        feedback = notifier._build_previous_high_feedback(
+            session, date(2026, 7, 10)
+        )
+    finally:
+        session.close()
+
+    assert [item.code for item in early] == ["000002", "000001"]
+    assert early[0].limit_up_time == "09:31"
+    assert feedback[0].feedback == "今日晋级至 4板"
+
+
+def test_early_strength_keeps_ths_first_limit_up_time_order_for_special_stocks():
+    engine = create_engine("sqlite://")
+    for model in (ContinuousLimitUp, LimitUpPool):
+        model.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        session.add_all(
+            [
+                LimitUpPool(
+                    id=1,
+                    date=date(2026, 7, 10),
+                    code="000001",
+                    name="*ST早封",
+                    limit_up_time="093000",
+                ),
+                LimitUpPool(
+                    id=2,
+                    date=date(2026, 7, 10),
+                    code="000002",
+                    name="普通股份",
+                    limit_up_time="093100",
+                ),
+            ]
+        )
+        session.commit()
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        early = notifier._build_early_stocks(session, date(2026, 7, 10))
+    finally:
+        session.close()
+
+    assert [item.code for item in early] == ["000001", "000002"]
+
+
+def test_early_strength_and_weak_boards_do_not_truncate_after_ten_items():
+    engine = create_engine("sqlite://")
+    for model in (ContinuousLimitUp, LimitUpPool):
+        model.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        session.add_all(
+            [
+                LimitUpPool(
+                    id=index,
+                    date=date(2026, 7, 10),
+                    code=f"{index:06d}",
+                    name=f"测试股份{index}",
+                    limit_up_time=f"09{index:02d}00",
+                    open_count=index,
+                    turnover_rate=index,
+                )
+                for index in range(1, 12)
+            ]
+        )
+        session.commit()
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        early = notifier._build_early_stocks(session, date(2026, 7, 10))
+        weak = notifier._build_weak_boards(session, date(2026, 7, 10))
+    finally:
+        session.close()
+
+    assert len(early) == 11
+    assert len(weak) == 11
+
+
+def test_board_overlaps_do_not_truncate_after_ten_pairs():
+    engine = create_engine("sqlite://")
+    BlockTopStock.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    target_date = date(2026, 7, 10)
+    blocks = [
+        BlockSummary(
+            block_name=f"板块{index}",
+            stock_count=3,
+            leading_stock_name="共同龙头",
+            change_percent=1.0,
+            block_code=f"B{index}",
+        )
+        for index in range(11)
+    ]
+    try:
+        session.add_all(
+            [
+                BlockTopStock(
+                    id=index * 10 + stock_index,
+                    date=target_date,
+                    block_code=f"B{index}",
+                    block_name=f"板块{index}",
+                    code=f"00000{stock_index}",
+                    name=f"共同股{stock_index}",
+                )
+                for index in range(11)
+                for stock_index in range(1, 4)
+            ]
+        )
+        session.commit()
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        overlaps = notifier._build_board_overlaps(session, target_date, blocks)
+    finally:
+        session.close()
+
+    assert len(overlaps) == 55
+
+
+def test_previous_trading_day_material_contains_full_prior_facts_and_reasons():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    notifier._get_session = lambda: SimpleNamespace(close=lambda: None)
+    notifier._recent_trading_dates = lambda *_args, **_kwargs: [
+        date(2026, 7, 10),
+        date(2026, 7, 9),
+    ]
+    previous = FeishuStockReport(
+        target_date=date(2026, 7, 9),
+        is_complete=True,
+        continuous_count=1,
+        block_count=1,
+        hr_limit_up_count=2,
+        em_limit_up_count=2,
+        max_continuous_days=2,
+        continuous_distribution={2: 1},
+        limit_up_type_distribution={"连板": 1, "首板": 1},
+        data_warnings=[],
+        fetch_logs=[],
+        top_blocks=[
+            BlockSummary(
+                "商业航天",
+                2,
+                "昨日龙头",
+                1.0,
+                stock_reasons=[
+                    BlockStockReasonSummary(
+                        code="000001",
+                        name="昨日龙头",
+                        reason_type="商业航天+业绩增长",
+                        reason_info="昨日详细原因",
+                    )
+                ],
+            )
+        ],
+        eastmoney_industries=[],
+        top_stocks=[
+            StockSummary("000001", "昨日龙头", 2, "09:30", "商业航天", "商业航天")
+        ],
+        early_stocks=[
+            StockSummary("000002", "昨日早盘", 1, "09:31", "商业航天", "早封")
+        ],
+        weak_boards=[],
+        breakout_stocks=[],
+        one_word_stocks=[
+            StockSummary("000003", "昨日一字", 1, "09:25", "商业航天", "一字")
+        ],
+        pool_stock_reasons=[
+            BlockStockReasonSummary(
+                code="000002",
+                name="昨日早盘",
+                reason_type="AI教育",
+                reason_info="昨日涨停池详细原因",
+            )
+        ],
+    )
+    notifier.build_report = lambda _target_date: previous
+    current = SimpleNamespace(
+        target_date=date(2026, 7, 10),
+        top_blocks=[BlockSummary("商业航天", 3, "今日龙头", 2.0)],
+    )
+
+    content = notifier.build_previous_trading_day_material(current)
+
+    assert "前一交易日完整事实材料（2026-07-09）" in content
+    assert "早盘强势（同花顺首次涨停时间）" in content
+    assert "昨日早盘(000002)：1板，09:31" in content
+    assert "一字板明细" in content
+    assert "商业航天+业绩增长" in content
+    assert "昨日详细原因" in content
+    assert "AI教育" in content
+    assert "昨日涨停池详细原因" in content
 
 
 def test_recent_trading_dates_uses_successful_fetch_logs_and_skips_weekends():

@@ -455,20 +455,40 @@ class StockDataStorage:
                         'limit_up_price': self._safe_decimal(self._first_value(item, 'limit_up_price', '330323')),
                         'change_percent': self._safe_decimal(self._first_value(item, 'change_percent', 'change_rate')),
                         'limit_up_type': self._safe_str(self._first_value(item, 'limit_up_type', '9002')),
-                        'limit_up_time': self._safe_str(self._first_value(item, 'limit_up_time', '330324')),
-                        'open_count': self._safe_int(self._first_value(item, 'open_count', '330325')),
-                        'last_time': self._safe_str(self._first_value(item, 'last_time', '330329')),
+                        'limit_up_time': self._safe_str(
+                            self._first_value(
+                                item,
+                                'first_limit_up_time',
+                                'limit_up_time',
+                                '330324',
+                            )
+                        ),
+                        'open_count': self._safe_int(item.get('open_num')),
+                        'last_time': self._safe_str(
+                            self._first_value(
+                                item,
+                                'last_limit_up_time',
+                                'last_time',
+                                '330329',
+                            )
+                        ),
                         'strength': self._safe_decimal(self._first_value(item, 'strength', '133971')),
                         'board_amount': self._safe_decimal(self._first_value(item, 'board_amount', '133970')),
                         'volume_ratio': self._safe_decimal(self._first_value(item, 'volume_ratio', '1968584')),
                         'turnover_rate': self._safe_decimal(self._first_value(item, 'turnover_rate', '3475914')),
-                        'market_value': self._safe_decimal(self._first_value(item, 'market_value', '9003')),
+                        'market_value': self._safe_decimal(
+                            self._first_value(item, 'currency_value', 'market_value', '9003')
+                        ),
                         'total_value': self._safe_decimal(self._first_value(item, 'total_value')),
                         'pe_ratio': self._safe_decimal(self._first_value(item, 'pe_ratio')),
                         'pb_ratio': self._safe_decimal(self._first_value(item, 'pb_ratio')),
-                        'concept': self._safe_str(self._first_value(item, 'concept', 'reason_type')),
+                        'concept': self._safe_str(
+                            self._first_value(item, 'reason_type', 'concept')
+                        ),
                         'block_name': self._safe_str(self._first_value(item, 'block_name')),
-                        'reason': self._safe_str(self._first_value(item, 'reason', '9004')),
+                        'reason': self._safe_str(
+                            self._first_value(item, 'reason_info', 'reason', '9004')
+                        ),
                     }
 
                     self._upsert_by_keys(session, LimitUpPool, values, ('date', 'code'))

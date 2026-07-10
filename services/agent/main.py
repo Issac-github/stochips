@@ -172,15 +172,15 @@ def cmd_fetch(target_date: Optional[str] = None):
 
 def cmd_assess(target_date: Optional[str] = None):
     """Compatibility alias for the daily Codex review."""
-    cmd_assess_enhanced(target_date)
+    cmd_assess_daily_review(target_date)
 
 
 def cmd_ai_analyze(target_date: Optional[str] = None):
     """Compatibility alias for one daily qualitative Codex review."""
-    cmd_assess_enhanced(target_date)
+    cmd_assess_daily_review(target_date)
 
 
-def cmd_assess_enhanced(
+def cmd_assess_daily_review(
     target_date: Optional[str] = None,
     force_ai: bool = False,
 ):
@@ -237,7 +237,7 @@ def cmd_run(target_date: Optional[str] = None):
     print("\n" + "=" * 50)
 
     # 2. 数据刚抓取完成，强制用新快照生成当日Codex复盘。
-    cmd_assess_enhanced(target_date, force_ai=True)
+    cmd_assess_daily_review(target_date, force_ai=True)
 
     print("\n" + "=" * 50)
     print("✅ 所有任务完成")
@@ -492,7 +492,7 @@ def main():
         if unknown_flags:
             print(f"错误：未知参数 {', '.join(sorted(unknown_flags))}")
             sys.exit(1)
-        cmd_assess_enhanced(target_date, force_ai="--force-ai" in flags)
+        cmd_assess_daily_review(target_date, force_ai="--force-ai" in flags)
         return
 
     commands = {

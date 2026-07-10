@@ -67,14 +67,15 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - `stock_list[0].name` -> `leading_stock_name`
   - `stock_list[0].first_limit_up_time` -> `avg_limit_up_time` fallback
 - `block_top_stock` stores every member from THS `block_top.stock_list`, keyed by `(date, block_code, code)`. It is the source for expanding `同花顺板块热度` stock lists in Feishu and should preserve analysis fields: first/last limit-up time, `continue_num`, `high`, `high_days`, `change_rate`, `latest`, `reason_type`, `reason_info`, `concept`, `market_id`, `market_type`, `is_new`, `is_st`, `change_tag`, and raw JSON.
-- `limit_up_pool` is the THS 涨停强度 table. It stores limit-up type, time, open count, seal strength/amount, volume ratio, turnover rate, market value, concept/reason, and optional block name.
+- `limit_up_pool` is the THS 涨停强度 table. It stores limit-up type, first/last limit-up time, `open_num` as open count (`null` means no open-count data), seal strength/amount, volume ratio, turnover rate, `currency_value` as circulating market value, `reason_type` as the concise reason label, `reason_info` as the detailed reason, and optional block name.
 - `eastmoney_zt_pool` is the Eastmoney 涨停池 table. Feishu uses its `block_name` as the industry/sector dimension and reports all grouped industries, not Top 10.
 - `fetch_all_data` must not save or advance stale holiday data. If the target date is a weekend, or THS payload timestamps prove the upstream returned a different trading date, return `skipped=True` with `skip_reason`; `save_all_data` writes `data_fetch_log.status='skipped'` for every data type and does not upsert stock rows.
 - Feishu report ownership:
-  - THS tables drive short-term structure: limit-up overview, 连板梯队, 核心连板, 早盘强势, 分歧弱板, 涨停前高突破, and 同花顺板块热度.
+  - THS tables drive short-term structure: limit-up overview, 连板梯队, 核心连板, 一字板明细, 早盘强势, 分歧弱板, 涨停前高突破, 昨日高标反馈, 同花顺板块热度, and 热点板块交集. 东财只提供独立的行业涨停交叉视图。
   - Eastmoney drives the independent `东财行业涨停` section by grouping `eastmoney_zt_pool.block_name`.
-  - Board/industry sections are all-item summaries. 早盘强势 and 分歧弱板 use Top 10; 涨停前高突破 renders every qualifying stock, grouped into non-overlapping windows of `<=5`, `6-10`, `11-30`, and `31-60` trading days after the previous limit-up chain.
+  - Board/industry, early-strength, weak-board, and overlap sections are all-item summaries. 涨停前高突破 renders every qualifying stock, grouped into non-overlapping windows of `<=5`, `6-10`, `11-30`, and `31-60` trading days after the previous limit-up chain.
   - `同花顺板块热度` should keep the board summary and then render every stock available from `block_top_stock` for each THS board. Use compact labels with board count, not source labels: `板块：31 家涨停，涨幅 3.22%，股票A（3板）、股票B（1板）`. Do not match `block_top.block_name` against `limit_up_pool.block_name` to infer concept-board membership; those names are not a stable one-to-one contract.
+  - `热点板块交集` derives from `block_top_stock` codes only. It reports every significant pairwise member intersection and each board's overlap ratio, so Codex does not sum overlapping concept labels as independent market capacity.
   - Prefer THS `stock_list[].high` as the Feishu stock label when available, e.g. `华天科技（3天2板）`; fall back to `continue_num` as `N板`.
   - If historical `block_top` rows have no `block_top_stock` details yet, Feishu should render the count/change/leader summary without source labels. Do not present `leading_stock_name` alone as if it were the full stock list.
   - `东财行业涨停` should render all grouped industries and all limit-up stocks within each industry. Use compact stock labels with board count, not codes or `前三`: `行业：股票A（3板）、股票B（1板）`.
@@ -83,9 +84,11 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
 - Daily review ownership:
   - `FeishuStockNotifier.build_analysis_material` renders the factual material shared by Codex input and the Feishu card.
   - `FeishuStockNotifier.build_codex_reason_material` adds analysis-only THS stock reasons without expanding the Feishu card: `reason_type` is the concise reason label and `reason_info` is the complete detailed reason. Preserve both and do not shorten `reason_info` before Codex receives it.
+  - Include reason fields from both `block_top_stock` and all same-day `limit_up_pool` rows. `早盘强势` sorts THS `first_limit_up_time`; `分歧弱板` first uses THS `open_count`, then may render an explicitly labeled inferred sample when THS first/last limit-up times show a later final seal.
+  - Codex also receives a previous-trading-day comparison: prior overview, structure, core continuous stocks, all hot boards, all same-name board count changes versus today, plus the complete prior-day factual and reason material. Do not treat yesterday's facts as today's facts.
   - `DailyMarketReviewAgent` must read `chain/wiki/raw/001-连板龙头交易体系.md` in Python and include the complete original text in the Codex prompt before analyzing the factual material. Codex is instructed not to invoke file/shell/MCP tools for the strategy file, so Docker namespace restrictions cannot prevent a review.
   - The active daily flow must not calculate or display programmatic scores, weights, risk factors, risk levels, or suggestion distributions.
-  - Historical `risk_assessment` rows and legacy scorer modules remain compatibility data only; active CLI, scheduler, StockAgent, and Feishu paths do not write or consume them.
+  - Historical `risk_assessment` rows remain compatibility data only; active CLI, scheduler, StockAgent, and Feishu paths do not write or consume them.
 - Scheduler default:
   - 16:03 starts one ordered workflow; scheduled fetch adds `STOCK_FETCH_START_JITTER_MIN/MAX` seconds before upstream calls.
   - `fetch_all_data` calls THS/Eastmoney sources sequentially and waits `STOCK_FETCH_SOURCE_DELAY_MIN/MAX` seconds between sources.
@@ -101,7 +104,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
 - `block_top` rows exist but `stock_count=0`, `change_percent IS NULL`, and leader fields are blank -> inspect raw THS `block_top` payload and update alias mapping in `StockDataStorage.save_block_top`; do not add columns unless the existing schema cannot represent the value.
 - `block_top` has no usable counts and `limit_up_pool.block_name` is also blank -> Feishu should show `同花顺板块热度` as unavailable and direct users to `东财行业涨停`.
 - `limit_up_pool.open_count=0` -> do not include the stock in `分歧弱板`; high turnover alone is not a weak-board signal.
-- `limit_up_pool.limit_up_time` is blank -> `早盘强势` may be empty; render `暂无早盘强势数据` and do not infer times from unrelated tables unless a new explicit mapping is added.
+- `limit_up_pool.limit_up_time` is blank -> `早盘强势` may be empty; render `暂无早盘强势数据` and a data warning. Basic fetch completeness does not mean analysis fields are complete.
 - `daily_market_review` has no target-date row -> Feishu should keep all factual sections and mark the Codex review as not generated.
 - `data_fetch_log.status='skipped'` exists for the target date -> do not run the Codex review or Feishu report for that date.
 
@@ -127,6 +130,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - 核心连板 groups stocks by board count instead of repeating per-stock risk text
   - `分歧弱板` requires `open_count > 0`
   - 涨停前高突破 uses successful `data_fetch_log` `limit_up_pool` dates as the trading-date sequence (with historical pool-date fallback), looks back 60 trading days, renders all qualifying stocks in the four trading-day windows, and renders the gap as trading days
+  - THS `first_limit_up_time`, `last_limit_up_time`, `reason_type`, and `reason_info` map into the stored pool fields and Codex material; early-strength ordering must not depend on Eastmoney time fields
 - Fetch guard tests should assert:
   - weekend target dates return `skipped=True` before network calls
   - THS timestamp dates different from the requested date skip save/downstream flow
@@ -189,7 +193,7 @@ Correct:
 - `Codex()` owns the local app-server connection and ChatGPT OAuth under the `/root/.codex` Docker volume. Python must not log OAuth tokens, browser cookies, or subscription Bearer headers.
 - Codex runs with `Sandbox.read_only`, `ApprovalMode.deny_all`, an ephemeral thread, and the Agent project root as `cwd`, so it can read the strategy Markdown included in the Docker image.
 - The program checks that the strategy path exists, reads its complete UTF-8 content, and includes it in the prompt. This avoids relying on Codex file-tool sandboxing inside Docker while preserving the SDK `read_only` sandbox and denied approvals.
-- `build_analysis_material` is the compact factual text contract shared by model input and Feishu. Codex additionally receives `build_codex_reason_material`, which deduplicates stocks across hot boards while retaining every distinct `reason_type` and full `reason_info`. Neither material includes saved review text, scores, factors, or suggestions.
+- `build_analysis_material` is the compact factual text contract shared by model input and Feishu. Codex additionally receives `build_codex_reason_material`, which deduplicates all same-day THS board and pool stocks while retaining every distinct `reason_type` and full `reason_info`. Neither material includes saved review text, scores, factors, or suggestions.
 - Codex returns concise free-form Markdown, not JSON. Persist the actual provider/model and render that saved metadata in Feishu.
 - Normal execution reuses the target-date row. `--force-ai` makes exactly one new Codex call and replaces that row.
 - Historical `risk_assessment` data is not dropped, but it is not part of the active daily review.

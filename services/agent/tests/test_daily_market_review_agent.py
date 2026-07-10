@@ -38,6 +38,12 @@ class FakeNotifier:
     def build_analysis_material(self, report):
         return f"**涨停概览**：{report.target_date.isoformat()}，连板 6 只"
 
+    def build_previous_trading_day_material(self, report):
+        return (
+            "**前一交易日对照（2026-07-09）**\n"
+            f"- 与当日共同热点变化：商业航天 20->{report.target_date.day}家"
+        )
+
     def build_codex_reason_material(self, report):
         del report
         return (
@@ -84,9 +90,12 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
     assert "绝不能归入“2板梯队”" in client.prompts[0]
     assert "只以事实材料中的 `continuous_days` 为准" in client.prompts[0]
     assert "**涨停概览**：2026-07-10，连板 6 只" in client.prompts[0]
+    assert "**前一交易日对照（2026-07-09）**" in client.prompts[0]
+    assert "商业航天 20->10家" in client.prompts[0]
     assert "简略原因（reason_type）：先进封装+存储芯片" in client.prompts[0]
     assert "详细原因（reason_info）：行业原因：先进封装景气度提升" in client.prompts[0]
     assert "不要沿用程序预设的评分" in client.prompts[0]
+    assert "不得把昨日数据当作今日事实" in client.prompts[0]
 
     agent.close()
     assert client.closed is True

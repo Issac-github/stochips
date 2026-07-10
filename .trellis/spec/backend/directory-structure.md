@@ -7,7 +7,7 @@ Keep backend responsibilities split exactly as the current code does:
 - `agent/main.py`: Python CLI boundary. It parses commands, dates, environment requirements, prints user-facing command output, and exits with `sys.exit(1)` on command failure.
 - `agent/chain/stock/data/`: stock data acquisition and MySQL storage. `fetcher.py` owns upstream HTTP request shapes and retry behavior. `storage.py` owns normalization and upserts.
 - `agent/chain/stock/models/database.py`: SQLAlchemy table definitions and indexes for stock data, daily Codex reviews, historical risk rows, and fetch logs.
-- `agent/chain/stock/agents/`: daily Codex review, Feishu, goal-driven stock agent, and wiki agent factories; legacy scorer modules are not active-flow exports.
+- `agent/chain/stock/agents/`: daily Codex review, Feishu, goal-driven stock agent, and wiki agent factories.
 - `agent/chain/stock/scheduler/`: APScheduler orchestration around fetch, daily Codex review, and Feishu services.
 - `agent/chain/rag/` and `agent/chain/wiki/`: optional RAG/wiki command surface. Keep heavyweight RAG dependencies behind the optional `rag` extra and `rag_agent` Docker profile.
 - `services/stock-rpc/proto/stock.proto`: external gRPC contract.
@@ -21,7 +21,7 @@ Keep backend responsibilities split exactly as the current code does:
 Python packages expose factory helpers through `__init__.py`. Follow the existing examples:
 
 - `agent/chain/stock/data/__init__.py` exports `create_fetcher`, `create_storage`, `StockDataFetcher`, and `StockDataStorage`.
-- `agent/chain/stock/agents/__init__.py` exports `create_daily_market_review_agent`, `create_feishu_notifier`, `create_stock_agent`, and `create_wiki_agent`. Legacy scorer modules are not public active-flow factories.
+- `agent/chain/stock/agents/__init__.py` exports `create_daily_market_review_agent`, `create_feishu_notifier`, `create_stock_agent`, and `create_wiki_agent`.
 
 When adding a new backend capability, place the implementation under the owning package, then export only the stable factory or public type from that package's `__init__.py`.
 

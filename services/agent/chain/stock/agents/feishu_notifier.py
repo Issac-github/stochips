@@ -10,7 +10,7 @@ import os
 import random
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +38,7 @@ FEISHU_SEND_MAX_ATTEMPTS = 3
 FEISHU_SEND_RETRY_DELAYS = (20, 60)
 FEISHU_SEND_JITTER_MIN = 5.0
 FEISHU_SEND_JITTER_MAX = 20.0
+SHANGHAI_TIMEZONE = timezone(timedelta(hours=8))
 
 
 def next_feishu_send_at(
@@ -116,6 +117,25 @@ class WeakBoardSummary:
     turnover_rate: Optional[float]
     block_name: str
     reason: str
+    first_limit_up_time: str = ""
+    last_limit_up_time: str = ""
+
+
+@dataclass
+class PreviousHighBoardSummary:
+    code: str
+    name: str
+    previous_continuous_days: int
+    feedback: str
+
+
+@dataclass
+class BoardOverlapSummary:
+    first_block_name: str
+    second_block_name: str
+    shared_stock_count: int
+    first_stock_count: int
+    second_stock_count: int
 
 
 @dataclass
@@ -158,6 +178,12 @@ class FeishuStockReport:
     weak_boards: List[WeakBoardSummary]
     breakout_stocks: List[BreakoutSummary]
     daily_review: Optional[DailyReviewSummary] = None
+    one_word_stocks: List[StockSummary] = field(default_factory=list)
+    previous_high_feedback: List[PreviousHighBoardSummary] = field(
+        default_factory=list
+    )
+    pool_stock_reasons: List[BlockStockReasonSummary] = field(default_factory=list)
+    board_overlaps: List[BoardOverlapSummary] = field(default_factory=list)
 
 
 class FeishuStockNotifier:
@@ -311,12 +337,14 @@ class FeishuStockNotifier:
                         code=item.code,
                         name=item.name,
                         continuous_days=item.continuous_days or 0,
-                        limit_up_time=item.latest_limit_up_time
-                        or (pool.limit_up_time if pool else "")
-                        or "",
+                        limit_up_time=self._normalize_limit_up_time(
+                            item.latest_limit_up_time
+                            or (pool.limit_up_time if pool else "")
+                            or ""
+                        ),
                         block_name=(pool.block_name if pool else "") or "",
                         reason=self._shorten(
-                            (pool.reason if pool else "") or item.concept or "",
+                            (pool.concept if pool else "") or item.concept or "",
                             28,
                         ),
                     )
@@ -325,6 +353,52 @@ class FeishuStockNotifier:
             early_stocks = self._build_early_stocks(session, target_date)
             weak_boards = self._build_weak_boards(session, target_date)
             breakout_stocks = self._build_breakout_stocks(session, target_date)
+            one_word_stocks = self._build_one_word_stocks(session, target_date)
+            board_overlaps = self._build_board_overlaps(
+                session, target_date, top_blocks
+            )
+            previous_high_feedback = self._build_previous_high_feedback(
+                session, target_date
+            )
+            first_time_count = (
+                session.query(LimitUpPool)
+                .filter(
+                    LimitUpPool.date == target_date,
+                    LimitUpPool.limit_up_time.isnot(None),
+                    LimitUpPool.limit_up_time != "",
+                )
+                .count()
+            )
+            last_time_count = (
+                session.query(LimitUpPool)
+                .filter(
+                    LimitUpPool.date == target_date,
+                    LimitUpPool.last_time.isnot(None),
+                    LimitUpPool.last_time != "",
+                )
+                .count()
+            )
+            if hr_limit_up_count and first_time_count == 0:
+                data_warnings.append(
+                    "同花顺涨停池缺少首次涨停时间，早盘强势无法判断"
+                )
+            if hr_limit_up_count and last_time_count == 0 and not weak_boards:
+                data_warnings.append(
+                    "同花顺涨停池缺少最后涨停时间且未识别开板次数，"
+                    "分歧弱板无法判断"
+                )
+            pool_stock_reasons = [
+                BlockStockReasonSummary(
+                    code=item.code,
+                    name=item.name,
+                    reason_type=item.concept or "",
+                    reason_info=item.reason or "",
+                )
+                for item in session.query(LimitUpPool)
+                .filter(LimitUpPool.date == target_date)
+                .all()
+                if item.concept or item.reason
+            ]
             daily_review_row = (
                 session.query(DailyMarketReview)
                 .filter(DailyMarketReview.date == target_date)
@@ -368,6 +442,10 @@ class FeishuStockNotifier:
                 weak_boards=weak_boards,
                 breakout_stocks=breakout_stocks,
                 daily_review=daily_review,
+                one_word_stocks=one_word_stocks,
+                previous_high_feedback=previous_high_feedback,
+                pool_stock_reasons=pool_stock_reasons,
+                board_overlaps=board_overlaps,
             )
         finally:
             session.close()
@@ -375,7 +453,7 @@ class FeishuStockNotifier:
     def build_card(self, report: FeishuStockReport) -> Dict[str, Any]:
         """Build a Feishu Card 2.0 payload body."""
         material = self.build_analysis_material(report)
-        review_parts = ["", "**Codex 市场复盘**"]
+        review_parts = ["", "", "**Codex 市场复盘**"]
         if report.daily_review:
             review_parts.extend(
                 [
@@ -415,7 +493,9 @@ class FeishuStockNotifier:
 
     def build_analysis_material(self, report: FeishuStockReport) -> str:
         """Render factual daily material shared by Feishu and the Codex review."""
-        status_text = "完整" if report.is_complete else "不完整"
+        status_text = "基础完整" if report.is_complete else "不完整"
+        if report.is_complete and report.data_warnings:
+            status_text += "（部分分析字段缺失）"
         continuous_text = self._format_continuous_distribution(
             report.continuous_distribution
         )
@@ -433,6 +513,14 @@ class FeishuStockNotifier:
         )
         weak_lines = self._format_weak_boards(report.weak_boards)
         breakout_lines = self._format_breakouts(report.breakout_stocks)
+        one_word_lines = self._format_stocks(
+            report.one_word_stocks,
+            empty_message="暂无一字板明细",
+        )
+        previous_high_lines = self._format_previous_high_feedback(
+            report.previous_high_feedback
+        )
+        overlap_lines = self._format_board_overlaps(report.board_overlaps)
         warning_lines = self._format_warnings(report.data_warnings)
         log_lines = self._format_logs(report.fetch_logs)
 
@@ -451,16 +539,25 @@ class FeishuStockNotifier:
                 "**同花顺板块热度**",
                 block_lines,
                 "",
+                "**热点板块交集（同花顺成员去重）**",
+                overlap_lines,
+                "",
                 "**东财行业涨停**",
                 eastmoney_industry_lines,
                 "",
                 "**核心连板**",
                 stock_lines,
                 "",
-                "**早盘强势 Top 10**",
+                "**昨日高标反馈（收盘涨停口径）**",
+                previous_high_lines,
+                "",
+                "**一字板明细**",
+                one_word_lines,
+                "",
+                "**早盘强势（同花顺首次涨停时间）**",
                 early_lines,
                 "",
-                "**分歧弱板 Top 10**",
+                "**分歧弱板/回封样本**",
                 weak_lines,
                 "",
                 "**涨停前高突破**",
@@ -469,6 +566,81 @@ class FeishuStockNotifier:
                 "**抓取日志**",
                 log_lines,
             ]
+        )
+
+    def build_previous_trading_day_material(
+        self, current_report: FeishuStockReport
+    ) -> str:
+        """Render a compact prior-day comparison for the Codex review only."""
+        session = self._get_session()
+        try:
+            trading_dates = self._recent_trading_dates(
+                session, current_report.target_date, lookback=1
+            )
+            previous_dates = [
+                item for item in trading_dates if item < current_report.target_date
+            ]
+        finally:
+            session.close()
+
+        if not previous_dates:
+            return "**前一交易日对照**\n- 暂无可用前一交易日数据"
+
+        previous_report = self.build_report(previous_dates[0])
+        previous_blocks = {
+            item.block_name: item.stock_count for item in previous_report.top_blocks
+        }
+        current_blocks = {
+            item.block_name: item.stock_count for item in current_report.top_blocks
+        }
+        shared_block_changes = [
+            (
+                name,
+                previous_count,
+                current_blocks[name],
+            )
+            for name, previous_count in previous_blocks.items()
+            if name in current_blocks
+        ]
+        shared_block_changes.sort(
+            key=lambda item: (abs(item[2] - item[1]), item[2], item[0]),
+            reverse=True,
+        )
+        previous_top_blocks = "、".join(
+            f"{item.block_name} {item.stock_count}家"
+            for item in previous_report.top_blocks
+        ) or "暂无"
+        block_changes = "、".join(
+            f"{name} {previous_count}->{current_count}家"
+            for name, previous_count, current_count in shared_block_changes
+        ) or "暂无同名热点板块"
+
+        comparison_summary = "\n".join(
+            [
+                f"**前一交易日对照（{previous_report.target_date:%Y-%m-%d}）**",
+                (
+                    f"- 涨停概览：同花顺 {previous_report.hr_limit_up_count} 只，"
+                    f"东财 {previous_report.em_limit_up_count} 只，"
+                    f"连板 {previous_report.continuous_count} 只，"
+                    f"最高 {previous_report.max_continuous_days} 板"
+                ),
+                (
+                    "- 涨停结构："
+                    f"{self._format_named_distribution(previous_report.limit_up_type_distribution)}；"
+                    f"连板梯队：{self._format_continuous_distribution(previous_report.continuous_distribution)}"
+                ),
+                f"- 核心连板：{self._format_core_continuous(previous_report.top_stocks)}",
+                f"- 全部热点板块：{previous_top_blocks}",
+                f"- 与当日共同热点变化：{block_changes}",
+            ]
+        )
+        previous_facts = self.build_analysis_material(previous_report)
+        previous_reasons = self.build_codex_reason_material(previous_report)
+        return (
+            f"{comparison_summary}\n\n"
+            f"**前一交易日完整事实材料（{previous_report.target_date:%Y-%m-%d}）**\n"
+            f"{previous_facts}\n\n"
+            f"{previous_reasons}"
         )
 
     def build_codex_reason_material(self, report: FeishuStockReport) -> str:
@@ -493,6 +665,23 @@ class FeishuStockNotifier:
                     item["reason_types"].append(stock.reason_type)
                 if stock.reason_info and stock.reason_info not in item["reason_infos"]:
                     item["reason_infos"].append(stock.reason_info)
+
+        for stock in getattr(report, "pool_stock_reasons", []):
+            key = stock.code or stock.name
+            item = grouped.setdefault(
+                key,
+                {
+                    "code": stock.code,
+                    "name": stock.name,
+                    "blocks": [],
+                    "reason_types": [],
+                    "reason_infos": [],
+                },
+            )
+            if stock.reason_type and stock.reason_type not in item["reason_types"]:
+                item["reason_types"].append(stock.reason_type)
+            if stock.reason_info and stock.reason_info not in item["reason_infos"]:
+                item["reason_infos"].append(stock.reason_info)
 
         reason_items = [
             item
@@ -687,6 +876,69 @@ class FeishuStockNotifier:
             ],
         )
 
+    def _build_board_overlaps(
+        self,
+        session: Session,
+        target_date: date,
+        blocks: List[BlockSummary],
+    ) -> List[BoardOverlapSummary]:
+        board_names_by_code = {
+            item.block_code: item.block_name
+            for item in blocks
+            if item.source == "block_top" and item.block_code
+        }
+        if len(board_names_by_code) < 2:
+            return []
+
+        members_by_code: Dict[str, set[str]] = {
+            block_code: set() for block_code in board_names_by_code
+        }
+        rows = (
+            session.query(BlockTopStock.block_code, BlockTopStock.code)
+            .filter(
+                BlockTopStock.date == target_date,
+                BlockTopStock.block_code.in_(board_names_by_code),
+            )
+            .all()
+        )
+        for block_code, stock_code in rows:
+            if stock_code:
+                members_by_code[block_code].add(stock_code)
+
+        active_codes = [
+            block_code
+            for block_code, members in members_by_code.items()
+            if members
+        ]
+        overlaps = []
+        for index, first_code in enumerate(active_codes):
+            first_members = members_by_code[first_code]
+            for second_code in active_codes[index + 1 :]:
+                second_members = members_by_code[second_code]
+                shared_count = len(first_members & second_members)
+                if shared_count < 3:
+                    continue
+                overlaps.append(
+                    BoardOverlapSummary(
+                        first_block_name=board_names_by_code[first_code],
+                        second_block_name=board_names_by_code[second_code],
+                        shared_stock_count=shared_count,
+                        first_stock_count=len(first_members),
+                        second_stock_count=len(second_members),
+                    )
+                )
+
+        return sorted(
+            overlaps,
+            key=lambda item: (
+                item.shared_stock_count,
+                min(item.first_stock_count, item.second_stock_count),
+                item.first_block_name,
+                item.second_block_name,
+            ),
+            reverse=True,
+        )
+
     @staticmethod
     def _block_stock_label(stock: BlockTopStock) -> str:
         height = stock.limit_up_type or f"{int(stock.continuous_days or 1)}板"
@@ -800,12 +1052,14 @@ class FeishuStockNotifier:
             code=item.code,
             name=item.name,
             continuous_days=continuous_days,
-            limit_up_time=getattr(item, "limit_up_time", "")
-            or getattr(item, "first_limit_up_time", "")
-            or "",
+            limit_up_time=self._normalize_limit_up_time(
+                getattr(item, "limit_up_time", "")
+                or getattr(item, "first_limit_up_time", "")
+                or ""
+            ),
             block_name=getattr(item, "block_name", "") or "",
             reason=self._shorten(
-                getattr(item, "reason", "") or getattr(item, "concept", "") or "",
+                getattr(item, "concept", "") or getattr(item, "reason", "") or "",
                 28,
             ),
         )
@@ -828,12 +1082,7 @@ class FeishuStockNotifier:
                 LimitUpPool.limit_up_time.isnot(None),
                 LimitUpPool.limit_up_time != "",
             )
-            .order_by(
-                LimitUpPool.limit_up_time.asc(),
-                LimitUpPool.open_count.asc(),
-                LimitUpPool.code.asc(),
-            )
-            .limit(40)
+            .order_by(LimitUpPool.limit_up_time.asc(), LimitUpPool.code.asc())
             .all()
         )
         return [
@@ -841,7 +1090,7 @@ class FeishuStockNotifier:
                 item,
                 continuous_days_by_code.get(item.code, 1),
             )
-            for item in self._prefer_regular_stocks(rows, limit=10)
+            for item in rows
         ]
 
     def _build_weak_boards(
@@ -858,20 +1107,175 @@ class FeishuStockNotifier:
                 LimitUpPool.turnover_rate.desc(),
                 LimitUpPool.code.asc(),
             )
-            .limit(10)
+            .all()
+        )
+        if rows:
+            return [
+                WeakBoardSummary(
+                    code=item.code,
+                    name=item.name,
+                    open_count=item.open_count or 0,
+                    turnover_rate=self._to_float(item.turnover_rate),
+                    block_name=item.block_name or "",
+                    reason=self._shorten(item.concept or item.reason or "", 24),
+                )
+                for item in rows
+            ]
+
+        pool_samples: Dict[str, WeakBoardSummary] = {}
+        for item in (
+            session.query(LimitUpPool)
+            .filter(LimitUpPool.date == target_date)
+            .all()
+        ):
+            first_time = self._normalize_limit_up_time(item.limit_up_time)
+            last_time = self._normalize_limit_up_time(item.last_time)
+            if not first_time or not last_time or last_time <= first_time:
+                continue
+            pool_samples[item.code] = WeakBoardSummary(
+                code=item.code,
+                name=item.name,
+                open_count=0,
+                turnover_rate=self._to_float(item.turnover_rate),
+                block_name=item.block_name or "",
+                reason=self._shorten(item.concept or item.reason or "", 24),
+                first_limit_up_time=first_time,
+                last_limit_up_time=last_time,
+            )
+        if pool_samples:
+            return sorted(
+                pool_samples.values(),
+                key=lambda item: (
+                    self._limit_up_time_gap_minutes(item),
+                    item.code,
+                ),
+                reverse=True,
+            )
+
+        samples: Dict[str, WeakBoardSummary] = {}
+        for item in (
+            session.query(BlockTopStock)
+            .filter(BlockTopStock.date == target_date)
+            .all()
+        ):
+            first_time = self._normalize_limit_up_time(item.first_limit_up_time)
+            last_time = self._normalize_limit_up_time(item.last_limit_up_time)
+            if not first_time or not last_time or last_time <= first_time:
+                continue
+            sample = WeakBoardSummary(
+                code=item.code,
+                name=item.name,
+                open_count=0,
+                turnover_rate=None,
+                block_name=item.block_name or "",
+                reason=self._shorten(item.reason_type or "", 24),
+                first_limit_up_time=first_time,
+                last_limit_up_time=last_time,
+            )
+            existing = samples.get(item.code)
+            if (
+                existing is None
+                or self._limit_up_time_gap_minutes(sample)
+                > self._limit_up_time_gap_minutes(existing)
+            ):
+                samples[item.code] = sample
+
+        return sorted(
+            samples.values(),
+            key=lambda item: (
+                self._limit_up_time_gap_minutes(item),
+                item.code,
+            ),
+            reverse=True,
+        )
+
+    def _build_one_word_stocks(
+        self, session: Session, target_date: date
+    ) -> List[StockSummary]:
+        continuous_days_by_code = {
+            item.code: item.continuous_days or 1
+            for item in session.query(ContinuousLimitUp)
+            .filter(ContinuousLimitUp.date == target_date)
+            .all()
+        }
+        rows = (
+            session.query(LimitUpPool)
+            .filter(
+                LimitUpPool.date == target_date,
+                LimitUpPool.limit_up_type.contains("一字"),
+            )
+            .order_by(LimitUpPool.limit_up_time.asc(), LimitUpPool.code.asc())
             .all()
         )
         return [
-            WeakBoardSummary(
+            StockSummary(
                 code=item.code,
                 name=item.name,
-                open_count=item.open_count or 0,
-                turnover_rate=self._to_float(item.turnover_rate),
+                continuous_days=continuous_days_by_code.get(item.code, 1),
+                limit_up_time=self._normalize_limit_up_time(item.limit_up_time),
                 block_name=item.block_name or "",
-                reason=self._shorten(item.reason or "", 24),
+                reason=self._shorten(item.concept or item.reason or "", 28),
             )
             for item in rows
         ]
+
+    def _build_previous_high_feedback(
+        self, session: Session, target_date: date
+    ) -> List[PreviousHighBoardSummary]:
+        trading_dates = self._recent_trading_dates(session, target_date, lookback=1)
+        previous_dates = [item for item in trading_dates if item < target_date]
+        if not previous_dates:
+            return []
+
+        previous_date = previous_dates[0]
+        rows = (
+            session.query(ContinuousLimitUp)
+            .filter(ContinuousLimitUp.date == previous_date)
+            .order_by(
+                ContinuousLimitUp.continuous_days.desc(),
+                ContinuousLimitUp.code.asc(),
+            )
+            .all()
+        )
+        if not rows:
+            return []
+
+        highest_days = max(item.continuous_days or 0 for item in rows)
+        high_rows = [
+            item
+            for item in rows
+            if (item.continuous_days or 0) >= max(highest_days - 1, 2)
+        ]
+        current_continuous_days = {
+            item.code: item.continuous_days or 0
+            for item in session.query(ContinuousLimitUp)
+            .filter(ContinuousLimitUp.date == target_date)
+            .all()
+        }
+        current_limit_up_codes = {
+            item.code
+            for item in session.query(LimitUpPool.code)
+            .filter(LimitUpPool.date == target_date)
+            .all()
+        }
+
+        feedback = []
+        for item in high_rows:
+            if item.code in current_continuous_days:
+                result = f"今日晋级至 {current_continuous_days[item.code]}板"
+            elif item.code in current_limit_up_codes:
+                result = "今日仍涨停，但未进入连板池"
+            else:
+                result = "今日未进入涨停池"
+            feedback.append(
+                PreviousHighBoardSummary(
+                    code=item.code,
+                    name=item.name,
+                    previous_continuous_days=item.continuous_days or 0,
+                    feedback=result,
+                )
+            )
+        return feedback
 
     def _build_breakout_stocks(
         self, session: Session, target_date: date
@@ -949,7 +1353,7 @@ class FeishuStockNotifier:
                     previous_max_days=previous_max_days,
                     gap_trading_days=gap_trading_days,
                     block_name=pool.block_name or "",
-                    reason=self._shorten(pool.reason or "", 24),
+                    reason=self._shorten(pool.concept or pool.reason or "", 24),
                 )
             )
 
@@ -1054,6 +1458,45 @@ class FeishuStockNotifier:
         return None
 
     @staticmethod
+    def _normalize_limit_up_time(value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        if text.isdigit() and len(text) >= 10:
+            try:
+                return datetime.fromtimestamp(
+                    int(text), tz=timezone.utc
+                ).astimezone(SHANGHAI_TIMEZONE).strftime("%H:%M")
+            except (OverflowError, OSError, ValueError):
+                return ""
+
+        if len(text) >= 5 and text[2] == ":":
+            return text[:5]
+
+        compact = text.replace(":", "")
+        if compact.isdigit() and len(compact) <= 6:
+            normalized = compact.zfill(6)
+            hour, minute = int(normalized[:2]), int(normalized[2:4])
+            if hour < 24 and minute < 60:
+                return f"{hour:02d}:{minute:02d}"
+        return text
+
+    @staticmethod
+    def _limit_up_time_sort_key(value: str) -> int:
+        try:
+            hour, minute = value.split(":", 1)
+            return int(hour) * 60 + int(minute)
+        except (TypeError, ValueError):
+            return 24 * 60
+
+    def _limit_up_time_gap_minutes(self, item: WeakBoardSummary) -> int:
+        return max(
+            0,
+            self._limit_up_time_sort_key(item.last_limit_up_time)
+            - self._limit_up_time_sort_key(item.first_limit_up_time),
+        )
+
+    @staticmethod
     def _generate_sign(timestamp: str, secret: str) -> str:
         string_to_sign = f"{timestamp}\n{secret}"
         digest = hmac.new(
@@ -1154,15 +1597,54 @@ class FeishuStockNotifier:
         if not stocks:
             return "- 暂无分歧弱板数据"
         lines = []
+        if stocks[0].first_limit_up_time:
+            lines.append(
+                "- 同花顺开板次数缺失，以下根据首次与最后涨停时间推断回封分歧样本"
+            )
         for index, item in enumerate(stocks, 1):
             turnover = self._format_percent(item.turnover_rate)
             block = f"，{item.block_name}" if item.block_name else ""
             reason = f"，{item.reason}" if item.reason else ""
+            if item.first_limit_up_time:
+                gap_minutes = self._limit_up_time_gap_minutes(item)
+                lines.append(
+                    f"{index}. {item.name}({item.code})：首次涨停 {item.first_limit_up_time}，"
+                    f"最后涨停 {item.last_limit_up_time}，间隔 {gap_minutes} 分钟"
+                    f"{block}{reason}"
+                )
+                continue
             lines.append(
                 f"{index}. {item.name}({item.code})：开板 {item.open_count} 次，"
                 f"换手 {turnover}{block}{reason}"
             )
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_previous_high_feedback(
+        stocks: List[PreviousHighBoardSummary],
+    ) -> str:
+        if not stocks:
+            return "- 暂无可对照的前一交易日连板数据"
+        lines = [
+            "- 仅对照今日是否仍在涨停池；按钮、反包、强势横盘等盘口数据仍需额外数据源"
+        ]
+        lines.extend(
+            f"{index}. {item.name}({item.code})：昨日 {item.previous_continuous_days}板，{item.feedback}"
+            for index, item in enumerate(stocks, 1)
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_board_overlaps(overlaps: List[BoardOverlapSummary]) -> str:
+        if not overlaps:
+            return "- 暂无显著交集数据"
+        return "\n".join(
+            f"{index}. {item.first_block_name} ∩ {item.second_block_name}："
+            f"{item.shared_stock_count} 只共同涨停"
+            f"（占前者 {item.shared_stock_count / item.first_stock_count:.0%}，"
+            f"占后者 {item.shared_stock_count / item.second_stock_count:.0%}）"
+            for index, item in enumerate(overlaps, 1)
+        )
 
     def _format_breakouts(self, stocks: List[BreakoutSummary]) -> str:
         windows = (
