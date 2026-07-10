@@ -64,6 +64,17 @@ class CodexSubscriptionClient:
             f"{('系统要求' if item['role'] == 'system' else '分析数据')}：\n{item['content']}"
             for item in messages
         )
+        return self._run(prompt, output_schema=ANALYSIS_SCHEMA)
+
+    def review(self, prompt: str) -> str:
+        """Run a free-form qualitative review without the legacy score schema."""
+        return self._run(prompt)
+
+    def _run(
+        self,
+        prompt: str,
+        output_schema: Optional[Dict[str, Any]] = None,
+    ) -> str:
         thread = self._codex.thread_start(
             model=self.model,
             cwd=self.working_directory,
@@ -71,14 +82,15 @@ class CodexSubscriptionClient:
             approval_mode=self._ApprovalMode.deny_all,
             sandbox=self._Sandbox.read_only,
         )
-        result = thread.run(
-            prompt,
-            cwd=self.working_directory,
-            model=self.model,
-            approval_mode=self._ApprovalMode.deny_all,
-            sandbox=self._Sandbox.read_only,
-            output_schema=ANALYSIS_SCHEMA,
-        )
+        run_options: Dict[str, Any] = {
+            "cwd": self.working_directory,
+            "model": self.model,
+            "approval_mode": self._ApprovalMode.deny_all,
+            "sandbox": self._Sandbox.read_only,
+        }
+        if output_schema is not None:
+            run_options["output_schema"] = output_schema
+        result = thread.run(prompt, **run_options)
         if not result.final_response:
             raise RuntimeError("Codex 未返回分析结果")
         self._resolve_default_model()

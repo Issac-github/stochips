@@ -99,6 +99,42 @@ def test_codex_analysis_schema_contains_existing_risk_fields():
     assert ANALYSIS_SCHEMA["additionalProperties"] is False
 
 
+def test_codex_daily_review_does_not_apply_legacy_score_schema():
+    from chain.stock.agents.codex_client import CodexSubscriptionClient
+
+    class FakeResult:
+        final_response = "### 市场复盘\n测试"
+
+    class FakeThread:
+        def __init__(self):
+            self.options = None
+
+        def run(self, prompt, **options):
+            self.options = options
+            return FakeResult()
+
+    class FakeCodex:
+        def __init__(self, thread):
+            self.thread = thread
+
+        def thread_start(self, **kwargs):
+            return self.thread
+
+    thread = FakeThread()
+    client = CodexSubscriptionClient.__new__(CodexSubscriptionClient)
+    client.model = None
+    client.resolved_model = "gpt-test-codex"
+    client.working_directory = "/app"
+    client._ApprovalMode = SimpleNamespace(deny_all="deny")
+    client._Sandbox = SimpleNamespace(read_only="read-only")
+    client._codex = FakeCodex(thread)
+
+    result = client.review("读取交易体系并复盘")
+
+    assert result.startswith("### 市场复盘")
+    assert "output_schema" not in thread.options
+
+
 def test_codex_provider_is_available_with_sdk_configuration(monkeypatch):
     monkeypatch.setattr(config.ai, "provider", "codex")
     monkeypatch.setattr(config.ai, "codex_model", "")

@@ -7,9 +7,10 @@ import hashlib
 import hmac
 import logging
 import os
+import random
 import time
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -22,10 +23,10 @@ from ..models.database import (
     BlockTop,
     BlockTopStock,
     ContinuousLimitUp,
+    DailyMarketReview,
     DataFetchLog,
     EastmoneyZTPool,
     LimitUpPool,
-    RiskAssessment,
     get_session_maker,
     init_database,
 )
@@ -35,6 +36,47 @@ logger = logging.getLogger(__name__)
 FEISHU_FREQUENCY_LIMIT_CODE = 11232
 FEISHU_SEND_MAX_ATTEMPTS = 3
 FEISHU_SEND_RETRY_DELAYS = (20, 60)
+FEISHU_SEND_JITTER_MIN = 5.0
+FEISHU_SEND_JITTER_MAX = 20.0
+
+
+def next_feishu_send_at(
+    now: Optional[datetime] = None,
+    not_before: Optional[datetime] = None,
+) -> datetime:
+    """Return a non-exact odd-minute time that is safe for a Feishu send."""
+    current = now or datetime.now()
+    target = max(current, not_before) if not_before else current
+    if target.minute % 2 == 1 and (target.second > 0 or target.microsecond > 0):
+        return target
+
+    if target.minute % 2 == 1:
+        return target + timedelta(
+            seconds=random.uniform(FEISHU_SEND_JITTER_MIN, FEISHU_SEND_JITTER_MAX)
+        )
+
+    next_minute = target.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    if next_minute.minute % 2 == 0:
+        next_minute += timedelta(minutes=1)
+    return next_minute + timedelta(
+        seconds=random.uniform(FEISHU_SEND_JITTER_MIN, FEISHU_SEND_JITTER_MAX)
+    )
+
+
+def wait_until_feishu_send_at(send_at: datetime) -> None:
+    delay = max(0.0, (send_at - datetime.now()).total_seconds())
+    if delay <= 0:
+        return
+    logger.info("飞书发送等待 %.2f 秒，发送时间: %s", delay, send_at)
+    time.sleep(delay)
+
+
+@dataclass
+class BlockStockReasonSummary:
+    code: str
+    name: str
+    reason_type: str
+    reason_info: str
 
 
 @dataclass
@@ -46,6 +88,7 @@ class BlockSummary:
     source: str = "block_top"
     stocks: List[str] = field(default_factory=list)
     block_code: str = ""
+    stock_reasons: List[BlockStockReasonSummary] = field(default_factory=list)
 
 
 @dataclass
@@ -63,9 +106,6 @@ class StockSummary:
     limit_up_time: str
     block_name: str
     reason: str
-    risk_level: str
-    risk_score: Optional[float]
-    suggestion: str
 
 
 @dataclass
@@ -76,17 +116,6 @@ class WeakBoardSummary:
     turnover_rate: Optional[float]
     block_name: str
     reason: str
-
-
-@dataclass
-class RiskStockSummary:
-    code: str
-    name: str
-    risk_level: str
-    risk_score: Optional[float]
-    suggestion: str
-    continuous_days: int
-    ai_analyzed: bool
 
 
 @dataclass
@@ -103,6 +132,13 @@ class BreakoutSummary:
 
 
 @dataclass
+class DailyReviewSummary:
+    content: str
+    provider: str
+    model: str
+
+
+@dataclass
 class FeishuStockReport:
     target_date: date
     is_complete: bool
@@ -111,12 +147,8 @@ class FeishuStockReport:
     hr_limit_up_count: int
     em_limit_up_count: int
     max_continuous_days: int
-    assessed_count: int
-    ai_analyzed_count: int
-    risk_distribution: Dict[str, int]
     continuous_distribution: Dict[int, int]
     limit_up_type_distribution: Dict[str, int]
-    suggestion_distribution: Dict[str, int]
     data_warnings: List[str]
     fetch_logs: List[Dict[str, Any]]
     top_blocks: List[BlockSummary]
@@ -125,8 +157,7 @@ class FeishuStockReport:
     early_stocks: List[StockSummary]
     weak_boards: List[WeakBoardSummary]
     breakout_stocks: List[BreakoutSummary]
-    top_risks: List[RiskStockSummary]
-    opportunity_stocks: List[RiskStockSummary]
+    daily_review: Optional[DailyReviewSummary] = None
 
 
 class FeishuStockNotifier:
@@ -184,35 +215,6 @@ class FeishuStockNotifier:
                 or 0
             )
 
-            risk_rows = (
-                session.query(RiskAssessment.risk_level, func.count(RiskAssessment.id))
-                .filter(RiskAssessment.date == target_date)
-                .group_by(RiskAssessment.risk_level)
-                .all()
-            )
-            risk_distribution = {
-                level or "未知": int(count) for level, count in risk_rows
-            }
-            assessed_count = sum(risk_distribution.values())
-            ai_analyzed_count = (
-                session.query(RiskAssessment)
-                .filter(
-                    RiskAssessment.date == target_date,
-                    RiskAssessment.is_ai_analyzed == 1,
-                )
-                .count()
-            )
-            suggestion_distribution = {
-                suggestion or "无建议": int(count)
-                for suggestion, count in session.query(
-                    RiskAssessment.suggestion,
-                    func.count(RiskAssessment.id),
-                )
-                .filter(RiskAssessment.date == target_date)
-                .group_by(RiskAssessment.suggestion)
-                .all()
-            }
-
             continuous_distribution = {
                 int(days): int(count)
                 for days, count in session.query(
@@ -250,20 +252,7 @@ class FeishuStockNotifier:
             ]
 
             top_blocks = [
-                BlockSummary(
-                    block_name=item.block_name,
-                    stock_count=item.stock_count or 0,
-                    leading_stock_name=(
-                        item.leading_stock_name or item.leading_stock or ""
-                    ),
-                    change_percent=self._to_float(item.change_percent),
-                    stocks=self._block_stock_labels(
-                        session,
-                        target_date,
-                        item.block_code,
-                    ),
-                    block_code=item.block_code,
-                )
+                self._build_block_summary(session, target_date, item)
                 for item in session.query(BlockTop)
                 .filter(BlockTop.date == target_date)
                 .order_by(BlockTop.stock_count.desc(), BlockTop.change_percent.desc())
@@ -297,17 +286,6 @@ class FeishuStockNotifier:
                 session, target_date
             )
 
-            if assessed_count == 0:
-                data_warnings.append("风险评估尚未完成，个股风险只显示未评估")
-            elif ai_analyzed_count == 0:
-                data_warnings.append("AI增强评估尚未完成，仅展示规则评估结果")
-
-            risk_by_code = {
-                item.code: item
-                for item in session.query(RiskAssessment)
-                .filter(RiskAssessment.date == target_date)
-                .all()
-            }
             top_stocks = []
             continuous_rows = (
                 session.query(ContinuousLimitUp)
@@ -328,7 +306,6 @@ class FeishuStockNotifier:
                     )
                     .one_or_none()
                 )
-                risk = risk_by_code.get(item.code)
                 top_stocks.append(
                     StockSummary(
                         code=item.code,
@@ -342,17 +319,26 @@ class FeishuStockNotifier:
                             (pool.reason if pool else "") or item.concept or "",
                             28,
                         ),
-                        risk_level=(risk.risk_level if risk else "") or "未评估",
-                        risk_score=self._to_float(risk.risk_score) if risk else None,
-                        suggestion=(risk.suggestion if risk else "") or "",
                     )
                 )
 
-            early_stocks = self._build_early_stocks(session, target_date, risk_by_code)
+            early_stocks = self._build_early_stocks(session, target_date)
             weak_boards = self._build_weak_boards(session, target_date)
             breakout_stocks = self._build_breakout_stocks(session, target_date)
-            top_risks = self._build_top_risks(session, target_date)
-            opportunity_stocks = self._build_opportunity_stocks(session, target_date)
+            daily_review_row = (
+                session.query(DailyMarketReview)
+                .filter(DailyMarketReview.date == target_date)
+                .one_or_none()
+            )
+            daily_review = (
+                DailyReviewSummary(
+                    content=daily_review_row.content,
+                    provider=daily_review_row.provider,
+                    model=daily_review_row.model or "default",
+                )
+                if daily_review_row
+                else None
+            )
 
             is_complete = all(
                 [
@@ -371,12 +357,8 @@ class FeishuStockNotifier:
                 hr_limit_up_count=hr_limit_up_count,
                 em_limit_up_count=em_limit_up_count,
                 max_continuous_days=int(max_days),
-                assessed_count=assessed_count,
-                ai_analyzed_count=ai_analyzed_count,
-                risk_distribution=risk_distribution,
                 continuous_distribution=continuous_distribution,
                 limit_up_type_distribution=limit_up_type_distribution,
-                suggestion_distribution=suggestion_distribution,
                 data_warnings=data_warnings,
                 fetch_logs=fetch_logs,
                 top_blocks=top_blocks,
@@ -385,90 +367,32 @@ class FeishuStockNotifier:
                 early_stocks=early_stocks,
                 weak_boards=weak_boards,
                 breakout_stocks=breakout_stocks,
-                top_risks=top_risks,
-                opportunity_stocks=opportunity_stocks,
+                daily_review=daily_review,
             )
         finally:
             session.close()
 
     def build_card(self, report: FeishuStockReport) -> Dict[str, Any]:
         """Build a Feishu Card 2.0 payload body."""
-        status_text = "完整" if report.is_complete else "不完整"
-        risk_text = self._format_risk_distribution(report.risk_distribution)
-        continuous_text = self._format_continuous_distribution(
-            report.continuous_distribution
-        )
-        limit_type_text = self._format_named_distribution(
-            report.limit_up_type_distribution
-        )
-        suggestion_text = self._format_named_distribution(
-            report.suggestion_distribution
-        )
-        block_lines = self._format_blocks(report.top_blocks)
-        eastmoney_industry_lines = self._format_industries(
-            report.eastmoney_industries
-        )
-        stock_lines = self._format_core_continuous(report.top_stocks)
-        early_lines = self._format_stocks(report.early_stocks)
-        weak_lines = self._format_weak_boards(report.weak_boards)
-        breakout_lines = self._format_breakouts(report.breakout_stocks)
-        risk_lines = self._format_risk_stocks(report.top_risks, empty="暂无高风险数据")
-        opportunity_lines = self._format_risk_stocks(
-            report.opportunity_stocks,
-            empty="暂无机会观察数据",
-        )
-        warning_lines = self._format_warnings(report.data_warnings)
-        log_lines = self._format_logs(report.fetch_logs)
-        date_text = report.target_date.strftime("%Y-%m-%d")
+        material = self.build_analysis_material(report)
+        review_parts = ["", "**Codex 市场复盘**"]
+        if report.daily_review:
+            review_parts.extend(
+                [
+                    report.daily_review.content,
+                    "",
+                    "---",
+                    config.ai.output_metadata(
+                        report.daily_review.provider,
+                        report.daily_review.model,
+                    ),
+                ]
+            )
+        else:
+            review_parts.append("- 尚未生成当日 Codex 复盘")
 
-        content = "\n".join(
-            [
-                f"**数据状态**：{status_text}",
-                (
-                    f"**涨停概览**：同花顺 {report.hr_limit_up_count} 只，"
-                    f"东财 {report.em_limit_up_count} 只，"
-                    f"连板 {report.continuous_count} 只，"
-                    f"最高 {report.max_continuous_days} 板"
-                ),
-                f"**涨停结构**：{limit_type_text}；连板梯队：{continuous_text}",
-                (
-                    f"**风险评估**：已评估 {report.assessed_count} 只，"
-                    f"AI 已分析 {report.ai_analyzed_count} 只，{risk_text}"
-                ),
-                f"**建议分布**：{suggestion_text}",
-                warning_lines,
-                "",
-                "**同花顺板块热度**",
-                block_lines,
-                "",
-                "**东财行业涨停**",
-                eastmoney_industry_lines,
-                "",
-                "**核心连板**",
-                stock_lines,
-                "",
-                "**早盘强势 Top 10**",
-                early_lines,
-                "",
-                "**分歧弱板 Top 10**",
-                weak_lines,
-                "",
-                "**涨停前高突破 Top 10**",
-                breakout_lines,
-                "",
-                "**高风险关注 Top 10**",
-                risk_lines,
-                "",
-                "**机会观察 Top 10**",
-                opportunity_lines,
-                "",
-                "**抓取日志**",
-                log_lines,
-                "",
-                "---",
-                config.ai.output_metadata(),
-            ]
-        )
+        content = "\n".join([material, *review_parts])
+        date_text = report.target_date.strftime("%Y-%m-%d")
 
         return {
             "schema": "2.0",
@@ -489,6 +413,107 @@ class FeishuStockNotifier:
             },
         }
 
+    def build_analysis_material(self, report: FeishuStockReport) -> str:
+        """Render factual daily material shared by Feishu and the Codex review."""
+        status_text = "完整" if report.is_complete else "不完整"
+        continuous_text = self._format_continuous_distribution(
+            report.continuous_distribution
+        )
+        limit_type_text = self._format_named_distribution(
+            report.limit_up_type_distribution
+        )
+        block_lines = self._format_blocks(report.top_blocks)
+        eastmoney_industry_lines = self._format_industries(
+            report.eastmoney_industries
+        )
+        stock_lines = self._format_core_continuous(report.top_stocks)
+        early_lines = self._format_stocks(report.early_stocks)
+        weak_lines = self._format_weak_boards(report.weak_boards)
+        breakout_lines = self._format_breakouts(report.breakout_stocks)
+        warning_lines = self._format_warnings(report.data_warnings)
+        log_lines = self._format_logs(report.fetch_logs)
+
+        return "\n".join(
+            [
+                f"**数据状态**：{status_text}",
+                (
+                    f"**涨停概览**：同花顺 {report.hr_limit_up_count} 只，"
+                    f"东财 {report.em_limit_up_count} 只，"
+                    f"连板 {report.continuous_count} 只，"
+                    f"最高 {report.max_continuous_days} 板"
+                ),
+                f"**涨停结构**：{limit_type_text}；连板梯队：{continuous_text}",
+                warning_lines,
+                "",
+                "**同花顺板块热度**",
+                block_lines,
+                "",
+                "**东财行业涨停**",
+                eastmoney_industry_lines,
+                "",
+                "**核心连板**",
+                stock_lines,
+                "",
+                "**早盘强势 Top 10**",
+                early_lines,
+                "",
+                "**分歧弱板 Top 10**",
+                weak_lines,
+                "",
+                "**涨停前高突破 Top 10**",
+                breakout_lines,
+                "",
+                "**抓取日志**",
+                log_lines,
+            ]
+        )
+
+    def build_codex_reason_material(self, report: FeishuStockReport) -> str:
+        """Render full THS reason fields for Codex without bloating Feishu."""
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for block in report.top_blocks:
+            for stock in block.stock_reasons:
+                key = stock.code or stock.name
+                item = grouped.setdefault(
+                    key,
+                    {
+                        "code": stock.code,
+                        "name": stock.name,
+                        "blocks": [],
+                        "reason_types": [],
+                        "reason_infos": [],
+                    },
+                )
+                if block.block_name not in item["blocks"]:
+                    item["blocks"].append(block.block_name)
+                if stock.reason_type and stock.reason_type not in item["reason_types"]:
+                    item["reason_types"].append(stock.reason_type)
+                if stock.reason_info and stock.reason_info not in item["reason_infos"]:
+                    item["reason_infos"].append(stock.reason_info)
+
+        reason_items = [
+            item
+            for item in grouped.values()
+            if item["reason_types"] or item["reason_infos"]
+        ]
+        if not reason_items:
+            return "**同花顺个股涨停原因（Codex分析补充）**\n- 暂无原因数据"
+
+        lines = ["**同花顺个股涨停原因（Codex分析补充）**"]
+        for index, item in enumerate(reason_items, 1):
+            code = f"({item['code']})" if item["code"] else ""
+            reason_types = "；".join(item["reason_types"]) or "暂无"
+            reason_infos = "\n\n".join(item["reason_infos"]) or "暂无"
+            lines.extend(
+                [
+                    f"{index}. {item['name']}{code}",
+                    f"- 所属热度板块：{'、'.join(item['blocks'])}",
+                    f"- 简略原因（reason_type）：{reason_types}",
+                    f"- 详细原因（reason_info）：\n{reason_infos}",
+                ]
+            )
+        return "\n".join(lines)
+
     def send_report(self, target_date: date) -> Dict[str, Any]:
         """Collect stock data and send a Feishu card."""
         if not self.webhook_url:
@@ -496,6 +521,43 @@ class FeishuStockNotifier:
 
         report = self.build_report(target_date)
         card = self.build_card(report)
+        result = self._send_card(card)
+
+        logger.info("飞书播报发送成功: %s", target_date)
+        return {
+            "feishu_response": result,
+            "date": target_date.isoformat(),
+            "is_complete": report.is_complete,
+            "hr_limit_up_count": report.hr_limit_up_count,
+            "em_limit_up_count": report.em_limit_up_count,
+            "daily_review_available": report.daily_review is not None,
+        }
+
+    def send_status_notification(
+        self,
+        target_date: date,
+        title: str,
+        content: str,
+    ) -> Dict[str, Any]:
+        """Send an operational status card through the same guarded webhook path."""
+        if not self.webhook_url:
+            raise ValueError("未设置 FEISHU_WEBHOOK_URL，无法发送飞书通知")
+
+        card = {
+            "schema": "2.0",
+            "header": {
+                "title": {"tag": "plain_text", "content": title},
+                "template": "red",
+            },
+            "body": {
+                "elements": [{"tag": "markdown", "content": content}]
+            },
+        }
+        result = self._send_card(card)
+        logger.info("飞书状态通知发送成功: %s", target_date)
+        return {"feishu_response": result, "date": target_date.isoformat()}
+
+    def _send_card(self, card: Dict[str, Any]) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "msg_type": "interactive",
             "card": card,
@@ -509,21 +571,20 @@ class FeishuStockNotifier:
 
         if result.get("code", 0) != 0:
             raise RuntimeError(f"飞书发送失败: {result}")
+        return result
 
-        logger.info("飞书播报发送成功: %s", target_date)
-        return {
-            "feishu_response": result,
-            "date": target_date.isoformat(),
-            "is_complete": report.is_complete,
-            "hr_limit_up_count": report.hr_limit_up_count,
-            "em_limit_up_count": report.em_limit_up_count,
-            "assessed_count": report.assessed_count,
-        }
-
-    def _post_with_retry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _post_with_retry(
+        self,
+        payload: Dict[str, Any],
+        *,
+        not_before: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
         """Post the Feishu payload, retrying recoverable platform rate limits."""
         result: Dict[str, Any] = {}
+        scheduled_at = not_before
         for attempt in range(1, FEISHU_SEND_MAX_ATTEMPTS + 1):
+            send_at = next_feishu_send_at(not_before=scheduled_at)
+            wait_until_feishu_send_at(send_at)
             response = requests.post(self.webhook_url, json=payload, timeout=10)
             response.raise_for_status()
             try:
@@ -537,16 +598,17 @@ class FeishuStockNotifier:
             if attempt >= FEISHU_SEND_MAX_ATTEMPTS:
                 return result
 
-            delay = FEISHU_SEND_RETRY_DELAYS[attempt - 1]
+            retry_after = FEISHU_SEND_RETRY_DELAYS[attempt - 1]
+            retry_not_before = datetime.now() + timedelta(seconds=retry_after)
+            scheduled_at = next_feishu_send_at(not_before=retry_not_before)
             logger.warning(
-                "飞书发送被限流，%s 秒后重试: attempt=%s/%s code=%s msg=%s",
-                delay,
+                "飞书发送被限流，将在 %s 重试: attempt=%s/%s code=%s msg=%s",
+                scheduled_at.strftime("%Y-%m-%d %H:%M:%S"),
                 attempt,
                 FEISHU_SEND_MAX_ATTEMPTS,
                 result.get("code"),
                 result.get("msg"),
             )
-            time.sleep(delay)
 
         return result
 
@@ -597,13 +659,43 @@ class FeishuStockNotifier:
                 break
         return blocks
 
-    def _block_stock_labels(
+    def _build_block_summary(
+        self,
+        session: Session,
+        target_date: date,
+        item: BlockTop,
+    ) -> BlockSummary:
+        rows = self._block_stock_rows(session, target_date, item.block_code)
+        return BlockSummary(
+            block_name=item.block_name,
+            stock_count=item.stock_count or 0,
+            leading_stock_name=item.leading_stock_name or item.leading_stock or "",
+            change_percent=self._to_float(item.change_percent),
+            stocks=[self._block_stock_label(stock) for stock in rows],
+            block_code=item.block_code,
+            stock_reasons=[
+                BlockStockReasonSummary(
+                    code=stock.code,
+                    name=stock.name,
+                    reason_type=stock.reason_type or "",
+                    reason_info=stock.reason_info or "",
+                )
+                for stock in rows
+            ],
+        )
+
+    @staticmethod
+    def _block_stock_label(stock: BlockTopStock) -> str:
+        height = stock.limit_up_type or f"{int(stock.continuous_days or 1)}板"
+        return f"{stock.name}（{height}）"
+
+    def _block_stock_rows(
         self, session: Session, target_date: date, block_code: str
-    ) -> List[str]:
+    ) -> List[BlockTopStock]:
         if not block_code:
             return []
 
-        rows = (
+        return (
             session.query(BlockTopStock)
             .filter(
                 BlockTopStock.date == target_date,
@@ -617,10 +709,6 @@ class FeishuStockNotifier:
             )
             .all()
         )
-        return [
-            f"{item.name}（{item.limit_up_type or f'{int(item.continuous_days or 1)}板'}）"
-            for item in rows
-        ]
 
     def _aggregate_eastmoney_industries(
         self, session: Session, target_date: date, limit: Optional[int] = None
@@ -703,10 +791,8 @@ class FeishuStockNotifier:
     def _build_stock_summary(
         self,
         item: Any,
-        risk_by_code: Dict[str, RiskAssessment],
         continuous_days: int = 1,
     ) -> StockSummary:
-        risk = risk_by_code.get(item.code)
         return StockSummary(
             code=item.code,
             name=item.name,
@@ -719,16 +805,12 @@ class FeishuStockNotifier:
                 getattr(item, "reason", "") or getattr(item, "concept", "") or "",
                 28,
             ),
-            risk_level=(risk.risk_level if risk else "") or "未评估",
-            risk_score=self._to_float(risk.risk_score) if risk else None,
-            suggestion=(risk.suggestion if risk else "") or "",
         )
 
     def _build_early_stocks(
         self,
         session: Session,
         target_date: date,
-        risk_by_code: Dict[str, RiskAssessment],
     ) -> List[StockSummary]:
         continuous_days_by_code = {
             item.code: item.continuous_days or 1
@@ -754,7 +836,6 @@ class FeishuStockNotifier:
         return [
             self._build_stock_summary(
                 item,
-                risk_by_code,
                 continuous_days_by_code.get(item.code, 1),
             )
             for item in self._prefer_regular_stocks(rows, limit=10)
@@ -932,52 +1013,6 @@ class FeishuStockNotifier:
             return None
         return max(prices)
 
-    def _build_top_risks(
-        self, session: Session, target_date: date
-    ) -> List[RiskStockSummary]:
-        rows = (
-            session.query(RiskAssessment)
-            .filter(RiskAssessment.date == target_date)
-            .order_by(
-                RiskAssessment.risk_score.desc(),
-                RiskAssessment.continuous_days.desc(),
-                RiskAssessment.code.asc(),
-            )
-            .limit(10)
-            .all()
-        )
-        return [self._risk_stock_summary(item) for item in rows]
-
-    def _build_opportunity_stocks(
-        self, session: Session, target_date: date
-    ) -> List[RiskStockSummary]:
-        rows = (
-            session.query(RiskAssessment)
-            .filter(
-                RiskAssessment.date == target_date,
-                RiskAssessment.suggestion == "机会",
-            )
-            .order_by(
-                RiskAssessment.risk_score.asc(),
-                RiskAssessment.continuous_days.desc(),
-                RiskAssessment.code.asc(),
-            )
-            .limit(10)
-            .all()
-        )
-        return [self._risk_stock_summary(item) for item in rows]
-
-    def _risk_stock_summary(self, item: RiskAssessment) -> RiskStockSummary:
-        return RiskStockSummary(
-            code=item.code,
-            name=item.name,
-            risk_level=item.risk_level,
-            risk_score=self._to_float(item.risk_score),
-            suggestion=item.suggestion or "",
-            continuous_days=item.continuous_days or 0,
-            ai_analyzed=bool(item.is_ai_analyzed),
-        )
-
     def _prefer_regular_stocks(self, rows: List[Any], limit: int) -> List[Any]:
         regular = [item for item in rows if not self._is_special_stock(item.name)]
         special = [item for item in rows if self._is_special_stock(item.name)]
@@ -1081,18 +1116,12 @@ class FeishuStockNotifier:
             return "- 暂无连板数据"
         lines = []
         for index, item in enumerate(stocks, 1):
-            score = (
-                f"{item.risk_score:.0f}分"
-                if item.risk_score is not None
-                else "无评分"
-            )
             reason = f"，{item.reason}" if item.reason else ""
             block = f"，{item.block_name}" if item.block_name else ""
             time_text = f"，{item.limit_up_time}" if item.limit_up_time else ""
-            suggestion = f"，{item.suggestion}" if item.suggestion else ""
             lines.append(
                 f"{index}. {item.name}({item.code})：{item.continuous_days}板"
-                f"{time_text}{block}，风险 {item.risk_level}/{score}{suggestion}{reason}"
+                f"{time_text}{block}{reason}"
             )
         return "\n".join(lines)
 
@@ -1126,26 +1155,6 @@ class FeishuStockNotifier:
             )
         return "\n".join(lines)
 
-    def _format_risk_stocks(
-        self, stocks: List[RiskStockSummary], empty: str
-    ) -> str:
-        if not stocks:
-            return f"- {empty}"
-        lines = []
-        for index, item in enumerate(stocks, 1):
-            score = (
-                f"{item.risk_score:.0f}分"
-                if item.risk_score is not None
-                else "无评分"
-            )
-            suggestion = f"，{item.suggestion}" if item.suggestion else ""
-            ai = "，AI" if item.ai_analyzed else ""
-            lines.append(
-                f"{index}. {item.name}({item.code})：{item.continuous_days}板，"
-                f"{item.risk_level}/{score}{suggestion}{ai}"
-            )
-        return "\n".join(lines)
-
     def _format_logs(self, logs: List[Dict[str, Any]]) -> str:
         if not logs:
             return "- 暂无抓取日志"
@@ -1170,23 +1179,6 @@ class FeishuStockNotifier:
         if value is None:
             return "-"
         return f"{value:.2f}%"
-
-    @staticmethod
-    def _format_risk_distribution(distribution: Dict[str, int]) -> str:
-        if not distribution:
-            return "暂无风险分布"
-        preferred = ["高", "中", "低"]
-        parts = [
-            f"{level}风险 {distribution[level]} 只"
-            for level in preferred
-            if level in distribution
-        ]
-        parts.extend(
-            f"{level} {count} 只"
-            for level, count in distribution.items()
-            if level not in preferred
-        )
-        return "，".join(parts)
 
     @staticmethod
     def _format_continuous_distribution(distribution: Dict[int, int]) -> str:

@@ -9,9 +9,8 @@ Python has factory exports and service classes that should be reused:
 - data fetching: `agent/chain/stock/data/create_fetcher`
 - data storage: `agent/chain/stock/data/create_storage` and `StockDataStorage`
 - SQLAlchemy setup: `init_database` and `get_session_maker`
-- rule assessment: `create_risk_agent`
-- AI analysis: `create_ai_analyzer`
-- enhanced assessment: `create_enhanced_risk_agent`
+- daily qualitative review: `create_daily_market_review_agent`
+- shared Codex/Feishu factual material: `FeishuStockNotifier.build_analysis_material`
 - goal-driven workflow: `create_stock_agent`
 - wiki workflow: `create_wiki_agent`
 - scheduling: `create_scheduler`

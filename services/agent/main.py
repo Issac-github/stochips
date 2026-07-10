@@ -1,14 +1,14 @@
 """
-股票选股及风控Agent系统主入口
+股票数据与Codex每日复盘Agent系统主入口
 
 Usage:
     python main.py agent "目标" [date]       # 目标驱动StockAgent
     python main.py fetch [date]             # 抓取数据
-    python main.py assess [date]            # 风险评估（规则引擎）
-    python main.py ai-analyze [date]        # AI智能分析
+    python main.py assess [date]            # 每日Codex市场复盘（兼容别名）
+    python main.py ai-analyze [date]        # 每日Codex市场复盘（兼容别名）
     python main.py assess-ai [date] [--force-ai]
-                                             # 增强版风险评估（规则+AI）
-    python main.py run [date]               # 完整流程（抓取+评估）
+                                             # 每日Codex市场复盘
+    python main.py run [date]               # 完整流程（抓取+Codex复盘）
     python main.py schedule                 # 启动定时任务
     python main.py status [date]            # 查看数据状态
     python main.py notify-feishu [date]     # 发送飞书涨停数据播报卡片
@@ -22,12 +22,11 @@ Usage:
 Environment Variables:
     DATABASE_URL: MySQL连接URL (required)
     STOCK_COOKIE: 数据抓取的cookie (optional)
-    AI_PROVIDER: moonshot 或 codex (AI分析服务商，默认 moonshot)
-    MOONSHOT_API_KEY: Moonshot API Key (使用 moonshot 时需要)
+    AI_PROVIDER: 每日市场复盘必须设为 codex
+    AI_FALLBACK_PROVIDER: 建议设为 none
     CODEX_MODEL: Codex模型（可选，留空使用账号默认模型）
     FEISHU_WEBHOOK_URL: 飞书自定义机器人Webhook (飞书播报需要)
     FEISHU_WEBHOOK_SECRET: 飞书机器人签名密钥 (optional)
-    AI_MAX_DAILY_CALLS: 每次增强评估最多新发起的AI分析数量 (default: 20)
     LOG_LEVEL: 日志级别 (default: INFO)
 """
 
@@ -44,10 +43,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from chain.stock.agents import (
-    create_ai_analyzer,
-    create_enhanced_risk_agent,
+    create_daily_market_review_agent,
     create_feishu_notifier,
-    create_risk_agent,
     create_stock_agent,
     create_wiki_agent,
 )
@@ -56,16 +53,6 @@ from chain.stock.data.storage import StockDataStorage
 from chain.stock.config import config
 from chain.stock.agents.codex_client import login_chatgpt_device_code
 from chain.stock.scheduler import create_scheduler
-
-
-def env_is_configured(key: str, placeholders: Optional[set[str]] = None) -> bool:
-    value = os.getenv(key, "").strip()
-    if not value:
-        return False
-    if placeholders and value in placeholders:
-        return False
-    return True
-
 
 def setup_logging():
     """设置日志"""
@@ -184,161 +171,57 @@ def cmd_fetch(target_date: Optional[str] = None):
 
 
 def cmd_assess(target_date: Optional[str] = None):
-    """风险评估命令（规则引擎）"""
-    date_obj = parse_date(target_date)
-
-    print(f"开始风险评估: {date_obj}")
-
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("错误：未设置DATABASE_URL环境变量")
-        sys.exit(1)
-
-    if should_skip_after_fetch(database_url, date_obj, "风险评估"):
-        return
-
-    agent = create_risk_agent(database_url)
-
-    try:
-        result = agent.run_daily_assessment(date_obj)
-
-        print("\n风险评估完成：")
-        print(f"  评估股票数: {result['total_assessed']} 只")
-        print(f"  成功保存: {result['saved_success']} 条")
-        if result["saved_failed"] > 0:
-            print(f"  保存失败: {result['saved_failed']} 条")
-
-        if result["risk_distribution"]:
-            print("\n风险分布：")
-            for level, count in result["risk_distribution"].items():
-                print(f"  {level}: {count} 只")
-
-        print("\n✅ 风险评估完成")
-
-    except Exception as e:
-        print(f"错误：{e}")
-        logging.exception("风险评估失败")
-        sys.exit(1)
+    """Compatibility alias for the daily Codex review."""
+    cmd_assess_enhanced(target_date)
 
 
 def cmd_ai_analyze(target_date: Optional[str] = None):
-    """AI智能分析命令"""
-    date_obj = parse_date(target_date)
-
-    print(f"开始AI智能分析: {date_obj}")
-
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        print("错误：未设置DATABASE_URL环境变量")
-        sys.exit(1)
-
-    if should_skip_after_fetch(database_url, date_obj, "AI智能分析"):
-        return
-
-    if not config.ai.is_configured:
-        print(f"错误：AI_PROVIDER={config.ai.provider} 未完成配置，无法进行AI分析")
-        sys.exit(1)
-
-    analyzer = create_ai_analyzer(database_url)
-
-    try:
-        # 批量分析
-        results = analyzer.batch_analyze(date_obj, min_continuous_days=2, limit=20)
-
-        print("\nAI分析完成：")
-        print(f"  分析股票数: {len(results)} 只")
-
-        # 显示每只股票的简要分析结果
-        print("\n分析结果摘要：")
-        for result in results:
-            print(f"\n  {result.code} {result.name}:")
-            print(f"    AI风险评分: {result.ai_risk_score}/100")
-            print(f"    投资建议: {result.ai_suggestion}")
-            print(f"    概念热度: {result.concept_heat}")
-            print(f"    市场情绪: {result.market_sentiment}")
-            print(f"    置信度: {result.confidence}")
-
-        print("\n✅ AI分析完成")
-
-    except Exception as e:
-        print(f"错误：{e}")
-        logging.exception("AI分析失败")
-        sys.exit(1)
+    """Compatibility alias for one daily qualitative Codex review."""
+    cmd_assess_enhanced(target_date)
 
 
 def cmd_assess_enhanced(
     target_date: Optional[str] = None,
     force_ai: bool = False,
 ):
-    """增强版风险评估命令（规则引擎 + AI）"""
+    """Generate one qualitative Codex review from the daily market material."""
     date_obj = parse_date(target_date)
 
-    print(f"开始增强版风险评估: {date_obj}")
-    print("=" * 60)
-    print("📊 规则引擎 + 🤖 AI智能分析")
-    print("=" * 60)
+    print(f"开始Codex每日市场复盘: {date_obj}")
 
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         print("错误：未设置DATABASE_URL环境变量")
         sys.exit(1)
 
-    if should_skip_after_fetch(database_url, date_obj, "增强版风险评估"):
+    if should_skip_after_fetch(database_url, date_obj, "Codex每日市场复盘"):
         return
 
-    agent = create_enhanced_risk_agent(database_url)
+    if config.ai.provider != "codex":
+        print("错误：每日市场复盘需要 AI_PROVIDER=codex")
+        sys.exit(1)
 
-    use_ai = config.ai.is_configured
-    if not use_ai:
-        print("⚠️ 警告：未配置可用AI Provider，将只使用规则引擎")
-    else:
-        print(f"✅ 已配置AI分析功能（{config.ai.provider}）")
-        if force_ai:
-            print("🔁 已开启强制AI重跑，将忽略已有AI分析缓存")
-
+    agent = None
     try:
-        result = agent.run_daily_assessment_enhanced(
-            date_obj,
-            min_continuous_days=2,
-            use_ai=use_ai,
-            force_ai=force_ai,
-        )
+        agent = create_daily_market_review_agent(database_url)
+        if force_ai:
+            print("🔁 已开启强制重跑，将替换已有Codex每日复盘")
 
-        print("\n增强版风险评估完成：")
-        print(f"  评估股票数: {result['total_assessed']} 只")
-        print(f"  成功保存: {result['saved_success']} 条")
-
-        if result["saved_failed"] > 0:
-            print(f"  保存失败: {result['saved_failed']} 条")
-
-        # 分析方法分布
-        print("\n分析方法分布：")
-        print(
-            f"  AI+规则混合分析: {result['analysis_method_distribution']['ai_analyzed']} 只"
-        )
-        print(
-            f"  纯规则引擎分析: {result['analysis_method_distribution']['rule_only']} 只"
-        )
-
-        # AI成功数量
-        if use_ai:
-            print(f"  AI分析成功: {result['ai_success_count']} 只")
-            print(
-                f"  新发起AI调用: {result['fresh_ai_call_count']} / {result['max_ai_calls']} 只"
-            )
-
-        # 风险分布
-        if result["risk_distribution"]:
-            print("\n风险分布：")
-            for level, count in result["risk_distribution"].items():
-                print(f"  {level}: {count} 只")
-
-        print("\n✅ 增强版风险评估完成")
+        result = agent.run(date_obj, force=force_ai)
+        print("\nCodex每日市场复盘完成：")
+        print(f"  日期: {result.date}")
+        print(f"  来源: {result.provider}")
+        print(f"  模型: {result.model}")
+        print(f"  状态: {'复用已有报告' if result.cached else '新生成并保存'}")
+        print("\n✅ Codex每日市场复盘完成")
 
     except Exception as e:
         print(f"错误：{e}")
-        logging.exception("增强版风险评估失败")
+        logging.exception("Codex每日市场复盘失败")
         sys.exit(1)
+    finally:
+        if agent is not None:
+            agent.close()
 
 
 def cmd_run(target_date: Optional[str] = None):
@@ -353,8 +236,8 @@ def cmd_run(target_date: Optional[str] = None):
 
     print("\n" + "=" * 50)
 
-    # 2. 风险评估
-    cmd_assess(target_date)
+    # 2. 数据刚抓取完成，强制用新快照生成当日Codex复盘。
+    cmd_assess_enhanced(target_date, force_ai=True)
 
     print("\n" + "=" * 50)
     print("✅ 所有任务完成")
@@ -363,7 +246,7 @@ def cmd_run(target_date: Optional[str] = None):
 def cmd_agent(goal: Optional[str] = None, target_date: Optional[str] = None):
     """运行目标驱动 StockAgent"""
     if not goal:
-        print('错误：缺少目标，例如 python main.py agent "完成每日风险巡检" 20260506')
+        print('错误：缺少目标，例如 python main.py agent "完成每日市场复盘" 20260506')
         sys.exit(1)
 
     date_obj = parse_date(target_date)
@@ -376,6 +259,7 @@ def cmd_agent(goal: Optional[str] = None, target_date: Optional[str] = None):
     print(f"日期: {date_obj}")
     print("=" * 60)
 
+    agent = None
     try:
         agent = create_stock_agent(database_url)
         result = agent.run(goal, date_obj)
@@ -384,6 +268,9 @@ def cmd_agent(goal: Optional[str] = None, target_date: Optional[str] = None):
         print(f"错误：{e}")
         logging.exception("StockAgent执行失败")
         sys.exit(1)
+    finally:
+        if agent is not None:
+            agent.close()
 
 
 def cmd_schedule():
@@ -396,24 +283,13 @@ def cmd_schedule():
     async def run_scheduler():
         scheduler = create_scheduler(notification_callback=notification)
 
-        # 设置定时任务
-        # 数据抓取：避开整点，并在真正请求前增加随机秒级等待
-        scheduler.schedule_data_fetch()
-
-        # 风险评估：每天 16:10
-        scheduler.schedule_risk_assessment(hour=16, minute=10)
-
-        # AI增强风险评估：每天 16:20（需要已配置AI Provider）
-        if config.ai.is_configured:
-            scheduler.schedule_enhanced_risk_assessment(hour=16, minute=20)
+        if config.ai.provider != "codex":
+            print("AI_PROVIDER 不是 codex，未设置每日串行播报任务")
+        elif not os.getenv("FEISHU_WEBHOOK_URL"):
+            print("未配置 FEISHU_WEBHOOK_URL，未设置每日串行播报任务")
         else:
-            print("未配置可用AI Provider，跳过 AI增强风险评估定时任务")
-
-        # 飞书播报：避开半点高峰，降低飞书平台频控概率
-        if os.getenv("FEISHU_WEBHOOK_URL"):
-            scheduler.schedule_feishu_report()
-        else:
-            print("未配置 FEISHU_WEBHOOK_URL，跳过飞书播报定时任务")
+            # 一个任务内严格按抓取 -> Codex复盘 -> 飞书播报执行。
+            scheduler.schedule_daily_job()
 
         print("\n已设置以下定时任务：")
         for job in scheduler.get_jobs():
@@ -511,7 +387,9 @@ def cmd_notify_feishu(target_date: Optional[str] = None):
         print(f"  数据完整: {'是' if result['is_complete'] else '否'}")
         print(f"  同花顺涨停: {result['hr_limit_up_count']} 条")
         print(f"  东财涨停: {result['em_limit_up_count']} 条")
-        print(f"  风险评估: {result['assessed_count']} 条")
+        print(
+            f"  Codex复盘: {'已附加' if result['daily_review_available'] else '尚未生成'}"
+        )
         print("\n✅ 飞书播报完成")
     except Exception as e:
         print(f"错误：{e}")
@@ -608,7 +486,7 @@ def main():
             sys.exit(1)
         return
 
-    if command == "assess-ai":
+    if command in {"assess", "assess-ai", "ai-analyze"}:
         target_date, flags = parse_date_and_flags(sys.argv[2:])
         unknown_flags = flags - {"--force-ai"}
         if unknown_flags:
@@ -619,8 +497,6 @@ def main():
 
     commands = {
         "fetch": cmd_fetch,
-        "assess": cmd_assess,
-        "ai-analyze": cmd_ai_analyze,
         "run": cmd_run,
         "schedule": cmd_schedule,
         "status": cmd_status,

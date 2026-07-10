@@ -6,7 +6,7 @@ Use this whenever work touches more than one runtime layer.
 
 StoChips has clear owners:
 
-- Python `agent/` owns stock business logic, data writes, risk scoring, AI analysis, wiki/RAG commands, and scheduled jobs.
+- Python `agent/` owns stock business logic, data writes, Codex daily review, wiki/RAG commands, and scheduled jobs.
 - Go `services/stock-rpc/` owns gRPC API, task state, query adapters, and command dispatch.
 - Electron main owns IPC handlers, local LLM/MCP server startup, and the Node gRPC client.
 - Preload owns the small `window.api` bridge.
@@ -70,15 +70,16 @@ When changing task behavior:
 
 ## AI Flow Changes
 
-AI analysis is optional and may be unavailable. Before changing it, check:
+Before changing the Codex daily review, check:
 
 - `agent/chain/stock/config.py`
-- `agent/chain/stock/agents/ai_analyzer.py`
-- `agent/chain/stock/agents/enhanced_risk_agent.py`
-- `agent/tests/test_ai_flow.py`
-- `risk_assessment` columns in `database.py` and migrations
+- `agent/chain/stock/agents/codex_client.py`
+- `agent/chain/stock/agents/daily_market_review_agent.py`
+- `agent/chain/stock/agents/feishu_notifier.py`
+- `agent/tests/test_daily_market_review_agent.py`
+- `daily_market_review` in `database.py` and migrations
 
-Preserve rule-only fallback and cached AI reuse. New LLM output parsing should be testable without a live API call.
+Preserve one-call-per-date caching, forced replacement, read-only strategy-file access, and shared factual material. Test with a fake Codex client rather than a live subscription.
 
 ## Verification Selection
 

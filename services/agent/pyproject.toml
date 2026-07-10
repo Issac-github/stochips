@@ -1,7 +1,7 @@
 [project]
 name = "stock-analysis-agent"
 version = "1.0.0"
-description = "股票选股及风控Agent系统 - 自动抓取股票数据并进行风险评估"
+description = "A股涨停数据抓取、Codex每日市场复盘与飞书播报系统"
 authors = [
     {name = "Stock Analysis Team", email = "team@example.com"}
 ]

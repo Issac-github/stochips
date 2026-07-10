@@ -12,7 +12,7 @@ High-risk boundaries in this project:
 - stock data schema: Python models, migrations, Go query JSON, frontend global types, table components
 - RPC contract: Go proto/server, Go runner, Electron gRPC client, shared event keys, preload bridge
 - task lifecycle: Go task store, Python command execution, renderer polling
-- AI flow: Python LLM parsing, enhanced assessment cache reuse, database fields, user-visible task result
+- AI flow: Codex strategy-file access, date-keyed review cache, shared Feishu material, and user-visible report metadata
 - frontend data display: Go JSON adapters, zod validators, `DataTable`, HR/EM/BrokenBoard tables
 
 Before changing a value or shape that appears in more than one layer, search the repository first with `rg`.

@@ -5,7 +5,7 @@ Go gRPC gateway for the stock agent.
 This is the first-stage split:
 
 - Go owns the external gRPC API, in-memory task status, and background task dispatch.
-- Python still owns stock fetching, storage, risk assessment, AI analysis, and business table writes.
+- Python owns stock fetching, storage, the daily Codex market review, Feishu reporting, and business table writes.
 - The gateway executes the existing `agent/main.py` commands instead of reimplementing business logic.
 
 ## Generate gRPC Code

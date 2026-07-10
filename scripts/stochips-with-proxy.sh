@@ -39,12 +39,12 @@ Options:
 
   --login          Log in to ChatGPT/Codex with the existing stock_agent image
   --assess-ai [date]
-                  Run enhanced assessment through the proxy
+                  Generate or reuse the daily Codex market review
   --ai-analyze [date]
-                  Run the raw AI analysis through the proxy
+                  Compatibility alias for --assess-ai
   --notify-feishu [date]
                   Send the Feishu report through the proxy
-  --force-ai       Ignore cached AI results; valid only with --assess-ai
+  --force-ai       Replace the saved daily review; valid only with --assess-ai
   --rebuild        For --login or a runtime command: rebuild stock_agent and
                    recreate its service container before running the action
 
@@ -319,7 +319,6 @@ if [ "${#RUNTIME_COMMAND[@]}" -gt 0 ]; then
   pass_env_if_set AI_FALLBACK_PROVIDER
   pass_env_if_set CODEX_MODEL
   pass_env_if_set CODEX_WORKING_DIRECTORY
-  pass_env_if_set AI_MAX_DAILY_CALLS
 
   echo "Running through the temporary proxy: ${RUNTIME_COMMAND[*]}"
   docker run --rm "${DOCKER_TTY_ARGS[@]}" \

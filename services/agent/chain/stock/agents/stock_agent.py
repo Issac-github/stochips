@@ -1,15 +1,10 @@
-"""
-目标驱动的股票 Agent。
-
-这一层不替代原有抓取、存储、评估模块，而是把它们包装成可选择的工具，
-让 stock 模块从固定流水线升级为 observe -> plan -> act -> summarize 的 Agent。
-"""
+"""目标驱动的股票 Agent，编排抓取、Codex每日复盘和报告工具。"""
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-import json
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -24,13 +19,12 @@ from ..data.storage import StockDataStorage
 from ..models.database import (
     BlockTop,
     ContinuousLimitUp,
+    DailyMarketReview,
     LimitUpPool,
-    RiskAssessment,
     get_session_maker,
     init_database,
 )
-from .enhanced_risk_agent import create_enhanced_risk_agent
-from .risk_agent import create_risk_agent
+from .daily_market_review_agent import create_daily_market_review_agent
 from .wiki_agent import create_wiki_agent
 
 logger = logging.getLogger(__name__)
@@ -83,9 +77,9 @@ class StockAgent:
     股票分析 Agent。
 
     能力边界：
-    - 观察：读取数据完整度、风险评估状态、热门板块概览。
-    - 规划：根据 goal 决定是否抓取、评估、AI增强、wiki 查询、生成报告。
-    - 行动：调用现有 fetcher/storage/risk/wiki 工具。
+    - 观察：读取数据完整度、Codex复盘状态、热门板块概览。
+    - 规划：根据 goal 决定是否抓取、生成Codex复盘、查询wiki、生成报告。
+    - 行动：调用现有 fetcher/storage/Codex/wiki 工具。
     - 总结：把执行结果聚合成可读报告。
     """
 
@@ -101,8 +95,7 @@ class StockAgent:
 
         self.fetcher = create_fetcher(self.cookie)
         self.storage = StockDataStorage(database_url)
-        self.risk_agent = create_risk_agent(database_url)
-        self.enhanced_risk_agent = create_enhanced_risk_agent(database_url)
+        self.daily_review_agent = None
         self.wiki_agent = create_wiki_agent()
         self.llm_planner = self._create_llm_planner()
 
@@ -111,8 +104,7 @@ class StockAgent:
 
         self.tools: Dict[str, Callable[..., Any]] = {
             "fetch_and_store_data": self.fetch_and_store_data,
-            "run_rule_risk_assessment": self.run_rule_risk_assessment,
-            "run_enhanced_risk_assessment": self.run_enhanced_risk_assessment,
+            "run_daily_market_review": self.run_daily_market_review,
             "query_wiki": self.query_wiki,
             "generate_report": self.generate_report,
         }
@@ -164,8 +156,7 @@ class StockAgent:
 
                 if action.status == "success" and step.tool in {
                     "fetch_and_store_data",
-                    "run_rule_risk_assessment",
-                    "run_enhanced_risk_assessment",
+                    "run_daily_market_review",
                 }:
                     observation = self.observe(target_date)
                     context["observation"] = observation
@@ -193,8 +184,7 @@ class StockAgent:
 
             if action.status == "success" and step.tool in {
                 "fetch_and_store_data",
-                "run_rule_risk_assessment",
-                "run_enhanced_risk_assessment",
+                "run_daily_market_review",
             }:
                 observation = self.observe(target_date)
                 context["observation"] = observation
@@ -213,14 +203,14 @@ class StockAgent:
         )
 
     def observe(self, target_date: date) -> Dict[str, Any]:
-        """观察当天数据、评估和热点状态。"""
+        """观察当天数据、Codex复盘和热点状态。"""
         data_status = self.storage.get_data_status(target_date)
-        risk_status = self._get_risk_status(target_date)
+        review_status = self._get_daily_review_status(target_date)
         market_snapshot = self._get_market_snapshot(target_date)
 
         return {
             "data_status": data_status,
-            "risk_status": risk_status,
+            "review_status": review_status,
             "market_snapshot": market_snapshot,
         }
 
@@ -235,7 +225,6 @@ class StockAgent:
         """根据目标和观察结果生成执行计划。"""
         normalized_goal = goal.lower()
         data_status = observation["data_status"]
-        risk_status = observation["risk_status"]
 
         wants_fetch = self._contains_any(
             normalized_goal, ["抓取", "更新", "同步", "fetch"]
@@ -250,16 +239,28 @@ class StockAgent:
         wants_risk = self._contains_any(
             normalized_goal, ["风险", "评估", "风控", "巡检", "规避", "risk"]
         )
-        wants_ai = use_ai and self._contains_any(
+        wants_review = use_ai and self._contains_any(
             normalized_goal,
-            ["ai", "智能", "增强", "深度", "综合", "机会", "巡检"],
+            [
+                "ai",
+                "智能",
+                "深度",
+                "综合",
+                "机会",
+                "巡检",
+                "复盘",
+                "研判",
+                "风险",
+                "风控",
+            ],
         )
 
         plan: List[StockAgentStep] = []
 
-        if wants_fetch or (
+        should_fetch = wants_fetch or (
             auto_fetch and not data_status["is_complete"] and not wants_status
-        ):
+        )
+        if should_fetch:
             plan.append(
                 StockAgentStep(
                     tool="fetch_and_store_data",
@@ -267,22 +268,14 @@ class StockAgent:
                 )
             )
 
-        if wants_risk:
-            if wants_ai:
-                plan.append(
-                    StockAgentStep(
-                        tool="run_enhanced_risk_assessment",
-                        reason="目标需要风险判断，且当前启用了 AI 增强分析。",
-                        params={"use_ai": True},
-                    )
+        if wants_review:
+            plan.append(
+                StockAgentStep(
+                    tool="run_daily_market_review",
+                    reason="目标需要市场研判，使用交易体系和每日事实材料生成Codex复盘。",
+                    params={"force": should_fetch},
                 )
-            elif risk_status["total_assessed"] == 0 or wants_fetch:
-                plan.append(
-                    StockAgentStep(
-                        tool="run_rule_risk_assessment",
-                        reason="目标需要风险判断，先使用规则引擎产出稳定基线。",
-                    )
-                )
+            )
 
         if wants_wiki:
             plan.append(
@@ -355,13 +348,6 @@ class StockAgent:
             return None
 
         succeeded_tools = {item.tool for item in actions if item.status == "success"}
-        if failed_step.tool == "run_enhanced_risk_assessment":
-            if "run_rule_risk_assessment" not in succeeded_tools:
-                return StockAgentStep(
-                    tool="run_rule_risk_assessment",
-                    reason="AI 增强评估失败，降级为规则风险评估。",
-                )
-
         if (
             failed_step.tool != "generate_report"
             and "generate_report" not in succeeded_tools
@@ -386,6 +372,13 @@ class StockAgent:
 
         if step.tool == "generate_report":
             params["context"] = context
+        elif step.tool == "run_daily_market_review":
+            fetched_data = any(
+                action.tool == "fetch_and_store_data" and action.status == "success"
+                for action in context["actions"]
+            )
+            if fetched_data:
+                params["force"] = True
 
         try:
             result = tool(**params)
@@ -409,21 +402,23 @@ class StockAgent:
             "errors": data.get("errors", []),
         }
 
-    def run_rule_risk_assessment(self, target_date: date) -> Dict[str, Any]:
-        """运行规则引擎风险评估。"""
-        return self.risk_agent.run_daily_assessment(target_date)
-
-    def run_enhanced_risk_assessment(
+    def run_daily_market_review(
         self,
         target_date: date,
-        use_ai: bool = True,
+        force: bool = False,
     ) -> Dict[str, Any]:
-        """运行规则 + AI 增强风险评估。"""
-        return self.enhanced_risk_agent.run_daily_assessment_enhanced(
-            target_date,
-            min_continuous_days=2,
-            use_ai=use_ai,
-        )
+        """Generate or reuse the qualitative daily Codex review."""
+        if self.daily_review_agent is None:
+            self.daily_review_agent = create_daily_market_review_agent(
+                self.database_url
+            )
+        return self.daily_review_agent.run(target_date, force=force).to_dict()
+
+    def close(self) -> None:
+        """Release the Codex app-server if this Agent started one."""
+        if self.daily_review_agent is not None:
+            self.daily_review_agent.close()
+            self.daily_review_agent = None
 
     def query_wiki(self, target_date: date, question: str) -> str:
         """查询交易知识库。target_date 保留给统一工具签名使用。"""
@@ -442,7 +437,7 @@ class StockAgent:
         return {
             "date": target_date.isoformat(),
             "data_status": observation["data_status"],
-            "risk_status": self._get_risk_status(target_date, include_top=True),
+            "review_status": self._get_daily_review_status(target_date),
             "market_snapshot": observation["market_snapshot"],
             "action_summary": (
                 self._summarize_actions(context.get("actions", [])) if context else []
@@ -459,7 +454,7 @@ class StockAgent:
     ) -> str:
         """输出面向人的运行摘要。"""
         data_status = observation["data_status"]
-        risk_status = self._get_risk_status(target_date, include_top=True)
+        review_status = self._get_daily_review_status(target_date)
         failed_actions = [action for action in actions if action.status != "success"]
 
         lines = [
@@ -480,25 +475,14 @@ class StockAgent:
                 f"- 东财涨停池 {data_status['eastmoney_zt_pool']} 条",
                 f"- 完整性：{'完整' if data_status['is_complete'] else '不完整'}",
                 "",
-                "风险评估：",
-                f"- 已评估 {risk_status['total_assessed']} 只",
+                "Codex每日市场复盘：",
+                f"- 状态：{'已生成' if review_status['available'] else '尚未生成'}",
             ]
         )
 
-        if risk_status["risk_distribution"]:
-            lines.extend(
-                f"- {level}: {count} 只"
-                for level, count in risk_status["risk_distribution"].items()
-            )
-
-        if risk_status.get("top_risks"):
-            lines.append("")
-            lines.append("高风险关注：")
-            for item in risk_status["top_risks"][:5]:
-                lines.append(
-                    f"- {item['code']} {item['name']}: {item['risk_level']} "
-                    f"{item['risk_score']}分，{item['suggestion'] or '无建议'}"
-                )
+        if review_status["available"]:
+            lines.append(f"- 模型：{review_status['model']}")
+            lines.append(f"- 来源：{review_status['provider']}")
 
         if failed_actions:
             lines.append("")
@@ -509,54 +493,19 @@ class StockAgent:
 
         return "\n".join(lines)
 
-    def _get_risk_status(
-        self, target_date: date, include_top: bool = False
-    ) -> Dict[str, Any]:
+    def _get_daily_review_status(self, target_date: date) -> Dict[str, Any]:
         session: Session = self.Session()
         try:
-            records = (
-                session.query(RiskAssessment)
-                .filter(RiskAssessment.date == target_date)
-                .all()
+            record = (
+                session.query(DailyMarketReview)
+                .filter(DailyMarketReview.date == target_date)
+                .one_or_none()
             )
-
-            distribution: Dict[str, int] = {}
-            ai_analyzed = 0
-            for record in records:
-                distribution[record.risk_level] = (
-                    distribution.get(record.risk_level, 0) + 1
-                )
-                if record.is_ai_analyzed:
-                    ai_analyzed += 1
-
-            status: Dict[str, Any] = {
-                "total_assessed": len(records),
-                "risk_distribution": distribution,
-                "ai_analyzed": ai_analyzed,
+            return {
+                "available": record is not None,
+                "provider": record.provider if record else "",
+                "model": (record.model or "default") if record else "",
             }
-
-            if include_top:
-                top_records = (
-                    session.query(RiskAssessment)
-                    .filter(RiskAssessment.date == target_date)
-                    .order_by(RiskAssessment.risk_score.desc())
-                    .limit(10)
-                    .all()
-                )
-                status["top_risks"] = [
-                    {
-                        "code": record.code,
-                        "name": record.name,
-                        "risk_level": record.risk_level,
-                        "risk_score": self._to_float(record.risk_score),
-                        "suggestion": record.suggestion,
-                        "continuous_days": record.continuous_days,
-                        "is_ai_analyzed": bool(record.is_ai_analyzed),
-                    }
-                    for record in top_records
-                ]
-
-            return status
         finally:
             session.close()
 
@@ -669,8 +618,7 @@ class StockAgent:
             },
             "available_tools": {
                 "fetch_and_store_data": "抓取并保存指定日期的股票数据。",
-                "run_rule_risk_assessment": "使用规则引擎执行风险评估。",
-                "run_enhanced_risk_assessment": "使用规则 + AI 执行增强风险评估，需要 use_ai=true。",
+                "run_daily_market_review": "读取交易体系和每日行情材料，生成Codex市场复盘。",
                 "query_wiki": "查询交易知识库，必须提供 question 参数。",
                 "generate_report": "根据观察和动作历史生成结构化巡检报告，通常作为最后一步。",
             },
@@ -683,7 +631,7 @@ class StockAgent:
 2. 每次最多输出 1 个工具；如果任务已完成，输出 []。
 3. 不要重复调用已经成功执行过的非报告工具。
 4. 如果当天数据不完整且目标不是单纯查看状态，优先抓取数据。
-5. 风险、风控、巡检类目标需要风险评估；use_ai=true 时优先增强评估，否则用规则评估。
+5. 风险、风控、巡检、复盘类目标在 use_ai=true 时生成每日Codex市场复盘，不做程序评分。
 6. 报告、总结、复盘、巡检类目标最后调用 generate_report。
 7. wiki、知识、解释、查询类目标调用 query_wiki，并把原始目标作为 question。
 8. 如果上一动作失败，选择可降级工具或 generate_report。

@@ -23,12 +23,12 @@ Make the Feishu `同花顺板块热度` section render real stocks from the THS 
 
 ## Acceptance Criteria
 
-- [ ] New/updated schema stores all `stock_list` members per `(date, block_code, stock_code)`.
-- [ ] `block_top_stock` preserves reason, price/change, market/filter tags, limit-up times, and raw JSON for later analysis.
-- [ ] Feishu board lines render `板块：股票A（3板）、股票B（1板）` when stored board stocks exist.
-- [ ] Feishu board lines do not show `风口接口` or `涨停池聚合`.
-- [ ] Historical rows without board stock details render count/change/leader summary rather than a fake one-stock list.
-- [ ] Tests cover storage of multiple THS board stocks and Feishu formatting fallback behavior.
+- [x] New/updated schema stores all `stock_list` members per `(date, block_code, stock_code)`.
+- [x] `block_top_stock` preserves reason, price/change, market/filter tags, limit-up times, and raw JSON for later analysis.
+- [x] Feishu board lines render `板块：股票A（3板）、股票B（1板）` when stored board stocks exist.
+- [x] Feishu board lines do not show `风口接口` or `涨停池聚合`.
+- [x] Historical rows without board stock details render count/change/leader summary rather than a fake one-stock list.
+- [x] Tests cover storage of multiple THS board stocks and Feishu formatting fallback behavior.
 
 ## Definition Of Done
 
@@ -41,6 +41,54 @@ Make the Feishu `同花顺板块热度` section render real stocks from the THS 
 - Re-fetching historical data automatically.
 - Changing frontend/RPC query shapes.
 - Committing code in this round unless the user explicitly asks.
+
+## Follow-on Requirement: Codex Daily Market Review
+
+The user wants to replace the current per-stock rule score plus AI score/factor flow with
+one daily Codex review. Codex must receive both the raw trading-system reference at
+`services/agent/chain/wiki/raw/001-连板龙头交易体系.md` and the structured daily material
+currently assembled for the Feishu report, then make its own qualitative market analysis.
+
+Known implications:
+
+- The current `assess-ai` command evaluates individual continuous-limit-up stocks and writes
+  `risk_score`, `rule_score`, `ai_score`, `risk_factors`, and `ai_factors` to `risk_assessment`.
+- The existing Feishu report already aggregates board heat, limit-up structure, continuous
+  leaders, weak boards, breakouts, risks, opportunities, and fetch logs.
+- The target design removes custom scoring/factor output from the new Codex flow.
+
+Confirmed decision:
+
+- Produce one persisted qualitative Codex review per trading date and append it to Feishu.
+- Keep historical `risk_assessment` schema/rows for compatibility, but stop generating and
+  displaying custom scores, risk levels, suggestions, and factors in the Codex daily flow.
+- Keep `assess-ai [date] [--force-ai]` as the operational command: reuse the saved daily review
+  by default and regenerate it with one fresh Codex call when `--force-ai` is present.
+- The Codex SDK thread must use the Agent project directory as its read-only working directory,
+  read `chain/wiki/raw/001-连板龙头交易体系.md` itself, and analyze the daily material assembled
+  from the non-AI Feishu sections.
+- Codex must also receive both THS stock reason fields: `reason_type` as the concise label and
+  the unshortened `reason_info` as the detailed evidence. Keep the Feishu board list compact.
+- The Feishu card keeps the factual market sections and appends the persisted Codex review.
+- The scheduler runs one daily Codex review before the Feishu send; it no longer runs the old
+  per-stock rule/AI score pipeline.
+- The scheduler uses one ordered job: fetch complete data, finish Codex review, then send Feishu.
+  No independent Feishu cron may race the analysis.
+- Scheduled Feishu delivery uses a non-exact odd-minute send window after Codex completes.
+
+Acceptance criteria:
+
+- [x] One Codex call produces one daily report rather than one call per stock.
+- [x] The Codex prompt instructs the read-only agent to read the trading-system Markdown file.
+- [x] The prompt includes the same factual board/stock/log material used by the Feishu card.
+- [x] The Codex-only reason supplement includes both `reason_type` and full `reason_info`.
+- [x] Daily review text, actual provider/model metadata, and source material digest are persisted
+  under a unique trading-date key.
+- [x] Feishu no longer shows risk-score or suggestion distributions and appends the Codex review.
+- [x] `--force-ai` replaces the persisted review; normal execution reuses it.
+- [x] Existing historical risk tables remain readable but are not required by the new flow.
+- [x] Scheduled Feishu delivery waits for successful, complete fetch and Codex review.
+- [x] Scheduled Feishu delivery avoids exact-minute sends and prefers odd minutes.
 
 ## Technical Notes
 

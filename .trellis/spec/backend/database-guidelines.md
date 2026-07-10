@@ -9,6 +9,7 @@ Python SQLAlchemy models in `agent/chain/stock/models/database.py` define the ap
 - `limit_up_pool`
 - `eastmoney_zt_pool`
 - `risk_assessment`
+- `daily_market_review`
 - `data_fetch_log`
 
 Migrations live in `agent/migrations/`. The Go task table is added by `agent/migrations/20260522_add_rpc_tasks.sql`, and `services/stock-rpc/internal/tasks/sql_store.go` depends on that `rpc_tasks` schema.
@@ -43,8 +44,8 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
 ### 2. Signatures
 - CLI:
   - `python main.py fetch [YYYYMMDD]`: fetches all configured stock data and upserts MySQL rows.
-  - `python main.py assess [YYYYMMDD]`: rule risk assessment into `risk_assessment`.
-  - `python main.py assess-ai [YYYYMMDD]`: rule plus Moonshot/Kimi enhanced assessment into `risk_assessment`.
+  - `python main.py assess-ai [YYYYMMDD] [--force-ai]`: generate or reuse one qualitative Codex daily review in `daily_market_review`.
+  - `python main.py assess` and `python main.py ai-analyze`: compatibility aliases for the same daily review command.
   - `python main.py notify-feishu [YYYYMMDD]`: builds and sends the Feishu report from MySQL rows.
   - `python main.py schedule`: workday scheduler that dispatches the above commands in order.
 - THS upstream endpoints:
@@ -71,37 +72,39 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
 - Feishu report ownership:
   - THS tables drive short-term structure: limit-up overview, 连板梯队, 核心连板, 早盘强势, 分歧弱板, 涨停前高突破, and 同花顺板块热度.
   - Eastmoney drives the independent `东财行业涨停` section by grouping `eastmoney_zt_pool.block_name`.
-  - Board/industry sections are all-item summaries; only stock-level sections such as 核心连板, 分歧弱板, 高风险, and 机会观察 use Top 10.
+  - Board/industry sections are all-item summaries; stock-level factual sections such as 早盘强势, 分歧弱板, and 涨停前高突破 use Top 10.
   - `同花顺板块热度` should keep the board summary and then render every stock available from `block_top_stock` for each THS board. Use compact labels with board count, not source labels: `板块：31 家涨停，涨幅 3.22%，股票A（3板）、股票B（1板）`. Do not match `block_top.block_name` against `limit_up_pool.block_name` to infer concept-board membership; those names are not a stable one-to-one contract.
   - Prefer THS `stock_list[].high` as the Feishu stock label when available, e.g. `华天科技（3天2板）`; fall back to `continue_num` as `N板`.
   - If historical `block_top` rows have no `block_top_stock` details yet, Feishu should render the count/change/leader summary without source labels. Do not present `leading_stock_name` alone as if it were the full stock list.
   - `东财行业涨停` should render all grouped industries and all limit-up stocks within each industry. Use compact stock labels with board count, not codes or `前三`: `行业：股票A（3板）、股票B（1板）`.
   - `核心连板` should group by `continuous_days` rather than render one line per stock, e.g. `5板：国华退(000004)、*ST东智(002175)`.
-- Rule risk assessment ownership:
-  - `assess` and the rule side of `assess-ai` evaluate `continuous_limit_up` rows with `continuous_days >= 2`.
-  - Rule factors are `continuous_days` 35%, `limit_up_time/latest_limit_up_time` 15%, seal strength 20%, turnover rate 20%, and open count 10%.
-  - Sealing-time risk treats early sealing as lower risk and late sealing as higher risk; parse `HH:MM`, `HH:MM:SS`, `92500`, and Unix-second timestamp values when available.
+- Daily review ownership:
+  - `FeishuStockNotifier.build_analysis_material` renders the factual material shared by Codex input and the Feishu card.
+  - `FeishuStockNotifier.build_codex_reason_material` adds analysis-only THS stock reasons without expanding the Feishu card: `reason_type` is the concise reason label and `reason_info` is the complete detailed reason. Preserve both and do not shorten `reason_info` before Codex receives it.
+  - `DailyMarketReviewAgent` instructs Codex to read `chain/wiki/raw/001-连板龙头交易体系.md` from the read-only Agent working directory before analyzing that material.
+  - The active daily flow must not calculate or display programmatic scores, weights, risk factors, risk levels, or suggestion distributions.
+  - Historical `risk_assessment` rows and legacy scorer modules remain compatibility data only; active CLI, scheduler, StockAgent, and Feishu paths do not write or consume them.
 - Scheduler default:
-  - 16:03 fetch; scheduled fetch adds `STOCK_FETCH_START_JITTER_MIN/MAX` seconds before upstream calls.
+  - 16:03 starts one ordered workflow; scheduled fetch adds `STOCK_FETCH_START_JITTER_MIN/MAX` seconds before upstream calls.
   - `fetch_all_data` calls THS/Eastmoney sources sequentially and waits `STOCK_FETCH_SOURCE_DELAY_MIN/MAX` seconds between sources.
   - THS paginated `limit_up_pool` waits `STOCK_FETCH_PAGE_DELAY_MIN/MAX` seconds between pages.
-  - 16:10 rule assessment
-  - 16:20 AI enhanced assessment when `MOONSHOT_API_KEY` is configured
-  - 16:37 Feishu report when `FEISHU_WEBHOOK_URL` is configured
+  - Only after fetch succeeds with complete data, run one Codex daily review when `AI_PROVIDER=codex`.
+  - Only after that review returns successfully, send the Feishu report when `FEISHU_WEBHOOK_URL` is configured; Feishu has no independent cron job. Formal reports, failure status cards, and webhook rate-limit retries send immediately only in a non-exact odd minute; otherwise they wait for the next odd minute plus a small random offset.
+  - Codex review failures retry twice after 5 minutes and 15 minutes. Each intermediate failure sends a Feishu status card with the planned retry time; final failure sends a status card and skips the formal report.
   - all scheduled jobs run Monday-Friday only.
-  - assessment, AI assessment, and Feishu report jobs must check `data_fetch_log.status='skipped'` for the target date and exit when fetch marked the day as non-trading/stale.
+  - Codex review and Feishu report jobs must check `data_fetch_log.status='skipped'` for the target date and exit when fetch marked the day as non-trading/stale.
 
 ### 4. Validation & Error Matrix
 - `block_top` rows exist but `stock_count=0`, `change_percent IS NULL`, and leader fields are blank -> inspect raw THS `block_top` payload and update alias mapping in `StockDataStorage.save_block_top`; do not add columns unless the existing schema cannot represent the value.
 - `block_top` has no usable counts and `limit_up_pool.block_name` is also blank -> Feishu should show `同花顺板块热度` as unavailable and direct users to `东财行业涨停`.
 - `limit_up_pool.open_count=0` -> do not include the stock in `分歧弱板`; high turnover alone is not a weak-board signal.
 - `limit_up_pool.limit_up_time` is blank -> `早盘强势` may be empty; do not infer times from unrelated tables unless a new explicit mapping is added.
-- `risk_assessment` count is zero -> Feishu should keep stock rows but label risk as 未评估/无评分 and emit a data warning.
-- `data_fetch_log.status='skipped'` exists for the target date -> do not run rule assessment, AI assessment, or Feishu report for that date.
+- `daily_market_review` has no target-date row -> Feishu should keep all factual sections and mark the Codex review as not generated.
+- `data_fetch_log.status='skipped'` exists for the target date -> do not run the Codex review or Feishu report for that date.
 
 ### 5. Good/Base/Bad Cases
 - Good: THS `block_top` payload with `limit_up_num=43`, `change=2.377`, and `stock_list[0]` leader data writes a complete `block_top` row and Feishu can show 同花顺板块热度.
-- Base: THS short-term structure is usable, Eastmoney industry grouping is usable, but AI assessment has not run; Feishu reports data plus risk warnings.
+- Base: THS short-term structure and Eastmoney industry grouping are usable, but the Codex review has not run; Feishu reports facts and marks the review unavailable.
 - Bad: Treat Eastmoney `block_name` as a replacement for THS 最强风口. It is an industry/sector grouping and must remain a separate report section.
 - Bad: Save Eastmoney rows under the requested holiday date when THS proves the upstream response belongs to the previous trading day.
 - Bad: Store derived Feishu-only signals in new tables before the rule is stable. Prefer real-time derivation from existing fact tables until frontend query, backtest, or rule-version requirements exist.
@@ -127,10 +130,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - THS empty plus Eastmoney non-empty is treated as unverified/stale and skipped
   - source fetches run sequentially with configured source delays, not `asyncio.gather`
   - paginated THS fetches use configured page delays between pages
-- Rule assessment tests should assert:
-  - sealing time participates in the score and reason
-  - early sealing lowers risk relative to late sealing
-  - `latest_limit_up_time` is used when `limit_up_pool.limit_up_time` is missing
+- Daily review tests should assert one Codex call per date, cached reuse, forced replacement, strategy-file instruction, factual-material inclusion, and no legacy score schema.
 - Docker/scheduler changes should still pass `docker compose config --quiet` and `python3 -m py_compile` for edited Python files.
 - Scheduler tests should assert default data fetch and Feishu report cron times stay away from exact hour/half-hour peaks.
 
@@ -170,39 +170,47 @@ Correct:
 5板：国华退(000004)、*ST东智(002175)
 ```
 
-## Scenario: AI Provider And Codex Python SDK
+## Scenario: Codex Daily Market Review
 
 ### 1. Scope / Trigger
-- Trigger: adding or changing the optional LLM used by `assess-ai`, the daily enhanced assessment, or AI result persistence.
+- Trigger: changing the daily Codex review, shared Feishu material, persistence, CLI, or schedule.
 
 ### 2. Signatures
-- Python provider selection: `AI_PROVIDER=moonshot|codex`; `AI_FALLBACK_PROVIDER=moonshot|none`.
-- Python client: `CodexSubscriptionClient.analyze(messages) -> str`.
-- CLI: `python main.py assess-ai [date] [--force-ai]`; `--force-ai` bypasses cached AI reports and consumes fresh AI calls up to `AI_MAX_DAILY_CALLS`.
+- Required provider: `AI_PROVIDER=codex`; recommended `AI_FALLBACK_PROVIDER=none`.
+- Python client: `CodexSubscriptionClient.review(prompt) -> str` with no output schema.
+- Agent: `DailyMarketReviewAgent.run(date, force=False) -> DailyMarketReviewResult`.
+- CLI: `python main.py assess-ai [date] [--force-ai]`; `assess` and `ai-analyze` are compatibility aliases.
+- DB: `daily_market_review` has one unique row per `date`, with `content`, `provider`, `model`, `strategy_path`, and `source_material_digest`.
 
 ### 3. Contracts
-- `moonshot` uses `MOONSHOT_API_KEY`; `codex` uses the official `openai-codex` Python SDK.
 - `Codex()` owns the local app-server connection and ChatGPT OAuth under the `/root/.codex` Docker volume. Python must not log OAuth tokens, browser cookies, or subscription Bearer headers.
-- SDK output must conform to the existing AI JSON shape before `AIStockAnalyzer.parse_analysis_json` normalizes it: risk score, suggestion, confidence, factor list, and report fields.
-- Persisted AI reports and the daily Feishu card end with `Agent | Model | Provider` metadata. Per-stock reports use the provider that actually succeeded after fallback.
-- Codex analysis runs with `Sandbox.read_only`, `ApprovalMode.deny_all`, an ephemeral thread, and `/tmp` as the default working directory.
+- Codex runs with `Sandbox.read_only`, `ApprovalMode.deny_all`, an ephemeral thread, and the Agent project root as `cwd`, so it can read the strategy Markdown included in the Docker image.
+- The program checks that the strategy path exists but does not read its contents into the prompt; Codex must read it through its own read-only file capability.
+- `build_analysis_material` is the compact factual text contract shared by model input and Feishu. Codex additionally receives `build_codex_reason_material`, which deduplicates stocks across hot boards while retaining every distinct `reason_type` and full `reason_info`. Neither material includes saved review text, scores, factors, or suggestions.
+- Codex returns concise free-form Markdown, not JSON. Persist the actual provider/model and render that saved metadata in Feishu.
+- Normal execution reuses the target-date row. `--force-ai` makes exactly one new Codex call and replaces that row.
+- Historical `risk_assessment` data is not dropped, but it is not part of the active daily review.
 
 ### 4. Validation & Error Matrix
-- `AI_PROVIDER=codex` without a valid Codex login/runtime -> SDK retries within the existing bound, then uses configured Moonshot fallback when its API key exists; otherwise records `ai_source=failed` and preserves rule-only assessment.
-- SDK non-JSON/malformed analysis, timeout, or subscription limit -> analyzer retries within the existing bound, then uses configured Moonshot fallback when available.
-- Codex default-model lookup fails after a successful analysis -> keep the analysis and render `Model: default`; metadata lookup must not discard valid output.
-- Unknown provider -> treat as unavailable; do not silently fall back to Moonshot.
-- Existing `risk_assessment.is_ai_analyzed=1` rows -> enhanced assessment reuses cached AI by default; use `--force-ai` when validating a new provider or regenerating reports.
+- `AI_PROVIDER` is not `codex` -> CLI exits clearly and scheduler skips the review.
+- Strategy file missing -> fail before the model call with the full missing path.
+- Codex login/runtime unavailable, timeout, or subscription limit -> fail the review; do not synthesize scores or downgrade to the legacy Moonshot scorer.
+- Codex returns empty text -> fail without replacing a saved report.
+- Codex default-model lookup fails after successful analysis -> keep the analysis and render `Model: default`.
+- Existing target-date `daily_market_review` -> reuse it unless `--force-ai` is present.
 
 ### 5. Good/Base/Bad Cases
-- Good: `AI_PROVIDER=codex`, `docker compose up -d stock_agent`, and `python main.py codex-login` completed -> Python sends stock prompt to Codex and stores normal AI fields.
-- Good: `AI_PROVIDER=codex python main.py assess-ai 20260710 --force-ai` validates Codex with fresh calls instead of replaying cached Moonshot reports.
-- Base: `AI_PROVIDER=moonshot` -> existing Moonshot/LangChain behavior remains unchanged.
-- Bad: calling ChatGPT web/internal endpoints directly or copying OAuth tokens into `.env`.
+- Good: logged-in Codex reads the strategy file, receives Feishu factual material, returns one Markdown review, and writes one date-keyed row.
+- Good: `AI_PROVIDER=codex python main.py assess-ai 20260710 --force-ai` replaces the date-keyed report with one fresh call.
+- Base: Feishu runs before a review exists -> factual sections remain complete and the card says the Codex review is unavailable.
+- Bad: call Codex once per stock or ask it for risk score, confidence, factor weights, or a rigid JSON score schema.
+- Bad: call ChatGPT web/internal endpoints directly or copy OAuth tokens into `.env`.
 
 ### 6. Tests Required
-- Python tests assert the Codex output schema, provider fallback, and `Agent | Model | Provider` metadata without a live model call.
-- Feishu tests assert the metadata footer is present in the final card content.
+- Use a fake Codex client to assert strategy-path instructions, shared factual input, both THS reason fields, one-call caching, and forced replacement without a live model call.
+- Codex client tests assert `review()` does not pass the legacy score `output_schema`.
+- Feishu tests assert score/suggestion sections are absent and persisted review/provider/model are appended.
+- Scheduler tests assert one ordered daily job at 16:03, forced review after fetch, fetch -> review -> Feishu execution order, cancellation before review when data is incomplete, Codex retry timing/failure broadcasts, and odd-minute Feishu delay behavior.
 - Run agent pytest, `docker compose config --quiet`, and verify no token/header strings are present in source or configuration examples.
 
 ### 7. Wrong vs Correct
@@ -210,13 +218,13 @@ Correct:
 Wrong:
 
 ```python
-requests.post("https://chatgpt.com/backend-api/...", headers={"Authorization": token})
+CodexSubscriptionClient().analyze(messages)  # legacy per-stock score schema
 ```
 
 Correct:
 
 ```python
-CodexSubscriptionClient().analyze(messages)
+CodexSubscriptionClient(working_directory="/app").review(prompt)
 ```
 
 ## Dates And Keys

@@ -1,5 +1,5 @@
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,13 +7,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chain.stock.agents.feishu_notifier import (
     BlockSummary,
+    BlockStockReasonSummary,
     BreakoutSummary,
+    DailyReviewSummary,
     FeishuStockNotifier,
     FeishuStockReport,
     IndustrySummary,
-    RiskStockSummary,
     StockSummary,
     WeakBoardSummary,
+    next_feishu_send_at,
 )
 
 
@@ -39,13 +41,9 @@ def test_build_card_contains_daily_report_sections():
         hr_limit_up_count=10,
         em_limit_up_count=11,
         max_continuous_days=4,
-        assessed_count=3,
-        ai_analyzed_count=2,
-        risk_distribution={"高": 1, "中": 2},
         continuous_distribution={4: 1, 3: 2},
         limit_up_type_distribution={"首板": 7, "连板": 3},
-        suggestion_distribution={"谨慎": 1, "机会": 2},
-        data_warnings=["风险评估尚未完成"],
+        data_warnings=[],
         fetch_logs=[
             {
                 "data_type": "limit_up_pool",
@@ -65,6 +63,14 @@ def test_build_card_contains_daily_report_sections():
                     "同板股份（4板）",
                     "补涨股份（1板）",
                     "低位股份（1板）",
+                ],
+                stock_reasons=[
+                    BlockStockReasonSummary(
+                        code="000001",
+                        name="测试股份",
+                        reason_type="机器人+业绩增长",
+                        reason_info="行业原因：机器人产业提速。\n公司原因：订单增长。",
+                    )
                 ],
             )
         ],
@@ -93,9 +99,6 @@ def test_build_card_contains_daily_report_sections():
                 limit_up_time="09:35",
                 block_name="机器人概念",
                 reason="题材发酵",
-                risk_level="高",
-                risk_score=88.0,
-                suggestion="谨慎",
             ),
             StockSummary(
                 code="000007",
@@ -104,9 +107,6 @@ def test_build_card_contains_daily_report_sections():
                 limit_up_time="09:40",
                 block_name="机器人概念",
                 reason="连板延续",
-                risk_level="中",
-                risk_score=60.0,
-                suggestion="观察",
             )
         ],
         early_stocks=[
@@ -117,9 +117,6 @@ def test_build_card_contains_daily_report_sections():
                 limit_up_time="09:31",
                 block_name="新能源汽车",
                 reason="快速封板",
-                risk_level="低",
-                risk_score=20.0,
-                suggestion="机会",
             )
         ],
         weak_boards=[
@@ -145,28 +142,11 @@ def test_build_card_contains_daily_report_sections():
                 reason="涨停突破前高",
             )
         ],
-        top_risks=[
-            RiskStockSummary(
-                code="000004",
-                name="高危股份",
-                risk_level="高",
-                risk_score=95.0,
-                suggestion="规避",
-                continuous_days=5,
-                ai_analyzed=True,
-            )
-        ],
-        opportunity_stocks=[
-            RiskStockSummary(
-                code="000005",
-                name="机会股份",
-                risk_level="低",
-                risk_score=18.0,
-                suggestion="机会",
-                continuous_days=2,
-                ai_analyzed=False,
-            )
-        ],
+        daily_review=DailyReviewSummary(
+            content="### 情绪阶段\n市场处于试错修复期。",
+            provider="codex",
+            model="gpt-test-codex",
+        ),
     )
 
     card = notifier.build_card(report)
@@ -190,11 +170,25 @@ def test_build_card_contains_daily_report_sections():
     assert "早盘股份(000002)：1板" in content
     assert "分歧股份(000003)：开板 5 次" in content
     assert "突破股份(000006)：前期3板，断板6个交易日" in content
-    assert "高危股份(000004)：5板" in content
-    assert "机会股份(000005)：2板" in content
-    assert "高风险 1 只" in content
-    assert "Agent: main | Model:" in content
-    assert "| Provider:" in content
+    assert "风险评估" not in content
+    assert "未评估/无评分" not in content
+    assert "建议分布" not in content
+    assert "高风险关注" not in content
+    assert "机会观察" not in content
+    assert "Codex 市场复盘" in content
+    assert "市场处于试错修复期" in content
+    assert "Agent: main | Model: gpt-test-codex" in content
+    assert "Provider: openai-codex" in content
+    assert "行业原因：机器人产业提速" not in content
+
+    material = notifier.build_analysis_material(report)
+    assert "Codex 市场复盘" not in material
+    assert "风险评估" not in material
+
+    reason_material = notifier.build_codex_reason_material(report)
+    assert "简略原因（reason_type）：机器人+业绩增长" in reason_material
+    assert "详细原因（reason_info）" in reason_material
+    assert "行业原因：机器人产业提速" in reason_material
 
 
 def test_generate_sign_matches_feishu_custom_bot_algorithm():
@@ -202,6 +196,40 @@ def test_generate_sign_matches_feishu_custom_bot_algorithm():
         FeishuStockNotifier._generate_sign("1600000000", "secret")
         == "vvU1S4ucHy95pQ90meMW66yQJ+Szge4s9g7hQUu9yP8="
     )
+
+
+def test_codex_reason_material_deduplicates_stocks_across_hot_blocks():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    reason = BlockStockReasonSummary(
+        code="002185",
+        name="华天科技",
+        reason_type="先进封装+存储芯片",
+        reason_info="行业原因：先进封装景气度提升。",
+    )
+    report = SimpleNamespace(
+        top_blocks=[
+            BlockSummary(
+                block_name="芯片概念",
+                stock_count=31,
+                leading_stock_name="华天科技",
+                change_percent=3.22,
+                stock_reasons=[reason],
+            ),
+            BlockSummary(
+                block_name="先进封装",
+                stock_count=22,
+                leading_stock_name="华天科技",
+                change_percent=5.52,
+                stock_reasons=[reason],
+            ),
+        ]
+    )
+
+    material = notifier.build_codex_reason_material(report)
+
+    assert material.count("华天科技(002185)") == 1
+    assert "所属热度板块：芯片概念、先进封装" in material
+    assert material.count("行业原因：先进封装景气度提升") == 1
 
 
 def test_post_with_retry_recovers_from_feishu_frequency_limit(monkeypatch):
@@ -212,18 +240,31 @@ def test_post_with_retry_recovers_from_feishu_frequency_limit(monkeypatch):
         {"code": 11232, "data": {}, "msg": "frequency limited"},
         {"code": 0, "data": {}, "msg": "success"},
     ]
-    sleeps = []
+    send_windows = []
 
     def fake_post(*args, **kwargs):
         return FakeFeishuResponse(responses.pop(0))
 
+    def fake_next_send_at(now=None, not_before=None):
+        send_windows.append(not_before)
+        return datetime.now()
+
     monkeypatch.setattr("chain.stock.agents.feishu_notifier.requests.post", fake_post)
-    monkeypatch.setattr("chain.stock.agents.feishu_notifier.time.sleep", sleeps.append)
+    monkeypatch.setattr(
+        "chain.stock.agents.feishu_notifier.next_feishu_send_at",
+        fake_next_send_at,
+    )
+    monkeypatch.setattr(
+        "chain.stock.agents.feishu_notifier.wait_until_feishu_send_at",
+        lambda send_at: None,
+    )
 
     result = notifier._post_with_retry({"msg_type": "interactive", "card": {}})
 
     assert result["code"] == 0
-    assert sleeps == [20, 60]
+    assert len(send_windows) == 5
+    assert send_windows[0] is None
+    assert all(send_window is not None for send_window in send_windows[1:])
     assert responses == []
 
 
@@ -237,12 +278,57 @@ def test_post_with_retry_does_not_retry_non_rate_limit_error(monkeypatch):
         return FakeFeishuResponse({"code": 19021, "data": {}, "msg": "bad sign"})
 
     monkeypatch.setattr("chain.stock.agents.feishu_notifier.requests.post", fake_post)
-    monkeypatch.setattr("chain.stock.agents.feishu_notifier.time.sleep", lambda delay: None)
+    monkeypatch.setattr(
+        "chain.stock.agents.feishu_notifier.next_feishu_send_at",
+        lambda now=None, not_before=None: datetime.now(),
+    )
+    monkeypatch.setattr(
+        "chain.stock.agents.feishu_notifier.wait_until_feishu_send_at",
+        lambda send_at: None,
+    )
 
     result = notifier._post_with_retry({"msg_type": "interactive", "card": {}})
 
     assert result["code"] == 19021
     assert len(calls) == 1
+
+
+def test_next_feishu_send_at_uses_non_exact_odd_minutes(monkeypatch):
+    monkeypatch.setattr(
+        "chain.stock.agents.feishu_notifier.random.uniform",
+        lambda delay_min, delay_max: 7.0,
+    )
+
+    assert next_feishu_send_at(now=datetime(2026, 7, 10, 16, 21, 5)) == datetime(
+        2026, 7, 10, 16, 21, 5
+    )
+    assert next_feishu_send_at(now=datetime(2026, 7, 10, 16, 21, 0)) == datetime(
+        2026, 7, 10, 16, 21, 7
+    )
+    assert next_feishu_send_at(now=datetime(2026, 7, 10, 16, 20, 30)) == datetime(
+        2026, 7, 10, 16, 21, 7
+    )
+    assert next_feishu_send_at(
+        now=datetime(2026, 7, 10, 16, 20, 30),
+        not_before=datetime(2026, 7, 10, 16, 21, 5),
+    ) == datetime(2026, 7, 10, 16, 21, 5)
+
+
+def test_status_notification_uses_a_red_interactive_card():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    notifier.webhook_url = "https://example.test/hook"
+    captured = []
+    notifier._send_card = lambda card: captured.append(card) or {"code": 0}
+
+    result = notifier.send_status_notification(
+        date(2026, 7, 10),
+        "StoChips 任务失败通知",
+        "**预计重试时间**：2026-07-10 16:25:00",
+    )
+
+    assert result == {"feishu_response": {"code": 0}, "date": "2026-07-10"}
+    assert captured[0]["header"]["template"] == "red"
+    assert "预计重试时间" in captured[0]["body"]["elements"][0]["content"]
 
 
 def test_prefer_regular_stocks_before_st_and_delisting_names():
@@ -283,7 +369,7 @@ def test_format_breakouts_renders_previous_limit_up_breakout():
     assert "突破11.6%" in content
 
 
-def test_format_stocks_keeps_special_risk_names_when_provided():
+def test_format_stocks_keeps_special_names_when_provided():
     notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
 
     content = notifier._format_stocks(
@@ -295,9 +381,6 @@ def test_format_stocks_keeps_special_risk_names_when_provided():
                 limit_up_time="",
                 block_name="",
                 reason="",
-                risk_level="未评估",
-                risk_score=None,
-                suggestion="",
             ),
             StockSummary(
                 code="002175",
@@ -306,9 +389,6 @@ def test_format_stocks_keeps_special_risk_names_when_provided():
                 limit_up_time="",
                 block_name="",
                 reason="",
-                risk_level="未评估",
-                risk_score=None,
-                suggestion="",
             ),
         ]
     )
@@ -329,9 +409,6 @@ def test_format_core_continuous_groups_by_board_count():
                 limit_up_time="",
                 block_name="",
                 reason="",
-                risk_level="未评估",
-                risk_score=None,
-                suggestion="",
             ),
             StockSummary(
                 code="002175",
@@ -340,9 +417,6 @@ def test_format_core_continuous_groups_by_board_count():
                 limit_up_time="",
                 block_name="",
                 reason="",
-                risk_level="未评估",
-                risk_score=None,
-                suggestion="",
             ),
             StockSummary(
                 code="603137",
@@ -351,9 +425,6 @@ def test_format_core_continuous_groups_by_board_count():
                 limit_up_time="",
                 block_name="",
                 reason="",
-                risk_level="未评估",
-                risk_score=None,
-                suggestion="",
             ),
         ]
     )
@@ -452,12 +523,8 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
         hr_limit_up_count=1,
         em_limit_up_count=1,
         max_continuous_days=0,
-        assessed_count=0,
-        ai_analyzed_count=0,
-        risk_distribution={},
         continuous_distribution={},
         limit_up_type_distribution={},
-        suggestion_distribution={},
         data_warnings=[
             "同花顺 block_top 与 limit_up_pool 均缺少可聚合板块数量，行业热度请看东财行业涨停"
         ],
@@ -470,8 +537,6 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
         early_stocks=[],
         weak_boards=[],
         breakout_stocks=[],
-        top_risks=[],
-        opportunity_stocks=[],
     )
 
     content = notifier.build_card(report)["body"]["elements"][0]["content"]

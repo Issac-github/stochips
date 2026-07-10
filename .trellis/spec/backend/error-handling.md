@@ -42,20 +42,17 @@ Never hardcode real cookies in source. `StockDataFetcher` reads `STOCK_COOKIE` o
 
 Use `DataFetchLog` for successful batch counts. If adding failed fetch logging, keep it consistent with `data_fetch_log.status` and `error_message`.
 
-## AI Analysis Failures
+## Codex Daily Review Failures
 
-AI analysis is optional and budgeted. `EnhancedRiskAssessmentAgent.assess_stock_enhanced` already distinguishes:
+`DailyMarketReviewAgent.run` either returns a complete saved review or raises. It must not
+fall back to legacy programmatic scores or Moonshot factor output.
 
-- `cached`
-- `fresh`
-- `failed`
-- `budget_limited`
-- `unavailable`
-- `disabled`
-
-Preserve these states when changing enhanced assessment. A missing or failing LLM should not prevent rule-only risk assessment from completing.
-
-`AIStockAnalyzer.parse_analysis_json` normalizes suggestions and clamps numeric fields. Tests in `agent/tests/test_ai_flow.py` cover invalid JSON and suggestion normalization; add similar tests for new LLM parsing rules.
+- Reuse an existing target-date row unless `force=True`.
+- Missing strategy file or unavailable Codex login fails before replacing a saved row.
+- Empty Codex output fails without committing.
+- Feishu remains usable without a review and renders the factual material plus a clear
+  "尚未生成当日 Codex 复盘" marker.
+- Tests use a fake Codex client; do not consume a real subscription during unit tests.
 
 ## Scenario: Feishu Webhook Rate Limit Retry
 
@@ -71,24 +68,26 @@ Preserve these states when changing enhanced assessment. A missing or failing LL
 - Optional env: `FEISHU_WEBHOOK_SECRET`; when configured, include `timestamp` and `sign`.
 - Feishu success response: `{"code": 0, ...}`.
 - Feishu platform rate limit response: `{"code": 11232, "msg": "frequency limited ..."}`.
-- Scheduled report default: `DailyJobScheduler.schedule_feishu_report()` uses `16:37`, not `16:30`, to avoid half-hour Feishu platform frequency-control spikes.
+- The scheduled Feishu report has no independent cron trigger. `DailyJobScheduler.run_daily_job()` sends it only after complete data fetch and a successful Codex review.
 
 ### 4. Validation & Error Matrix
 - Missing `FEISHU_WEBHOOK_URL` -> raise `ValueError("未设置 FEISHU_WEBHOOK_URL，无法发送飞书播报")`.
 - Non-JSON Feishu response -> raise `RuntimeError("飞书返回非JSON响应: ...")`.
 - Feishu `code=11232` -> retry with bounded backoff, then return final response if still limited.
 - Feishu non-zero code other than `11232` -> do not retry; raise `RuntimeError("飞书发送失败: ...")` at the command boundary.
+- Scheduled fetch errors, incomplete data, or Codex failures -> raise from the ordered daily job and do not call `send_feishu_report`; send a red failure status card with the next retry time. Fetch exceptions, final Codex retry failures, and formal Feishu send failures use the next weekday 16:03 as the next automatic retry time.
+- Codex succeeds during an even minute or exactly at `:00` -> wait until an odd-minute send window with a small random offset before calling `send_feishu_report`.
 
 ### 5. Good/Base/Bad Cases
 - Good: 11232, 11232, then code 0 -> logs warnings, sleeps between attempts, and reports success.
 - Base: code 0 first try -> no warning and no sleep.
 - Bad: bad signature or invalid webhook code -> fail fast instead of burning retries.
-- Bad: scheduling the daily webhook at `16:30` can repeatedly collide with platform-wide half-hour webhook bursts.
+- Bad: scheduling the daily webhook independently, because it can race the fetch or Codex review and send an incomplete card.
 
 ### 6. Tests Required
 - Unit test that monkeypatches `requests.post` and `time.sleep` to prove 11232 retries without real delay.
 - Unit test that a non-11232 Feishu error returns after one post attempt.
-- Unit test that default Feishu report scheduling stays off the half-hour peak.
+- Unit test that the ordered daily job reaches Feishu only after fetch and Codex review, and stops before review when data is incomplete.
 
 ### 7. Wrong vs Correct
 

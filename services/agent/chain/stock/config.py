@@ -47,12 +47,12 @@ class FetcherConfig:
 @dataclass
 class AIConfig:
     """AI分析配置"""
-    # AI provider: moonshot (API key) or codex (ChatGPT subscription)
-    provider: str = field(default_factory=lambda: os.getenv('AI_PROVIDER', 'moonshot').strip().lower())
+    # Daily market review uses the ChatGPT-authenticated Codex subscription.
+    provider: str = field(default_factory=lambda: os.getenv('AI_PROVIDER', 'codex').strip().lower())
 
     # Codex调用失败时使用的备用服务商；设为 none 可关闭自动回退。
     fallback_provider: str = field(
-        default_factory=lambda: os.getenv('AI_FALLBACK_PROVIDER', 'moonshot').strip().lower()
+        default_factory=lambda: os.getenv('AI_FALLBACK_PROVIDER', 'none').strip().lower()
     )
 
     # Moonshot API Key
@@ -76,13 +76,13 @@ class AIConfig:
     # 最大重试次数
     max_retries: int = field(default_factory=lambda: int(os.getenv('MOONSHOT_MAX_RETRIES', '2')))
 
-    # 每次增强评估最多新发起的AI分析数量，已有缓存不计入
+    # 仅供未导出的旧版逐股评分模块兼容，Codex每日复盘不读取此项。
     max_daily_calls: int = field(default_factory=lambda: int(os.getenv('AI_MAX_DAILY_CALLS', '20')))
 
     # Codex SDK uses the local app-server and owns ChatGPT OAuth tokens.
     codex_model: str = field(default_factory=lambda: os.getenv('CODEX_MODEL', ''))
     codex_working_directory: str = field(
-        default_factory=lambda: os.getenv('CODEX_WORKING_DIRECTORY', '/tmp')
+        default_factory=lambda: os.getenv('CODEX_WORKING_DIRECTORY', '/app')
     )
 
     @property
@@ -117,7 +117,7 @@ class SchedulerConfig:
     fetch_hour: int = field(default_factory=lambda: int(os.getenv('FETCH_HOUR', '16')))
     fetch_minute: int = field(default_factory=lambda: int(os.getenv('FETCH_MINUTE', '0')))
 
-    # 风险评估时间
+    # 兼容旧配置名；当前含义为每日Codex复盘时间。
     assess_hour: int = field(default_factory=lambda: int(os.getenv('ASSESS_HOUR', '16')))
     assess_minute: int = field(default_factory=lambda: int(os.getenv('ASSESS_MINUTE', '30')))
 

@@ -6,9 +6,9 @@ Keep backend responsibilities split exactly as the current code does:
 
 - `agent/main.py`: Python CLI boundary. It parses commands, dates, environment requirements, prints user-facing command output, and exits with `sys.exit(1)` on command failure.
 - `agent/chain/stock/data/`: stock data acquisition and MySQL storage. `fetcher.py` owns upstream HTTP request shapes and retry behavior. `storage.py` owns normalization and upserts.
-- `agent/chain/stock/models/database.py`: SQLAlchemy table definitions and indexes for stock data, risk assessment, and fetch logs.
-- `agent/chain/stock/agents/`: rule assessment, AI analysis, enhanced assessment, goal-driven stock agent, and wiki agent factories.
-- `agent/chain/stock/scheduler/`: APScheduler orchestration around existing fetch and assessment services.
+- `agent/chain/stock/models/database.py`: SQLAlchemy table definitions and indexes for stock data, daily Codex reviews, historical risk rows, and fetch logs.
+- `agent/chain/stock/agents/`: daily Codex review, Feishu, goal-driven stock agent, and wiki agent factories; legacy scorer modules are not active-flow exports.
+- `agent/chain/stock/scheduler/`: APScheduler orchestration around fetch, daily Codex review, and Feishu services.
 - `agent/chain/rag/` and `agent/chain/wiki/`: optional RAG/wiki command surface. Keep heavyweight RAG dependencies behind the optional `rag` extra and `rag_agent` Docker profile.
 - `services/stock-rpc/proto/stock.proto`: external gRPC contract.
 - `services/stock-rpc/internal/server/`: RPC method handlers, task submission, and gRPC error mapping.
@@ -21,7 +21,7 @@ Keep backend responsibilities split exactly as the current code does:
 Python packages expose factory helpers through `__init__.py`. Follow the existing examples:
 
 - `agent/chain/stock/data/__init__.py` exports `create_fetcher`, `create_storage`, `StockDataFetcher`, and `StockDataStorage`.
-- `agent/chain/stock/agents/__init__.py` exports `create_risk_agent`, `create_ai_analyzer`, `create_enhanced_risk_agent`, `create_stock_agent`, and `create_wiki_agent`.
+- `agent/chain/stock/agents/__init__.py` exports `create_daily_market_review_agent`, `create_feishu_notifier`, `create_stock_agent`, and `create_wiki_agent`. Legacy scorer modules are not public active-flow factories.
 
 When adding a new backend capability, place the implementation under the owning package, then export only the stable factory or public type from that package's `__init__.py`.
 
@@ -37,7 +37,7 @@ Keep new Go packages under `internal/` unless they must be public API. Generated
 
 ## Cross-Boundary Rule
 
-The Go gateway may add RPC methods, task tracking, or query adapters, but stock fetching, storage writes, rule scoring, AI scoring, and report generation stay in Python. If a new RPC action is needed, add it to `proto/stock.proto`, map it in `internal/server/service.go`, and dispatch to an existing or new `agent/main.py` command through `internal/runner/python.go`.
+The Go gateway may add RPC methods, task tracking, or query adapters, but stock fetching, storage writes, Codex review, and report generation stay in Python. If a new RPC action is needed, add it to `proto/stock.proto`, map it in `internal/server/service.go`, and dispatch to an existing or new `agent/main.py` command through `internal/runner/python.go`.
 
 Avoid placing Python business rules in Go query adapters. `internal/query/repository.go` may format rows for frontend compatibility, but it should not decide investment risk or mutate stock tables.
 
@@ -50,8 +50,8 @@ The current runtime path is:
 1. `agent/main.py fetch [date]`
 2. `chain/stock/data/fetcher.py` calls THS and Eastmoney upstream endpoints
 3. `chain/stock/data/storage.py` normalizes payload fields and upserts MySQL fact tables
-4. `agent/main.py assess` / `assess-ai` write `risk_assessment`
-5. `chain/stock/agents/feishu_notifier.py` reads MySQL rows and builds the Feishu card
+4. `agent/main.py assess-ai` writes one date-keyed `daily_market_review`
+5. `chain/stock/agents/feishu_notifier.py` reads facts plus the saved review and builds the Feishu card
 6. `chain/stock/scheduler/daily_job.py` runs the same commands on weekday cron triggers
 
 Do not bypass this path by writing report-specific SQL tables, Go-side business logic, or frontend-only derivations unless the spec is updated with the new contract first.

@@ -34,7 +34,7 @@ Prefer narrow tests around command mapping, parsing, status transitions, and cac
 
 Backend behavior is environment-driven:
 
-- Python: `DATABASE_URL`, `STOCK_COOKIE`, `MOONSHOT_API_KEY`, `AI_MAX_DAILY_CALLS`, `LOG_LEVEL`, `TZ`, and fetch/LLM tuning variables in `agent/chain/stock/config.py`.
+- Python: `DATABASE_URL`, `STOCK_COOKIE`, `AI_PROVIDER`, `CODEX_MODEL`, `LOG_LEVEL`, `TZ`, and fetch tuning variables in `agent/chain/stock/config.py`.
 - Go: `STOCK_RPC_ADDR`, `STOCK_RPC_AGENT_DIR`, `PYTHON_BIN`, and `DATABASE_URL`.
 - Docker Compose in `agent/docker-compose.yml` wires MySQL, `stock_agent`, optional `rag_agent`, and `stock_rpc`.
 
@@ -60,7 +60,7 @@ Do not introduce untracked configuration keys without updating `.env.example`, R
 - The temporary proxy script must use an automatically removed Compose override with `build.network: host`; it must not write the proxy into `.env` or persistent Docker daemon configuration.
 - Codex login from the temporary script must reuse the existing `stock_agent` image and `/root/.codex` volume, use host networking, and remove its one-off container after login.
 - Runtime AI/report commands from the temporary script must reuse the existing `stock_agent` image and `/root/.codex` volume, use host networking for a loopback SSH tunnel, and override `DATABASE_URL` to the MySQL host-published port so commands do not depend on the Compose-only `mysql` DNS name.
-- Runtime AI commands from the temporary script must pass through explicitly set `AI_PROVIDER`, `AI_FALLBACK_PROVIDER`, `CODEX_MODEL`, `CODEX_WORKING_DIRECTORY`, and `AI_MAX_DAILY_CALLS` so one-off validation can override stale server `.env` values.
+- Runtime AI commands from the temporary script must pass through explicitly set `AI_PROVIDER`, `AI_FALLBACK_PROVIDER`, `CODEX_MODEL`, and `CODEX_WORKING_DIRECTORY` so one-off validation can override stale server `.env` values.
 - `--rebuild` is valid only with `--login` or one runtime action. It rebuilds only `stock_agent`, recreates its Compose container with `--no-deps --force-recreate`, then runs the requested one-off command. Runtime actions without `--rebuild` intentionally reuse the current image.
 
 ### 4. Validation & Error Matrix
@@ -71,7 +71,7 @@ Do not introduce untracked configuration keys without updating `.env.example`, R
 - Temporary proxy connectivity check fails -> exit before starting a Docker build.
 - Build fails at `load metadata` or base-image pull -> report as Docker daemon traffic; the temporary build script only covers Dockerfile `RUN` downloads.
 - One-off AI command uses `docker run --network host` but keeps `DATABASE_URL=@mysql:3306` -> PyMySQL fails with `Name or service not known`; the script must rewrite `DATABASE_URL` to `127.0.0.1:<published-mysql-port>`.
-- Server `.env` still has `AI_PROVIDER=moonshot` -> runtime script uses Moonshot unless the operator prefixes the command with `AI_PROVIDER=codex`.
+- Server `.env` still has `AI_PROVIDER=moonshot` -> daily review exits clearly unless the operator prefixes the command with `AI_PROVIDER=codex`.
 - Source files were synchronized after the last image build -> `--assess-ai --force-ai` still runs old Python code unless the operator first builds, or adds `--rebuild`.
 - `--rebuild` is passed without `--login` or a runtime action -> exit with a clear argument error instead of rebuilding an unused image.
 
@@ -137,9 +137,9 @@ Keep business logic in the owner package:
 
 - stock fetch source rules in `agent/chain/stock/data/fetcher.py`
 - field normalization and persistence in `agent/chain/stock/data/storage.py`
-- rule scoring in `agent/chain/stock/agents/risk_agent.py`
-- AI prompt/parsing in `agent/chain/stock/agents/ai_analyzer.py`
-- combined scoring and AI cache reuse in `agent/chain/stock/agents/enhanced_risk_agent.py`
+- daily qualitative review in `agent/chain/stock/agents/daily_market_review_agent.py`
+- shared factual Feishu/Codex material in `agent/chain/stock/agents/feishu_notifier.py`
+- legacy scorer modules are historical compatibility code, not active daily-flow owners
 - RPC dispatch and task state in Go
 - frontend JSON shape adaptation in Go query repository only when needed for display compatibility
 

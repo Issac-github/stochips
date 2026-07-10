@@ -2,7 +2,7 @@
 
 These specs describe the current backend shape of StoChips:
 
-- `agent/` is the Python stock analysis backend. It owns stock fetching, MySQL persistence, rule risk assessment, Moonshot/Kimi AI analysis, wiki/RAG commands, scheduling, and the CLI in `agent/main.py`.
+- `agent/` is the Python stock analysis backend. It owns stock fetching, MySQL persistence, the daily Codex market review, Feishu delivery, wiki/RAG commands, scheduling, and the CLI in `agent/main.py`; old scorer modules are compatibility-only code.
 - `services/stock-rpc/` is the Go gRPC gateway. It owns the external RPC API, task status tracking, query JSON adapters, and dispatching existing Python commands. It must not reimplement stock business logic already owned by Python.
 
 Read these guides before changing backend behavior:

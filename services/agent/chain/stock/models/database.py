@@ -192,6 +192,30 @@ class RiskAssessment(Base):
     )
 
 
+class DailyMarketReview(Base):
+    """One qualitative Codex market review per trading date."""
+    __tablename__ = 'daily_market_review'
+
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    date = Column(Date, nullable=False, index=True, comment='交易日期')
+    content = Column(Text, nullable=False, comment='Codex每日市场复盘')
+    provider = Column(String(50), nullable=False, comment='实际AI服务商')
+    model = Column(String(100), nullable=True, comment='实际模型')
+    strategy_path = Column(String(255), nullable=False, comment='交易体系文件路径')
+    source_material_digest = Column(String(64), nullable=False, comment='输入行情材料SHA256')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    __table_args__ = (
+        Index('idx_daily_market_review_date', 'date', unique=True),
+        {'comment': 'Codex每日市场复盘'}
+    )
+
+
 class DataFetchLog(Base):
     """
     数据抓取日志表

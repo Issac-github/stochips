@@ -4,7 +4,7 @@
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-基于Python的A股涨停股票智能分析系统，支持多源数据抓取、AI智能分析和风险评估。
+基于Python的A股涨停数据系统，使用Codex结合交易体系生成每日市场复盘并发送飞书。
 
 ## ✨ 核心特性
 
@@ -17,22 +17,15 @@
 
 ### 🤖 AI智能分析
 
-- **Moonshot/Kimi 或 Codex 订阅桥接**：深度分析涨停原因
-- **多维度评估**：概念热度、市场情绪、基本面、技术面
-- **混合评估模型**：规则引擎(60%) + AI分析(40%)
-- **自动生成报告**：专业的投资分析报告
-
-### 🛡️ 风险控制
-
-- **规则引擎**：4维度风险评估（连板、封单、换手、开板）
-- **AI增强分析**：LLM辅助判断市场情绪
-- **历史模式匹配**：相似走势案例参考
-- **智能建议生成**：观望/谨慎/规避/机会
+- **Codex每日复盘**：每天只调用一次，不再逐股打分
+- **交易体系驱动**：Codex只读加载 `chain/wiki/raw/001-连板龙头交易体系.md`
+- **完整事实材料**：输入与飞书一致的板块热度、涨停结构、核心连板和异动数据
+- **定性自主研判**：不使用程序预设分数、权重、风险因子或建议标签
 
 ### 🐳 容器化部署
 
 - **Docker Compose**：一键启动MySQL + Agent服务
-- **自动定时任务**：工作日16:03抓取，16:10规则评估，16:20可选AI增强，16:37可选飞书播报
+- **自动定时任务**：工作日16:03启动串行流程，抓取完成后复盘，复盘完成后播报
 - **数据持久化**：MySQL存储，支持历史回溯
 - **日志监控**：完整日志记录和状态监控
 
@@ -67,21 +60,13 @@ DATABASE_URL=mysql+pymysql://stock:your_password@mysql:3306/stock_analysis?chars
 STOCK_COOKIE=your_ths_cookie
 ```
 
-**可选配置**（AI分析功能）：
-
-```bash
-# Moonshot API Key（AI分析必需）
-MOONSHOT_API_KEY=your_api_key
-```
-
-也可以使用自己的 ChatGPT/Codex 订阅。设置以下配置后，Python 服务会直接通过官方
+使用自己的 ChatGPT/Codex 订阅。设置以下配置后，Python 服务会直接通过官方
 `openai-codex` SDK 调用本地 Codex app-server；OAuth 登录态只保存在容器的
 `/root/.codex` volume，不会写入 `.env`：
 
 ```bash
 AI_PROVIDER=codex
-# Codex 登录、额度或调用失败时，自动使用已有的 MOONSHOT_API_KEY；设为 none 可关闭。
-AI_FALLBACK_PROVIDER=moonshot
+AI_FALLBACK_PROVIDER=none
 ```
 
 **获取Cookie方法**：
@@ -97,8 +82,8 @@ AI_FALLBACK_PROVIDER=moonshot
 
 | 服务            | 说明                                                  |
 | --------------- | ----------------------------------------------------- |
-| `mysql`       | MySQL 8.0 数据库，保存抓取数据、日志和风险评估结果    |
-| `stock_agent` | Python Agent 服务，定时抓取股票数据并执行风险评估     |
+| `mysql`       | MySQL 8.0 数据库，保存抓取数据、日志和Codex每日复盘   |
+| `stock_agent` | Python Agent 服务，定时抓取数据并生成Codex每日复盘    |
 | `stock_rpc`   | Go gRPC 网关，提交任务并调用现有 Python 股票命令执行  |
 | `rag_agent`   | 可选服务，运行 wiki/RAG 向量检索，使用 CPU-only torch |
 
@@ -131,9 +116,9 @@ docker compose up -d --build stock_agent stock_rpc
 docker compose exec stock_agent python main.py codex-login
 ```
 
-登录命令会显示 OpenAI 的授权地址和设备码；登录态写入 `codex_home` volume。每次分析
-都以只读、禁止命令审批的 Codex 线程运行。订阅额度耗尽或 Codex 不可用时，增强评估
-会自动保留规则引擎结果。
+登录命令会显示 OpenAI 的授权地址和设备码；登录态写入 `codex_home` volume。每日复盘
+使用只读、禁止命令审批的 Codex 线程。订阅额度耗尽或 Codex 不可用时，本次复盘失败，
+不会自动生成旧版评分结果。
 
 ##### 服务器临时使用本地代理
 
@@ -247,8 +232,9 @@ STOCK_FETCH_SOURCE_DELAY_MAX=8
 STOCK_FETCH_PAGE_DELAY_MIN=0.8
 STOCK_FETCH_PAGE_DELAY_MAX=2.0
 
-# 可选：启用 AI 分析和定时 AI 增强评估
-MOONSHOT_API_KEY=your_api_key
+# 启用Codex每日市场复盘
+AI_PROVIDER=codex
+AI_FALLBACK_PROVIDER=none
 
 # 可选：启用定时飞书播报
 FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-hook-id
@@ -267,17 +253,14 @@ docker compose exec stock_agent python main.py fetch
 # 手动抓取指定日期
 docker compose exec stock_agent python main.py fetch 20260506
 
-# 规则风险评估
-docker compose exec stock_agent python main.py assess 20260506
-
-# AI + 规则增强评估；加 --force-ai 可忽略已有 AI 缓存
+# 生成每日Codex复盘；加 --force-ai 可替换已保存的当日报告
 docker compose exec stock_agent python main.py assess-ai 20260506 --force-ai
 
-# 完整流程：抓取 + 规则评估
+# 完整流程：抓取 + Codex每日复盘
 docker compose exec stock_agent python main.py run 20260506
 
-# 目标驱动 Agent：根据目标自动决定抓取、评估、AI增强和报告
-docker compose exec stock_agent python main.py agent "更新数据并完成每日股票风险巡检" 20260506
+# 目标驱动 Agent：根据目标决定抓取、Codex复盘和报告
+docker compose exec stock_agent python main.py agent "更新数据并完成每日市场复盘" 20260506
 
 # 查看数据状态
 docker compose exec stock_agent python main.py status 20260506
@@ -286,7 +269,7 @@ docker compose exec stock_agent python main.py status 20260506
 docker compose exec stock_agent python main.py notify-feishu 20260506
 ```
 
-如果抓取目标日期是周末，或上游实际返回的同花顺交易日期不是请求日期，抓取命令会输出“数据抓取跳过”并写入 `data_fetch_log.status='skipped'`；后续 `assess`、`assess-ai`、`notify-feishu` 会读取该标记并直接退出，避免节假日/旧数据继续评估和播报。
+如果抓取目标日期是周末，或上游实际返回的同花顺交易日期不是请求日期，抓取命令会输出“数据抓取跳过”并写入 `data_fetch_log.status='skipped'`；后续 `assess-ai`、`notify-feishu` 会读取该标记并直接退出，避免节假日/旧数据继续复盘和播报。
 
 飞书播报需要在 `.env` 中配置群自定义机器人 Webhook：
 
@@ -392,11 +375,8 @@ PYTORCH_CPU_INDEX_URL=https://download.pytorch.org/whl/cpu
 TORCH_VERSION=2.7.1+cpu
 ```
 
-如果是已有数据库升级，并且需要补充增强版 AI 风险评估字段，启动后执行迁移：
-
-```bash
-docker compose exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < services/agent/migrations/20260506_add_risk_assessment_ai_fields.sql
-```
+已有数据库升级不需要手工执行SQL；`stock_agent` 和 `stock_rpc` 启动时会自动运行
+`migrations/runner.py`，创建 `daily_market_review` 表。
 
 ### 本地开发
 
@@ -425,14 +405,13 @@ poetry run python -m main fetch 20260412
 # 数据抓取
 poetry run python -m main fetch [YYYYMMDD]           # 抓取同花顺 + 东方财富数据
 
-# 风险评估
-poetry run python -m main assess [YYYYMMDD]          # 规则引擎评估
-poetry run python -m main ai-analyze [YYYYMMDD]      # AI智能分析
-poetry run python -m main assess-ai [YYYYMMDD] [--force-ai] # 混合评估；可强制重跑 AI
+# Codex每日市场复盘
+poetry run python -m main assess-ai [YYYYMMDD] [--force-ai]
+# assess / ai-analyze 保留为同一命令的兼容别名
 
 # 完整流程
-poetry run python -m main run [YYYYMMDD]             # 抓取+评估
-poetry run python -m main agent "完成每日风险巡检" [YYYYMMDD] # 目标驱动Agent
+poetry run python -m main run [YYYYMMDD]             # 抓取+Codex复盘
+poetry run python -m main agent "完成每日市场复盘" [YYYYMMDD]
 
 # 定时任务
 poetry run python -m main schedule                   # 启动定时调度器
@@ -456,7 +435,7 @@ poetry run python -m pytest
 
 ```python
 from chain.stock.data import create_fetcher, create_storage
-from chain.stock.agents import create_enhanced_risk_agent
+from chain.stock.agents import create_daily_market_review_agent
 from datetime import date
 
 # 数据抓取
@@ -467,9 +446,11 @@ data = fetcher.fetch_all_data('20260412')
 storage = create_storage('mysql+pymysql://user:pass@localhost/stock_analysis?charset=utf8mb4')
 results = storage.save_all_data(data, date(2026, 4, 12))
 
-# 风险评估
-agent = create_enhanced_risk_agent()
-result = agent.run_daily_assessment_enhanced(date(2026, 4, 12), use_ai=True)
+# Codex每日市场复盘
+agent = create_daily_market_review_agent(
+    'mysql+pymysql://user:pass@localhost/stock_analysis?charset=utf8mb4'
+)
+result = agent.run(date(2026, 4, 12), force=True)
 ```
 
 ## 🏗️ 系统架构
@@ -483,9 +464,9 @@ agent/
 │   ├── 📁 models/
 │   │   └── database.py             # 数据模型定义
 │   ├── 📁 agents/
-│   │   ├── ai_analyzer.py          # AI分析器
-│   │   ├── risk_agent.py           # 规则引擎
-│   │   └── enhanced_risk_agent.py  # 混合评估
+│   │   ├── codex_client.py         # Codex订阅客户端
+│   │   ├── daily_market_review_agent.py # 每日市场复盘
+│   │   └── feishu_notifier.py      # 事实汇总与飞书卡片
 │   └── 📁 scheduler/
 │       └── daily_job.py            # 定时任务
 ├── 📁 docker/mysql/init/           # MySQL初始化脚本
@@ -515,70 +496,32 @@ agent/
 
 | 表名                | 说明     | 核心字段                   |
 | ------------------- | -------- | -------------------------- |
-| `risk_assessment` | 风险评估 | 风险分数、等级、建议       |
+| `daily_market_review` | Codex每日复盘 | 日期、复盘正文、模型、材料摘要 |
+| `risk_assessment` | 历史兼容 | 旧版逐股评分，不再由日常流程写入 |
 | `data_fetch_log`  | 操作日志 | 抓取状态、记录数、错误信息 |
 
-## 🧠 AI分析模型
+## 🧠 Codex每日复盘
 
-### 评估维度
+`assess-ai` 每个交易日最多生成一份定性复盘。Codex在只读工作目录中先读取
+`chain/wiki/raw/001-连板龙头交易体系.md`，再分析飞书卡片使用的事实材料，包括涨停概览、
+板块热度、行业涨停、核心连板、早盘强势、分歧弱板、前高突破和抓取日志。Codex还会收到
+同花顺个股的 `reason_type` 简略原因与未经截断的 `reason_info` 详细原因；飞书板块列表仍保持紧凑。
 
-1. **涨停原因分析**
-
-   - 利好消息真实性和持续性
-   - 政策/业绩/概念驱动判断
-2. **概念热度评估**
-
-   - 板块涨停家数统计
-   - 龙头股表现分析
-   - 市场关注度判断
-3. **市场情绪分析**
-
-   - 大盘情绪判断
-   - 板块情绪氛围
-   - 个股资金博弈
-4. **基本面评估**
-
-   - PE/PB估值分析
-   - 市值和流通性
-   - 业绩预期
-5. **技术面分析**
-
-   - 封单强度解读
-   - 换手率和量比
-   - 连板节奏判断
-
-### 评分算法
-
-```
-综合风险分 = 规则引擎(60%) + AI分析(40%)
-
-AI权重调整：
-- 高置信度(>0.8): AI权重40%
-- 中置信度(0.5-0.8): AI权重30%
-- 低置信度(<0.5): AI权重20%
-```
-
-### 风险等级
-
-| 等级 | 分数  | 建议 | 策略       |
-| ---- | ----- | ---- | ---------- |
-| 极高 | ≥80  | 规避 | 坚决不参与 |
-| 高   | 60-79 | 谨慎 | 逢高减仓   |
-| 中   | 40-59 | 观望 | 等待时机   |
-| 低   | <40   | 机会 | 适量参与   |
+程序不再计算风险分数、权重或因子，也不要求Codex返回JSON。结果按日期写入
+`daily_market_review`，普通执行复用当日报告；`--force-ai` 会发起一次新调用并覆盖当日报告。
+飞书卡片保留事实材料，并在末尾追加保存的Codex复盘和实际模型来源。
 
 ## ⏰ 定时任务
 
 默认调度策略（周一到周五执行，周六日不执行）：
 
 ```
-16:03 - 抓取同花顺/东方财富数据（启动前随机等待 5-45 秒，数据源之间随机等待 3-8 秒）
-16:10 - 运行规则引擎评估
-16:20 - 运行AI增强评估（仅当 AI_PROVIDER 已配置）
-16:37 - 发送飞书涨停播报（仅当 FEISHU_WEBHOOK_URL 已配置，避开半点飞书频控高峰）
+16:03 - 启动每日串行流程（启动前随机等待 5-45 秒，数据源之间随机等待 3-8 秒）
+抓取完成且数据完整 - 生成或复用Codex每日市场复盘
+Codex复盘成功 - 等到非整分的奇数分钟后发送飞书涨停播报
 ```
 
-抓取阶段发现目标日期为非交易日或上游回退到上一交易日时，会标记为 `skipped`；同一天的规则评估、AI增强评估和飞书播报都会跳过。
+抓取阶段发现目标日期为非交易日、上游回退到上一交易日、存在抓取错误或数据不完整时，流程会停止，并发送红色失败状态卡。Codex复盘失败会先发送红色状态卡，告知预计重试时间，并在 5 分钟、15 分钟后重试；全部重试失败、抓取异常或正式播报异常时，状态卡会告知下一次自动任务时间（下一个工作日 16:03）。正式播报、状态卡和飞书限流重试都避开整分，优先使用奇数分钟。
 
 自定义调度：
 
@@ -586,10 +529,7 @@ AI权重调整：
 from chain.stock.scheduler import create_scheduler
 
 scheduler = create_scheduler()
-scheduler.schedule_data_fetch(hour=16, minute=3)
-scheduler.schedule_risk_assessment(hour=16, minute=10)
-scheduler.schedule_enhanced_risk_assessment(hour=16, minute=20)
-scheduler.schedule_feishu_report(hour=16, minute=37)
+scheduler.schedule_daily_job(hour=16, minute=3)
 scheduler.start()
 ```
 
@@ -614,14 +554,12 @@ ORDER BY count DESC
 LIMIT 10;
 ```
 
-### 风险评估查询
+### Codex每日复盘查询
 
 ```sql
--- 高风险股票列表
-SELECT code, name, risk_score, risk_level, suggestion
-FROM risk_assessment
-WHERE date = CURDATE() AND risk_level = '高'
-ORDER BY risk_score DESC;
+SELECT date, provider, model, content
+FROM daily_market_review
+WHERE date = CURDATE();
 ```
 
 ## 🔧 高级配置
@@ -635,11 +573,10 @@ ORDER BY risk_score DESC;
 | `STOCK_FETCH_START_JITTER_MIN/MAX` | ❌   | 定时抓取启动前随机等待范围，默认 5-45 秒 |
 | `STOCK_FETCH_SOURCE_DELAY_MIN/MAX` | ❌   | 数据源之间随机等待范围，默认 3-8 秒 |
 | `STOCK_FETCH_PAGE_DELAY_MIN/MAX` | ❌   | 分页请求之间随机等待范围，默认 0.8-2 秒 |
-| `AI_PROVIDER` | ❌ | `moonshot`（默认）或 `codex` |
-| `MOONSHOT_API_KEY` | ❌   | Moonshot API Key；Codex 自动回退时也需要 |
-| `AI_FALLBACK_PROVIDER` | ❌ | `codex` 失败后的备用服务商，默认 `moonshot`，设为 `none` 可关闭 |
+| `AI_PROVIDER` | ✅ | 每日市场复盘必须为 `codex` |
+| `AI_FALLBACK_PROVIDER` | ❌ | 每日Codex复盘不降级，建议设为 `none` |
 | `CODEX_MODEL` | ❌ | Codex 模型，留空使用账号默认模型 |
-| `CODEX_WORKING_DIRECTORY` | ❌ | Codex 只读工作目录，默认 `/tmp` |
+| `CODEX_WORKING_DIRECTORY` | ❌ | 旧版单股分析配置；每日复盘固定使用 Agent 根目录 |
 | `LOG_LEVEL`        | ❌   | 日志级别(DEBUG/INFO/WARNING) |
 | `TZ`               | ❌   | 时区(默认Asia/Shanghai)      |
 
@@ -656,15 +593,12 @@ fetcher = create_fetcher(
 )
 ```
 
-### AI分析配置
+### Codex复盘配置
 
-```python
-# AI分析器配置
-analyzer = create_ai_analyzer(
-    model="moonshot-v1-8k",  # 模型选择
-    temperature=0.3,          # 温度参数
-    max_tokens=2000          # 最大token数
-)
+```bash
+AI_PROVIDER=codex
+AI_FALLBACK_PROVIDER=none
+CODEX_MODEL=
 ```
 
 ## 🛠️ 故障排查
@@ -703,7 +637,7 @@ tail -f stock_agent.log
 
 - **数据抓取**：异步并发，单次抓取<10秒
 - **AI分析**：单只股票分析~2-3秒（含API调用）
-- **批量评估**：50只股票约5-8分钟（含AI）
+- **Codex复盘**：每个交易日一次模型调用
 - **数据库**：支持百万级数据量查询
 
 ## 📝 更新日志
@@ -714,6 +648,13 @@ tail -f stock_agent.log
 - ✅ AI智能分析功能（Moonshot/Kimi）
 - ✅ 混合评估模型（规则+AI）
 - ✅ 增强版风险评估Agent
+
+### 当前流程
+
+- ✅ Codex读取连板龙头交易体系
+- ✅ 每日事实材料一次性复盘
+- ✅ 复盘按日期落库并追加到飞书
+- ✅ 旧评分表仅保留历史兼容
 
 ### v1.0.0 (2026-04-10)
 
