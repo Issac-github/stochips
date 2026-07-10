@@ -170,6 +170,55 @@ Correct:
 5板：国华退(000004)、*ST东智(002175)
 ```
 
+## Scenario: AI Provider And Codex Python SDK
+
+### 1. Scope / Trigger
+- Trigger: adding or changing the optional LLM used by `assess-ai`, the daily enhanced assessment, or AI result persistence.
+
+### 2. Signatures
+- Python provider selection: `AI_PROVIDER=moonshot|codex`; `AI_FALLBACK_PROVIDER=moonshot|none`.
+- Python client: `CodexSubscriptionClient.analyze(messages) -> str`.
+- CLI: `python main.py assess-ai [date] [--force-ai]`; `--force-ai` bypasses cached AI reports and consumes fresh AI calls up to `AI_MAX_DAILY_CALLS`.
+
+### 3. Contracts
+- `moonshot` uses `MOONSHOT_API_KEY`; `codex` uses the official `openai-codex` Python SDK.
+- `Codex()` owns the local app-server connection and ChatGPT OAuth under the `/root/.codex` Docker volume. Python must not log OAuth tokens, browser cookies, or subscription Bearer headers.
+- SDK output must conform to the existing AI JSON shape before `AIStockAnalyzer.parse_analysis_json` normalizes it: risk score, suggestion, confidence, factor list, and report fields.
+- Persisted AI reports and the daily Feishu card end with `Agent | Model | Provider` metadata. Per-stock reports use the provider that actually succeeded after fallback.
+- Codex analysis runs with `Sandbox.read_only`, `ApprovalMode.deny_all`, an ephemeral thread, and `/tmp` as the default working directory.
+
+### 4. Validation & Error Matrix
+- `AI_PROVIDER=codex` without a valid Codex login/runtime -> SDK retries within the existing bound, then uses configured Moonshot fallback when its API key exists; otherwise records `ai_source=failed` and preserves rule-only assessment.
+- SDK non-JSON/malformed analysis, timeout, or subscription limit -> analyzer retries within the existing bound, then uses configured Moonshot fallback when available.
+- Codex default-model lookup fails after a successful analysis -> keep the analysis and render `Model: default`; metadata lookup must not discard valid output.
+- Unknown provider -> treat as unavailable; do not silently fall back to Moonshot.
+- Existing `risk_assessment.is_ai_analyzed=1` rows -> enhanced assessment reuses cached AI by default; use `--force-ai` when validating a new provider or regenerating reports.
+
+### 5. Good/Base/Bad Cases
+- Good: `AI_PROVIDER=codex`, `docker compose up -d stock_agent`, and `python main.py codex-login` completed -> Python sends stock prompt to Codex and stores normal AI fields.
+- Good: `AI_PROVIDER=codex python main.py assess-ai 20260710 --force-ai` validates Codex with fresh calls instead of replaying cached Moonshot reports.
+- Base: `AI_PROVIDER=moonshot` -> existing Moonshot/LangChain behavior remains unchanged.
+- Bad: calling ChatGPT web/internal endpoints directly or copying OAuth tokens into `.env`.
+
+### 6. Tests Required
+- Python tests assert the Codex output schema, provider fallback, and `Agent | Model | Provider` metadata without a live model call.
+- Feishu tests assert the metadata footer is present in the final card content.
+- Run agent pytest, `docker compose config --quiet`, and verify no token/header strings are present in source or configuration examples.
+
+### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+requests.post("https://chatgpt.com/backend-api/...", headers={"Authorization": token})
+```
+
+Correct:
+
+```python
+CodexSubscriptionClient().analyze(messages)
+```
+
 ## Dates And Keys
 
 The stock domain uses trading-date keys heavily. Keep these conventions:

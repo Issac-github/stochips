@@ -6,7 +6,8 @@ Usage:
     python main.py fetch [date]             # 抓取数据
     python main.py assess [date]            # 风险评估（规则引擎）
     python main.py ai-analyze [date]        # AI智能分析
-    python main.py assess-ai [date]         # 增强版风险评估（规则+AI）
+    python main.py assess-ai [date] [--force-ai]
+                                             # 增强版风险评估（规则+AI）
     python main.py run [date]               # 完整流程（抓取+评估）
     python main.py schedule                 # 启动定时任务
     python main.py status [date]            # 查看数据状态
@@ -16,11 +17,14 @@ Usage:
     python main.py wiki lint                # 检查wiki健康状态
     python main.py wiki build               # 重建wiki向量索引
     python main.py wiki pages               # 列出wiki页面
+    python main.py codex-login              # ChatGPT/Codex设备码登录
 
 Environment Variables:
     DATABASE_URL: MySQL连接URL (required)
     STOCK_COOKIE: 数据抓取的cookie (optional)
-    MOONSHOT_API_KEY: Moonshot API Key (AI分析功能需要)
+    AI_PROVIDER: moonshot 或 codex (AI分析服务商，默认 moonshot)
+    MOONSHOT_API_KEY: Moonshot API Key (使用 moonshot 时需要)
+    CODEX_MODEL: Codex模型（可选，留空使用账号默认模型）
     FEISHU_WEBHOOK_URL: 飞书自定义机器人Webhook (飞书播报需要)
     FEISHU_WEBHOOK_SECRET: 飞书机器人签名密钥 (optional)
     AI_MAX_DAILY_CALLS: 每次增强评估最多新发起的AI分析数量 (default: 20)
@@ -49,6 +53,8 @@ from chain.stock.agents import (
 )
 from chain.stock.data import create_fetcher
 from chain.stock.data.storage import StockDataStorage
+from chain.stock.config import config
+from chain.stock.agents.codex_client import login_chatgpt_device_code
 from chain.stock.scheduler import create_scheduler
 
 
@@ -99,6 +105,21 @@ def parse_date(date_str: Optional[str]) -> date:
             print(f"错误：无法解析日期 {date_str}")
             print("支持的格式：YYYYMMDD 或 YYYY-MM-DD")
             sys.exit(1)
+
+
+def parse_date_and_flags(args: list[str]) -> tuple[Optional[str], set[str]]:
+    """Split an optional date argument from command flags."""
+    target_date = None
+    flags: set[str] = set()
+    for arg in args:
+        if arg.startswith("--"):
+            flags.add(arg)
+        elif target_date is None:
+            target_date = arg
+        else:
+            print(f"错误：未知参数 {arg}")
+            sys.exit(1)
+    return target_date, flags
 
 
 def cmd_fetch(target_date: Optional[str] = None):
@@ -214,10 +235,8 @@ def cmd_ai_analyze(target_date: Optional[str] = None):
     if should_skip_after_fetch(database_url, date_obj, "AI智能分析"):
         return
 
-    api_key = os.getenv("MOONSHOT_API_KEY")
-    if not api_key:
-        print("错误：未设置MOONSHOT_API_KEY环境变量，无法进行AI分析")
-        print("请设置环境变量：export MOONSHOT_API_KEY='your-api-key'")
+    if not config.ai.is_configured:
+        print(f"错误：AI_PROVIDER={config.ai.provider} 未完成配置，无法进行AI分析")
         sys.exit(1)
 
     analyzer = create_ai_analyzer(database_url)
@@ -247,7 +266,10 @@ def cmd_ai_analyze(target_date: Optional[str] = None):
         sys.exit(1)
 
 
-def cmd_assess_enhanced(target_date: Optional[str] = None):
+def cmd_assess_enhanced(
+    target_date: Optional[str] = None,
+    force_ai: bool = False,
+):
     """增强版风险评估命令（规则引擎 + AI）"""
     date_obj = parse_date(target_date)
 
@@ -266,16 +288,20 @@ def cmd_assess_enhanced(target_date: Optional[str] = None):
 
     agent = create_enhanced_risk_agent(database_url)
 
-    # 检查是否有AI API Key
-    use_ai = bool(os.getenv("MOONSHOT_API_KEY"))
+    use_ai = config.ai.is_configured
     if not use_ai:
-        print("⚠️ 警告：未设置MOONSHOT_API_KEY，将只使用规则引擎")
+        print("⚠️ 警告：未配置可用AI Provider，将只使用规则引擎")
     else:
-        print("✅ 已配置AI分析功能")
+        print(f"✅ 已配置AI分析功能（{config.ai.provider}）")
+        if force_ai:
+            print("🔁 已开启强制AI重跑，将忽略已有AI分析缓存")
 
     try:
         result = agent.run_daily_assessment_enhanced(
-            date_obj, min_continuous_days=2, use_ai=use_ai
+            date_obj,
+            min_continuous_days=2,
+            use_ai=use_ai,
+            force_ai=force_ai,
         )
 
         print("\n增强版风险评估完成：")
@@ -377,11 +403,11 @@ def cmd_schedule():
         # 风险评估：每天 16:10
         scheduler.schedule_risk_assessment(hour=16, minute=10)
 
-        # AI增强风险评估：每天 16:20（需要 Moonshot API Key）
-        if env_is_configured("MOONSHOT_API_KEY", {"your_moonshot_api_key_here"}):
+        # AI增强风险评估：每天 16:20（需要已配置AI Provider）
+        if config.ai.is_configured:
             scheduler.schedule_enhanced_risk_assessment(hour=16, minute=20)
         else:
-            print("未配置 MOONSHOT_API_KEY，跳过 AI增强风险评估定时任务")
+            print("未配置可用AI Provider，跳过 AI增强风险评估定时任务")
 
         # 飞书播报：避开半点高峰，降低飞书平台频控概率
         if os.getenv("FEISHU_WEBHOOK_URL"):
@@ -573,11 +599,28 @@ def main():
         cmd_wiki(wiki_action, wiki_arg)
         return
 
+    if command == "codex-login":
+        try:
+            login_chatgpt_device_code()
+        except Exception as e:
+            print(f"错误：{e}")
+            logging.exception("Codex登录失败")
+            sys.exit(1)
+        return
+
+    if command == "assess-ai":
+        target_date, flags = parse_date_and_flags(sys.argv[2:])
+        unknown_flags = flags - {"--force-ai"}
+        if unknown_flags:
+            print(f"错误：未知参数 {', '.join(sorted(unknown_flags))}")
+            sys.exit(1)
+        cmd_assess_enhanced(target_date, force_ai="--force-ai" in flags)
+        return
+
     commands = {
         "fetch": cmd_fetch,
         "assess": cmd_assess,
         "ai-analyze": cmd_ai_analyze,
-        "assess-ai": cmd_assess_enhanced,
         "run": cmd_run,
         "schedule": cmd_schedule,
         "status": cmd_status,

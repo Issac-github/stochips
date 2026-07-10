@@ -50,6 +50,10 @@ services:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-stock}:${MYSQL_PASSWORD:-stock123}@mysql:3306/stock_analysis?charset=utf8mb4
       STOCK_COOKIE: ${STOCK_COOKIE:-}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-moonshot}
+      AI_FALLBACK_PROVIDER: ${AI_FALLBACK_PROVIDER:-moonshot}
+      CODEX_MODEL: ${CODEX_MODEL:-}
+      CODEX_WORKING_DIRECTORY: ${CODEX_WORKING_DIRECTORY:-/tmp}
       STOCK_FETCH_TIMEOUT: ${STOCK_FETCH_TIMEOUT:-30}
       STOCK_FETCH_MAX_RETRIES: ${STOCK_FETCH_MAX_RETRIES:-3}
       STOCK_FETCH_RETRY_DELAY: ${STOCK_FETCH_RETRY_DELAY:-1.0}
@@ -65,6 +69,7 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./services/agent/logs:/app/logs
+      - codex_home:/root/.codex
     depends_on:
       mysql:
         condition: service_healthy
@@ -104,6 +109,10 @@ services:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-stock}:${MYSQL_PASSWORD:-stock123}@mysql:3306/stock_analysis?charset=utf8mb4
       STOCK_COOKIE: ${STOCK_COOKIE:-}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-moonshot}
+      AI_FALLBACK_PROVIDER: ${AI_FALLBACK_PROVIDER:-moonshot}
+      CODEX_MODEL: ${CODEX_MODEL:-}
+      CODEX_WORKING_DIRECTORY: ${CODEX_WORKING_DIRECTORY:-/tmp}
       STOCK_FETCH_TIMEOUT: ${STOCK_FETCH_TIMEOUT:-30}
       STOCK_FETCH_MAX_RETRIES: ${STOCK_FETCH_MAX_RETRIES:-3}
       STOCK_FETCH_RETRY_DELAY: ${STOCK_FETCH_RETRY_DELAY:-1.0}
@@ -122,6 +131,7 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./services/agent/logs:/app/logs
+      - codex_home:/root/.codex
     ports:
       - "${STOCK_RPC_PORT:-50051}:50051"
     depends_on:
@@ -182,6 +192,7 @@ volumes:
   wiki_chroma:
   rag_chroma:
   hf_cache:
+  codex_home:
 
 networks:
   stock_network:

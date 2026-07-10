@@ -17,6 +17,7 @@ import requests
 from sqlalchemy import func
 from sqlalchemy.orm import Session, sessionmaker
 
+from ..config import config
 from ..models.database import (
     BlockTop,
     BlockTopStock,
@@ -463,6 +464,9 @@ class FeishuStockNotifier:
                 "",
                 "**抓取日志**",
                 log_lines,
+                "",
+                "---",
+                config.ai.output_metadata(),
             ]
         )
 

@@ -193,6 +193,8 @@ def test_build_card_contains_daily_report_sections():
     assert "高危股份(000004)：5板" in content
     assert "机会股份(000005)：2板" in content
     assert "高风险 1 只" in content
+    assert "Agent: main | Model:" in content
+    assert "| Provider:" in content
 
 
 def test_generate_sign_matches_feishu_custom_bot_algorithm():

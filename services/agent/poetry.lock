@@ -3345,6 +3345,43 @@ realtime = ["websockets (>=13,<16)"]
 voice-helpers = ["numpy (>=2.0.2)", "sounddevice (>=0.5.1)"]
 
 [[package]]
+name = "openai-codex"
+version = "0.1.0b3"
+description = "Python SDK for Codex"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "openai_codex-0.1.0b3-py3-none-any.whl", hash = "sha256:8d1f9d346667aeecb435c6a45d0edb3f016187276ec452cf8094d813896276c4"},
+    {file = "openai_codex-0.1.0b3.tar.gz", hash = "sha256:b76b7afe97953ac65648e9b8ca116b5ff273de91086549bd7ec88037cdc16cab"},
+]
+
+[package.dependencies]
+openai-codex-cli-bin = "0.137.0a4"
+pydantic = ">=2.12"
+
+[package.extras]
+dev = ["datamodel-code-generator (==0.31.2)", "pytest (>=8.0)", "ruff (>=0.15.8)"]
+
+[[package]]
+name = "openai-codex-cli-bin"
+version = "0.137.0a4"
+description = "Pinned Codex CLI runtime for the Python SDK"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:b33c3917e0b58d527ee11a11a78ad390f7d8e6aa25577dd21665ab3c8bf5cf9a"},
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-macosx_11_0_arm64.whl", hash = "sha256:3d0f0bc5becc88c61952fbfa9bd792ac9d74fa78b3a6bd40f545b612048b07eb"},
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:2f1656339e2736868c4cce59f6d9e5c633879123687169b03b1137d42bf2c11a"},
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:6454f838d44c56c1ed07a29b391fa412785e5dd2ffd06db0b62e62478c19bb64"},
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-musllinux_1_1_aarch64.whl", hash = "sha256:f5ae7401d00c65d56a75d9645d7bf87d809566a12d238e4b2a8b328a02f2316e"},
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:3dcec1e649448be498d6e7ec0e1f71dca83efa76063d90890dafb41e987069b7"},
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-win_amd64.whl", hash = "sha256:9e13bf68e18e36bd3a0efd51213281c83e9f6ec22bdb7a45bd2e0211822733a9"},
+    {file = "openai_codex_cli_bin-0.137.0a4-py3-none-win_arm64.whl", hash = "sha256:5ec4303ca2dcb5f838e0de3ca7f44050b6bcdd41d281a178c3a1420a985a515d"},
+]
+
+[[package]]
 name = "opentelemetry-api"
 version = "1.41.1"
 description = "OpenTelemetry Python API"
@@ -6681,4 +6718,4 @@ rag = ["langchain-chroma", "langchain-community", "langchain-huggingface", "onnx
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0.0"
-content-hash = "43c1999db8d0229abaae06b6f8c2ab1155dc7fa2579c4af62ab0a57e4c37c535"
+content-hash = "3ab24701df90ec82a3eadea2141a25addb48e2cff270f99518d24461f9dce1cc"

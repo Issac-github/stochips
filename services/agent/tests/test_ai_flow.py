@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chain.stock.agents.ai_analyzer import AIStockAnalyzer
 from chain.stock.agents.enhanced_risk_agent import EnhancedRiskAssessmentAgent
+from chain.stock.config import config
 
 
 def test_parse_analysis_json_normalizes_suggestion_and_clamps_numbers():
@@ -88,3 +89,96 @@ def test_enhanced_assessment_reuses_cached_ai_result(monkeypatch):
     assert result["ai_confidence"] == 0.9
     assert result["suggestion"] == "机会"
     assert result["ai_source"] == "cached"
+
+
+def test_codex_analysis_schema_contains_existing_risk_fields():
+    from chain.stock.agents.codex_client import ANALYSIS_SCHEMA
+
+    assert "ai_risk_score" in ANALYSIS_SCHEMA["required"]
+    assert "ai_suggestion" in ANALYSIS_SCHEMA["required"]
+    assert ANALYSIS_SCHEMA["additionalProperties"] is False
+
+
+def test_codex_provider_is_available_with_sdk_configuration(monkeypatch):
+    monkeypatch.setattr(config.ai, "provider", "codex")
+    monkeypatch.setattr(config.ai, "codex_model", "")
+    monkeypatch.setattr(config.ai, "codex_working_directory", "/tmp")
+
+    class FakeCodexClient:
+        is_available = True
+
+    monkeypatch.setattr(
+        "chain.stock.agents.ai_analyzer.CodexSubscriptionClient",
+        lambda **kwargs: FakeCodexClient(),
+    )
+
+    analyzer = AIStockAnalyzer("mysql+pymysql://stock:stock123@localhost/stock_analysis")
+
+    assert analyzer.llm is None
+    assert analyzer.codex_client is not None
+    assert analyzer.is_available is True
+
+
+def test_codex_failure_falls_back_to_moonshot(monkeypatch):
+    monkeypatch.setattr(config.ai, "provider", "codex")
+    monkeypatch.setattr(config.ai, "fallback_provider", "moonshot")
+    monkeypatch.setattr(config.ai, "max_retries", 0)
+
+    class FailingCodexClient:
+        def analyze(self, messages):
+            raise RuntimeError("subscription limit")
+
+    class MoonshotClient:
+        def invoke(self, messages):
+            return SimpleNamespace(content='{"ai_risk_score": 50}')
+
+    analyzer = AIStockAnalyzer.__new__(AIStockAnalyzer)
+    analyzer.provider = "codex"
+    analyzer.codex_client = FailingCodexClient()
+    analyzer.fallback_llm = MoonshotClient()
+    analyzer.llm = None
+    analyzer.last_provider = ""
+    analyzer.last_model = ""
+
+    result = analyzer._invoke_llm_with_retry([{"role": "user", "content": "test"}])
+
+    assert result == '{"ai_risk_score": 50}'
+    assert analyzer.last_provider == "moonshot_fallback"
+    assert analyzer.last_model == config.ai.model
+
+
+def test_invalid_codex_json_falls_back_to_moonshot(monkeypatch):
+    monkeypatch.setattr(config.ai, "max_retries", 0)
+
+    class MoonshotClient:
+        def invoke(self, messages):
+            return SimpleNamespace(
+                content='{"ai_risk_score": 35, "ai_suggestion": "观望"}'
+            )
+
+    analyzer = AIStockAnalyzer.__new__(AIStockAnalyzer)
+    analyzer.last_provider = "codex"
+    analyzer.last_model = ""
+    analyzer.fallback_llm = MoonshotClient()
+
+    result = analyzer._parse_with_fallback(
+        [{"role": "user", "content": "test"}],
+        "not-json",
+    )
+
+    assert result["ai_risk_score"] == 35.0
+    assert analyzer.last_provider == "moonshot_fallback"
+
+
+def test_ai_report_contains_actual_provider_metadata():
+    analyzer = AIStockAnalyzer.__new__(AIStockAnalyzer)
+
+    report = analyzer._generate_report(
+        {},
+        provider="moonshot_fallback",
+        model="moonshot-v1-8k",
+    )
+
+    assert "Agent: main" in report
+    assert "Model: moonshot-v1-8k" in report
+    assert "Provider: moonshot" in report

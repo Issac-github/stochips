@@ -31,6 +31,7 @@ from ..models.database import (
     get_session_maker,
     init_database,
 )
+from .codex_client import CodexSubscriptionClient
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,8 @@ class AIAnalysisResult:
     # 对比分析
     similar_cases: List[Dict[str, Any]]  # 相似案例
     history_pattern: str  # 历史模式
+    provider: str = ""  # 实际完成本次分析的服务商
+    model: str = ""  # 实际完成本次分析的模型
 
 
 class AIStockAnalyzer:
@@ -112,20 +115,46 @@ class AIStockAnalyzer:
         self.engine = None
         self.Session: Optional[sessionmaker[Session]] = None
 
-        # 初始化LLM
+        # Codex SDK owns the local app-server connection and ChatGPT OAuth state.
         self.api_key = api_key or config.ai.api_key
-        if not self.api_key:
-            logger.warning("MOONSHOT_API_KEY未设置，AI分析功能将不可用")
-            self.llm = None
+        self.llm = None
+        self.fallback_llm = None
+        self.codex_client: Optional[CodexSubscriptionClient] = None
+        self.last_provider = ""
+        self.last_model = ""
+        self.provider = config.ai.provider
+        if self.provider == "codex":
+            try:
+                self.codex_client = CodexSubscriptionClient(
+                    model=config.ai.codex_model,
+                    working_directory=config.ai.codex_working_directory,
+                )
+            except Exception as exc:
+                logger.warning("Codex SDK初始化失败，AI分析功能将不可用: %s", exc)
+            if config.ai.fallback_provider == "moonshot":
+                self.fallback_llm = self._create_moonshot_llm()
+        elif self.provider == "moonshot":
+            self.llm = self._create_moonshot_llm()
         else:
-            self.llm = ChatOpenAI(
-                model=config.ai.model,
-                api_key=self.api_key,
-                base_url=config.ai.base_url,
-                temperature=config.ai.temperature,
-                max_tokens=config.ai.max_tokens,
-                timeout=config.ai.timeout,
-            )
+            logger.warning("不支持的AI_PROVIDER=%s，AI分析功能将不可用", self.provider)
+
+    @property
+    def is_available(self) -> bool:
+        return any((self.llm, self.codex_client, self.fallback_llm))
+
+    def _create_moonshot_llm(self):
+        """根据现有 Moonshot 配置创建一个客户端。"""
+        if not self.api_key:
+            logger.warning("MOONSHOT_API_KEY未设置，Moonshot AI分析不可用")
+            return None
+        return ChatOpenAI(
+            model=config.ai.model,
+            api_key=self.api_key,
+            base_url=config.ai.base_url,
+            temperature=config.ai.temperature,
+            max_tokens=config.ai.max_tokens,
+            timeout=config.ai.timeout,
+        )
 
     def _init_db(self):
         """延迟初始化数据库"""
@@ -368,17 +397,71 @@ class AIStockAnalyzer:
 
         return result_json
 
-    def _invoke_llm_with_retry(self, messages: List[Dict[str, str]]):
+    def _invoke_llm_with_retry(self, messages: List[Dict[str, str]]) -> str:
         """带有限重试的LLM调用，避免偶发网络错误直接吞掉整只股票。"""
+        if self.provider == "codex":
+            try:
+                return self._invoke_provider_with_retry(
+                    "codex", self.codex_client, messages
+                )
+            except Exception as codex_error:
+                if not self.fallback_llm:
+                    raise
+                logger.warning(
+                    "Codex调用失败，切换Moonshot备用模型: %s", codex_error
+                )
+                return self._invoke_provider_with_retry(
+                    "moonshot_fallback", self.fallback_llm, messages
+                )
+
+        return self._invoke_provider_with_retry("moonshot", self.llm, messages)
+
+    def _invoke_provider_with_retry(
+        self,
+        provider: str,
+        client: Any,
+        messages: List[Dict[str, str]],
+    ) -> str:
+        """对单个服务商重试，并记录实际成功来源。"""
         last_error: Optional[Exception] = None
         attempts = max(1, config.ai.max_retries + 1)
         for attempt in range(1, attempts + 1):
             try:
-                return self.llm.invoke(messages)
+                if not client:
+                    raise RuntimeError(f"{provider} AI provider is unavailable")
+                if provider == "codex":
+                    content = client.analyze(messages)
+                    self.last_model = client.resolved_model or "default"
+                else:
+                    content = str(client.invoke(messages).content)
+                    self.last_model = config.ai.model
+                self.last_provider = provider
+                return content
             except Exception as exc:
                 last_error = exc
-                logger.warning("AI调用失败，第%s/%s次: %s", attempt, attempts, exc)
-        raise RuntimeError(f"AI调用失败: {last_error}") from last_error
+                logger.warning(
+                    "%s调用失败，第%s/%s次: %s", provider, attempt, attempts, exc
+                )
+        raise RuntimeError(f"{provider}调用失败: {last_error}") from last_error
+
+    def _parse_with_fallback(
+        self,
+        messages: List[Dict[str, str]],
+        content: str,
+    ) -> Dict[str, Any]:
+        """Codex输出不可解析时，允许Moonshot重新完成本次分析。"""
+        try:
+            return self.parse_analysis_json(content)
+        except ValueError as codex_error:
+            if self.last_provider != "codex" or not self.fallback_llm:
+                raise
+            logger.warning(
+                "Codex返回内容不可解析，切换Moonshot备用模型: %s", codex_error
+            )
+            fallback_content = self._invoke_provider_with_retry(
+                "moonshot_fallback", self.fallback_llm, messages
+            )
+            return self.parse_analysis_json(fallback_content)
 
     def analyze_stock(
         self,
@@ -400,7 +483,7 @@ class AIStockAnalyzer:
         if not target_date:
             target_date = date.today()
 
-        if not self.llm:
+        if not self.is_available:
             logger.warning("LLM未初始化，无法执行AI分析")
             return None
 
@@ -423,11 +506,10 @@ class AIStockAnalyzer:
                 {"role": "user", "content": prompt_text}
             ]
 
-            response = self._invoke_llm_with_retry(messages)
-            content = response.content
+            content = self._invoke_llm_with_retry(messages)
 
             # 解析并归一化JSON
-            result_json = self.parse_analysis_json(content)
+            result_json = self._parse_with_fallback(messages, content)
 
             # 构建结果
             result = AIAnalysisResult(
@@ -442,10 +524,16 @@ class AIStockAnalyzer:
                 ai_risk_score=result_json.get('ai_risk_score', 50.0),
                 ai_suggestion=result_json.get('ai_suggestion', '观望'),
                 confidence=result_json.get('confidence', 0.5),
-                analysis_report=self._generate_report(result_json),
+                analysis_report=self._generate_report(
+                    result_json,
+                    provider=self.last_provider,
+                    model=self.last_model,
+                ),
                 key_factors=result_json.get('key_factors', []),
                 similar_cases=[{"description": result_json.get('similar_cases', '')}],
-                history_pattern=result_json.get('tomorrow_prediction', '')
+                history_pattern=result_json.get('tomorrow_prediction', ''),
+                provider=self.last_provider,
+                model=self.last_model,
             )
 
             logger.info(f"AI分析完成: {code}, 风险评分: {result.ai_risk_score}, 建议: {result.ai_suggestion}")
@@ -455,7 +543,12 @@ class AIStockAnalyzer:
             logger.error(f"AI分析失败 {code}: {e}")
             return None
 
-    def _generate_report(self, result_json: Dict) -> str:
+    def _generate_report(
+        self,
+        result_json: Dict,
+        provider: str = "",
+        model: str = "",
+    ) -> str:
         """生成格式化的分析报告"""
         report = f"""
 【AI智能分析报告】
@@ -493,6 +586,9 @@ class AIStockAnalyzer:
 
 九、明日走势预判
 {result_json.get('tomorrow_prediction', 'N/A')}
+
+---
+{config.ai.output_metadata(provider, model)}
 """
 
         return report

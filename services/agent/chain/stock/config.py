@@ -47,6 +47,14 @@ class FetcherConfig:
 @dataclass
 class AIConfig:
     """AI分析配置"""
+    # AI provider: moonshot (API key) or codex (ChatGPT subscription)
+    provider: str = field(default_factory=lambda: os.getenv('AI_PROVIDER', 'moonshot').strip().lower())
+
+    # Codex调用失败时使用的备用服务商；设为 none 可关闭自动回退。
+    fallback_provider: str = field(
+        default_factory=lambda: os.getenv('AI_FALLBACK_PROVIDER', 'moonshot').strip().lower()
+    )
+
     # Moonshot API Key
     api_key: str = field(default_factory=lambda: os.getenv('MOONSHOT_API_KEY', ''))
 
@@ -71,10 +79,35 @@ class AIConfig:
     # 每次增强评估最多新发起的AI分析数量，已有缓存不计入
     max_daily_calls: int = field(default_factory=lambda: int(os.getenv('AI_MAX_DAILY_CALLS', '20')))
 
+    # Codex SDK uses the local app-server and owns ChatGPT OAuth tokens.
+    codex_model: str = field(default_factory=lambda: os.getenv('CODEX_MODEL', ''))
+    codex_working_directory: str = field(
+        default_factory=lambda: os.getenv('CODEX_WORKING_DIRECTORY', '/tmp')
+    )
+
     @property
     def is_configured(self) -> bool:
         """检查AI是否已配置"""
-        return bool(self.api_key)
+        if self.provider == 'codex':
+            return True
+        if self.provider == 'moonshot':
+            return bool(self.api_key)
+        return False
+
+    def output_metadata(
+        self,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> str:
+        """生成用户可见的AI执行来源信息。"""
+        actual_provider = provider or self.provider
+        if actual_provider == 'codex':
+            provider_name = 'openai-codex'
+            model_name = model or self.codex_model or 'default'
+        else:
+            provider_name = 'moonshot'
+            model_name = model or self.model
+        return f"Agent: main | Model: {model_name} | Provider: {provider_name}"
 
 
 @dataclass
@@ -137,7 +170,7 @@ class Config:
             },
             'ai': {
                 'valid': self.ai.is_configured,
-                'message': '✅ 已配置' if self.ai.is_configured else '⚠️ 未配置MOONSHOT_API_KEY（AI分析不可用）'
+                'message': '✅ 已配置' if self.ai.is_configured else '⚠️ 未配置AI Provider（AI分析不可用）'
             }
         }
 

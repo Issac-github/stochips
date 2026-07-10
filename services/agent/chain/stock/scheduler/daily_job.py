@@ -20,6 +20,7 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from ..data import create_fetcher
 from ..data.storage import StockDataStorage
+from ..config import config
 from ..agents import (
     create_enhanced_risk_agent,
     create_feishu_notifier,
@@ -289,12 +290,12 @@ class DailyJobScheduler:
         if skipped:
             return skipped
 
-        if not _env_is_configured("MOONSHOT_API_KEY", {"your_moonshot_api_key_here"}):
-            logger.warning("MOONSHOT_API_KEY 未配置，跳过 AI 增强风险评估")
+        if not config.ai.is_configured:
+            logger.warning("AI Provider 未配置，跳过 AI 增强风险评估")
             return {
                 "total_assessed": 0,
                 "skipped": True,
-                "reason": "MOONSHOT_API_KEY not set",
+                "reason": "AI provider not configured",
             }
 
         logger.info(f"开始 AI 增强风险评估: {target_date}")

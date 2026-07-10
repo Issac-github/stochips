@@ -127,7 +127,12 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
         ai_factors = []
         ai_source = "disabled"
 
-        if use_ai and self.ai_analyzer.llm:
+        ai_available = getattr(
+            self.ai_analyzer,
+            "is_available",
+            bool(getattr(self.ai_analyzer, "llm", None)),
+        )
+        if use_ai and ai_available:
             cached_ai = None if force_ai else self._get_cached_ai_analysis(code, target_date)
             if cached_ai:
                 ai_score = cached_ai.get('ai_score')
@@ -147,7 +152,7 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
                         ai_suggestion = ai_result.ai_suggestion
                         ai_report = ai_result.analysis_report
                         ai_factors = ai_result.key_factors
-                        ai_source = "fresh"
+                        ai_source = f"fresh_{ai_result.provider or 'unknown'}"
 
                         logger.info(f"AI分析完成: {code}, 评分: {ai_score}, 置信度: {ai_confidence}")
                     else:
@@ -393,7 +398,7 @@ class EnhancedRiskAssessmentAgent(RiskAssessmentAgent):
                         assessments.append(assessment)
                         if assessment.get('is_ai_analyzed'):
                             ai_success_count += 1
-                        if assessment.get('ai_source') == 'fresh':
+                        if str(assessment.get('ai_source', '')).startswith('fresh_'):
                             fresh_ai_call_count += 1
 
                 except Exception as e:

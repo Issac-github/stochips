@@ -31,6 +31,7 @@ dependencies = [
 
     # 工具库
     "python-dateutil (>=2.8.0,<3.0.0)",
+    "openai-codex (==0.1.0b3)",
 ]
 
 [project.optional-dependencies]
