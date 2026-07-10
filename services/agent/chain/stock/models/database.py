@@ -216,6 +216,31 @@ class DailyMarketReview(Base):
     )
 
 
+class DailyJobRun(Base):
+    """Durable progress for one date-keyed daily fetch/review/notify workflow."""
+    __tablename__ = 'daily_job_run'
+
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    date = Column(Date, nullable=False, index=True, comment='交易日期')
+    stage = Column(String(20), nullable=False, comment='当前阶段(fetch/review/notify)')
+    status = Column(String(20), nullable=False, comment='状态(running/retrying/completed/skipped/failed)')
+    attempt = Column(Integer, nullable=False, default=0, comment='当前阶段失败次数')
+    retry_at = Column(DateTime, nullable=True, comment='下一次重试时间')
+    last_error = Column(Text, nullable=True, comment='最近失败原因')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    __table_args__ = (
+        Index('idx_daily_job_run_date', 'date', unique=True),
+        Index('idx_daily_job_run_recovery', 'status', 'retry_at'),
+        {'comment': '每日抓取、Codex复盘与飞书播报状态'}
+    )
+
+
 class DataFetchLog(Base):
     """
     数据抓取日志表

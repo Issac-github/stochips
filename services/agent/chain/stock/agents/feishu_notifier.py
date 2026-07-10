@@ -1202,5 +1202,13 @@ class FeishuStockNotifier:
         )
 
 
-def create_feishu_notifier(database_url: str) -> FeishuStockNotifier:
-    return FeishuStockNotifier(database_url)
+def create_feishu_notifier(
+    database_url: str,
+    webhook_url: Optional[str] = None,
+    webhook_secret: Optional[str] = None,
+) -> FeishuStockNotifier:
+    return FeishuStockNotifier(
+        database_url,
+        webhook_url=webhook_url,
+        webhook_secret=webhook_secret,
+    )

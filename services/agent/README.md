@@ -239,6 +239,9 @@ AI_FALLBACK_PROVIDER=none
 # 可选：启用定时飞书播报
 FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-hook-id
 FEISHU_WEBHOOK_SECRET=
+# 失败状态卡建议使用另一台机器人；留空时才复用正式播报机器人。
+FEISHU_ALERT_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-alert-hook-id
+FEISHU_ALERT_WEBHOOK_SECRET=
 
 LOG_LEVEL=INFO
 TZ=Asia/Shanghai
@@ -278,6 +281,10 @@ FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-hook-id
 
 # 如果机器人启用了签名校验，再配置签名密钥
 FEISHU_WEBHOOK_SECRET=your_secret
+
+# 失败状态卡优先使用独立机器人；未配置时复用上面的正式机器人
+FEISHU_ALERT_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your-alert-hook-id
+FEISHU_ALERT_WEBHOOK_SECRET=your_alert_secret
 ```
 
 #### MySQL 命令
@@ -376,7 +383,7 @@ TORCH_VERSION=2.7.1+cpu
 ```
 
 已有数据库升级不需要手工执行SQL；`stock_agent` 和 `stock_rpc` 启动时会自动运行
-`migrations/runner.py`，创建 `daily_market_review` 表。
+`migrations/runner.py`，创建 `daily_market_review` 与 `daily_job_run` 表。
 
 ### 本地开发
 
@@ -497,6 +504,7 @@ agent/
 | 表名                | 说明     | 核心字段                   |
 | ------------------- | -------- | -------------------------- |
 | `daily_market_review` | Codex每日复盘 | 日期、复盘正文、模型、材料摘要 |
+| `daily_job_run` | 每日任务状态 | 阶段、状态、重试次数、下次重试时间 |
 | `risk_assessment` | 历史兼容 | 旧版逐股评分，不再由日常流程写入 |
 | `data_fetch_log`  | 操作日志 | 抓取状态、记录数、错误信息 |
 
@@ -521,7 +529,7 @@ agent/
 Codex复盘成功 - 等到非整分的奇数分钟后发送飞书涨停播报
 ```
 
-抓取阶段发现目标日期为非交易日、上游回退到上一交易日、存在抓取错误或数据不完整时，流程会停止，并发送红色失败状态卡。Codex复盘失败会先发送红色状态卡，告知预计重试时间，并在 5 分钟、15 分钟后重试；全部重试失败、抓取异常或正式播报异常时，状态卡会告知下一次自动任务时间（下一个工作日 16:03）。正式播报、状态卡和飞书限流重试都避开整分，优先使用奇数分钟。
+抓取、Codex复盘和正式播报每个阶段都在首次、第二次失败后分别于 5 分钟、15 分钟后重试。每次失败先写入 `daily_job_run`，再发送红色状态卡并告知预计重试时间；容器重启后会从保存的失败阶段继续，不重复已完成的抓取或复盘。第三次失败才结束当天该阶段，并在状态卡中提示下一个工作日的自动任务时间。失败状态卡优先使用 `FEISHU_ALERT_WEBHOOK_URL`，未配置时才复用正式播报机器人。正式播报、状态卡和飞书限流重试都避开整分，优先使用奇数分钟。
 
 自定义调度：
 

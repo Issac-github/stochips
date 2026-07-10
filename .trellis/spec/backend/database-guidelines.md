@@ -10,6 +10,7 @@ Python SQLAlchemy models in `agent/chain/stock/models/database.py` define the ap
 - `eastmoney_zt_pool`
 - `risk_assessment`
 - `daily_market_review`
+- `daily_job_run`
 - `data_fetch_log`
 
 Migrations live in `agent/migrations/`. The Go task table is added by `agent/migrations/20260522_add_rpc_tasks.sql`, and `services/stock-rpc/internal/tasks/sql_store.go` depends on that `rpc_tasks` schema.
@@ -90,7 +91,8 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - THS paginated `limit_up_pool` waits `STOCK_FETCH_PAGE_DELAY_MIN/MAX` seconds between pages.
   - Only after fetch succeeds with complete data, run one Codex daily review when `AI_PROVIDER=codex`.
   - Only after that review returns successfully, send the Feishu report when `FEISHU_WEBHOOK_URL` is configured; Feishu has no independent cron job. Formal reports, failure status cards, and webhook rate-limit retries send immediately only in a non-exact odd minute; otherwise they wait for the next odd minute plus a small random offset.
-  - Codex review failures retry twice after 5 minutes and 15 minutes. Each intermediate failure sends a Feishu status card with the planned retry time; final failure sends a status card and skips the formal report.
+  - `daily_job_run` persists the date-keyed workflow stage (`fetch`, `review`, `notify`), status, attempts, retry time, and last error. The scheduler retries every failed stage twice after 5 minutes and 15 minutes, and startup requeues today's interrupted/retrying row from its saved stage. Do not replay a prior trading date after recovery.
+  - Each intermediate failure sends a Feishu status card with the planned retry time. Use `FEISHU_ALERT_WEBHOOK_URL`/`FEISHU_ALERT_WEBHOOK_SECRET` for failure cards when configured; otherwise fall back to the formal report bot. Final failure sends a status card and skips the formal report.
   - all scheduled jobs run Monday-Friday only.
   - Codex review and Feishu report jobs must check `data_fetch_log.status='skipped'` for the target date and exit when fetch marked the day as non-trading/stale.
 

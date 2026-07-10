@@ -75,7 +75,8 @@ fall back to legacy programmatic scores or Moonshot factor output.
 - Non-JSON Feishu response -> raise `RuntimeError("飞书返回非JSON响应: ...")`.
 - Feishu `code=11232` -> retry with bounded backoff, then return final response if still limited.
 - Feishu non-zero code other than `11232` -> do not retry; raise `RuntimeError("飞书发送失败: ...")` at the command boundary.
-- Scheduled fetch errors, incomplete data, or Codex failures -> raise from the ordered daily job and do not call `send_feishu_report`; send a red failure status card with the next retry time. Fetch exceptions, final Codex retry failures, and formal Feishu send failures use the next weekday 16:03 as the next automatic retry time.
+- Scheduled fetch errors, incomplete data, Codex failures, and formal Feishu failures -> persist `daily_job_run` before sending a red failure status card. Each failed stage retries twice after 5 and 15 minutes; startup restores today's `running`/`retrying` row from its saved stage. After the final failure, the status card uses the next weekday 16:03 as the next automatic task time.
+- Failure cards prefer `FEISHU_ALERT_WEBHOOK_URL`; when it is absent they fall back to `FEISHU_WEBHOOK_URL`. A webhook/network outage can still prevent both cards, so logs remain the last-resort signal.
 - Codex succeeds during an even minute or exactly at `:00` -> wait until an odd-minute send window with a small random offset before calling `send_feishu_report`.
 
 ### 5. Good/Base/Bad Cases

@@ -12,9 +12,10 @@ import logging
 import os
 import random
 from datetime import date, datetime, timedelta
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
@@ -25,6 +26,7 @@ from ..agents import (
     create_daily_market_review_agent,
     create_feishu_notifier,
 )
+from ..models.database import DailyJobRun
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,14 @@ DEFAULT_DATA_FETCH_HOUR = 16
 DEFAULT_DATA_FETCH_MINUTE = 3
 DEFAULT_FETCH_START_JITTER_MIN = 5.0
 DEFAULT_FETCH_START_JITTER_MAX = 45.0
-CODEX_RETRY_DELAYS = (300, 900)
+DAILY_JOB_RETRY_DELAYS = (300, 900)
+# Kept as a compatibility name for callers that only tune Codex retries.
+CODEX_RETRY_DELAYS = DAILY_JOB_RETRY_DELAYS
+
+DAILY_JOB_STAGE_FETCH = "fetch"
+DAILY_JOB_STAGE_REVIEW = "review"
+DAILY_JOB_STAGE_NOTIFY = "notify"
+DAILY_JOB_ACTIVE_STATUSES = ("running", "retrying")
 
 
 def _next_scheduled_daily_job_at(
@@ -127,6 +136,7 @@ class DailyJobScheduler:
         self.storage = StockDataStorage(database_url)
         self.daily_review_agent = None
         self.feishu_notifier = None
+        self.alert_feishu_notifier = None
         self.scheduled_hour = DEFAULT_DATA_FETCH_HOUR
         self.scheduled_minute = DEFAULT_DATA_FETCH_MINUTE
 
@@ -344,8 +354,12 @@ class DailyJobScheduler:
         retry_at: Optional[datetime] = None,
     ) -> None:
         """Notify the Feishu group about a failed stage without blocking recovery."""
-        if not os.getenv("FEISHU_WEBHOOK_URL"):
-            logger.warning("无法发送失败通知，FEISHU_WEBHOOK_URL 未配置")
+        alert_webhook_url = (
+            os.getenv("FEISHU_ALERT_WEBHOOK_URL")
+            or os.getenv("FEISHU_WEBHOOK_URL", "")
+        ).strip()
+        if not alert_webhook_url:
+            logger.warning("无法发送失败通知，飞书告警Webhook未配置")
             return
 
         error_text = str(error)
@@ -365,12 +379,22 @@ class DailyJobScheduler:
         )
 
         try:
-            if not self.feishu_notifier:
-                self.feishu_notifier = create_feishu_notifier(self.database_url)
+            if alert_webhook_url == os.getenv("FEISHU_WEBHOOK_URL", "").strip():
+                if not self.feishu_notifier:
+                    self.feishu_notifier = create_feishu_notifier(self.database_url)
+                notifier = self.feishu_notifier
+            else:
+                if not self.alert_feishu_notifier:
+                    self.alert_feishu_notifier = create_feishu_notifier(
+                        self.database_url,
+                        webhook_url=alert_webhook_url,
+                        webhook_secret=os.getenv("FEISHU_ALERT_WEBHOOK_SECRET", ""),
+                    )
+                notifier = self.alert_feishu_notifier
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
-                lambda: self.feishu_notifier.send_status_notification(
+                lambda: notifier.send_status_notification(
                     target_date,
                     "StoChips 任务失败通知",
                     content,
@@ -385,74 +409,220 @@ class DailyJobScheduler:
             minute=getattr(self, "scheduled_minute", DEFAULT_DATA_FETCH_MINUTE),
         )
 
-    async def _run_daily_review_with_retry(
+    def _get_daily_job_run(self, target_date: date) -> Optional[DailyJobRun]:
+        session_factory = getattr(getattr(self, "storage", None), "Session", None)
+        if not session_factory:
+            return None
+        session = session_factory()
+        try:
+            return (
+                session.query(DailyJobRun)
+                .filter(DailyJobRun.date == target_date)
+                .one_or_none()
+            )
+        finally:
+            session.close()
+
+    def _save_daily_job_run(
         self,
         target_date: date,
+        *,
+        stage: str,
+        status: str,
+        attempt: int,
+        retry_at: Optional[datetime] = None,
+        last_error: Optional[str] = None,
+    ) -> None:
+        session_factory = getattr(getattr(self, "storage", None), "Session", None)
+        if not session_factory:
+            return
+        session = session_factory()
+        try:
+            run = (
+                session.query(DailyJobRun)
+                .filter(DailyJobRun.date == target_date)
+                .one_or_none()
+            )
+            if run is None:
+                run = DailyJobRun(date=target_date)
+                session.add(run)
+            run.stage = stage
+            run.status = status
+            run.attempt = attempt
+            run.retry_at = retry_at
+            run.last_error = last_error
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("保存每日任务状态失败: %s", target_date)
+            raise
+        finally:
+            session.close()
+
+    def _list_recoverable_job_runs(self) -> List[DailyJobRun]:
+        session_factory = getattr(getattr(self, "storage", None), "Session", None)
+        if not session_factory:
+            return []
+        session = session_factory()
+        try:
+            return (
+                session.query(DailyJobRun)
+                .filter(DailyJobRun.status.in_(DAILY_JOB_ACTIVE_STATUSES))
+                .all()
+            )
+        finally:
+            session.close()
+
+    @staticmethod
+    def _retry_job_id(target_date: date) -> str:
+        return f"daily_stock_retry_{target_date:%Y%m%d}"
+
+    def _schedule_retry(self, target_date: date, retry_at: datetime) -> None:
+        run_at = max(retry_at, datetime.now() + timedelta(seconds=1))
+        self.scheduler.add_job(
+            self.resume_daily_job,
+            trigger=DateTrigger(run_date=run_at),
+            args=[target_date],
+            id=self._retry_job_id(target_date),
+            name=f"每日任务恢复 {target_date:%Y-%m-%d}",
+            replace_existing=True,
+            misfire_grace_time=None,
+        )
+        logger.info("已安排每日任务恢复: %s %s", target_date, run_at)
+
+    def _recover_persisted_jobs(self) -> int:
+        """Requeue today's interrupted workflow after a process restart."""
+        recovered = 0
+        today = date.today()
+        for run in self._list_recoverable_job_runs():
+            if run.date < today:
+                self._save_daily_job_run(
+                    run.date,
+                    stage=run.stage,
+                    status="failed",
+                    attempt=run.attempt,
+                    last_error="服务恢复时已跨交易日，不再补跑历史播报",
+                )
+                continue
+            if run.date > today:
+                continue
+            self._schedule_retry(run.date, run.retry_at or datetime.now())
+            recovered += 1
+        return recovered
+
+    def _mark_stage_running(
+        self,
+        target_date: date,
+        stage: str,
+        attempt: int = 0,
+    ) -> None:
+        self._save_daily_job_run(
+            target_date,
+            stage=stage,
+            status="running",
+            attempt=attempt,
+        )
+
+    async def _handle_stage_failure(
+        self,
+        target_date: date,
+        stage: str,
+        error: Exception | str,
     ) -> Dict[str, object]:
-        """Retry transient Codex failures and announce the planned retry time."""
-        for attempt in range(1, len(CODEX_RETRY_DELAYS) + 2):
-            try:
-                result = await self.run_daily_market_review(target_date, force=True)
-                if result.get("skipped"):
-                    raise RuntimeError(
-                        "Codex每日复盘未生成: "
-                        f"{result.get('reason', 'unknown reason')}"
-                    )
-                return result
-            except Exception as exc:
-                if attempt > len(CODEX_RETRY_DELAYS):
-                    await self._send_failure_broadcast(
-                        target_date,
-                        "Codex每日复盘",
-                        exc,
-                        self._next_daily_retry_at(),
-                    )
-                    raise
+        run = self._get_daily_job_run(target_date)
+        previous_attempt = run.attempt if run and run.stage == stage else 0
+        attempt = previous_attempt + 1
+        error_text = str(error)
 
-                delay = CODEX_RETRY_DELAYS[attempt - 1]
-                retry_at = datetime.now() + timedelta(seconds=delay)
-                logger.warning(
-                    "Codex每日复盘失败，将在 %s 重试: attempt=%s/%s error=%s",
-                    retry_at.strftime("%Y-%m-%d %H:%M:%S"),
-                    attempt,
-                    len(CODEX_RETRY_DELAYS) + 1,
-                    exc,
-                )
-                await self._send_failure_broadcast(
-                    target_date,
-                    "Codex每日复盘",
-                    exc,
-                    retry_at,
-                )
-                remaining_delay = max(
-                    0.0,
-                    (retry_at - datetime.now()).total_seconds(),
-                )
-                await asyncio.sleep(remaining_delay)
+        if attempt <= len(DAILY_JOB_RETRY_DELAYS):
+            retry_at = datetime.now() + timedelta(
+                seconds=DAILY_JOB_RETRY_DELAYS[attempt - 1]
+            )
+            self._save_daily_job_run(
+                target_date,
+                stage=stage,
+                status="retrying",
+                attempt=attempt,
+                retry_at=retry_at,
+                last_error=error_text,
+            )
+            self._schedule_retry(target_date, retry_at)
+            logger.warning(
+                "每日任务阶段失败，将在 %s 重试: date=%s stage=%s attempt=%s/%s error=%s",
+                retry_at.strftime("%Y-%m-%d %H:%M:%S"),
+                target_date,
+                stage,
+                attempt,
+                len(DAILY_JOB_RETRY_DELAYS) + 1,
+                error_text,
+            )
+            await self._send_failure_broadcast(
+                target_date,
+                self._stage_display_name(stage),
+                error,
+                retry_at,
+            )
+            return {
+                "date": target_date.isoformat(),
+                "status": "retrying",
+                "stage": stage,
+                "attempt": attempt,
+                "retry_at": retry_at.isoformat(),
+            }
 
-        raise RuntimeError("Codex每日复盘重试流程意外结束")
+        self._save_daily_job_run(
+            target_date,
+            stage=stage,
+            status="failed",
+            attempt=attempt,
+            last_error=error_text,
+        )
+        await self._send_failure_broadcast(
+            target_date,
+            self._stage_display_name(stage),
+            error,
+            self._next_daily_retry_at(),
+        )
+        return {
+            "date": target_date.isoformat(),
+            "status": "failed",
+            "stage": stage,
+            "attempt": attempt,
+            "retry_at": self._next_daily_retry_at().isoformat(),
+        }
 
-    async def run_daily_job(self, target_date: Optional[date] = None):
-        """Fetch, review, and send Feishu in one ordered daily workflow."""
-        scheduled_run = target_date is None
-        if target_date is None:
-            target_date = date.today()
+    @staticmethod
+    def _stage_display_name(stage: str) -> str:
+        return {
+            DAILY_JOB_STAGE_FETCH: "数据抓取",
+            DAILY_JOB_STAGE_REVIEW: "Codex每日复盘",
+            DAILY_JOB_STAGE_NOTIFY: "飞书播报",
+        }.get(stage, stage)
 
-        logger.info("开始每日串行任务: %s", target_date)
+    async def _run_fetch_stage(
+        self,
+        target_date: date,
+        *,
+        scheduled_run: bool,
+    ) -> Dict[str, object]:
         try:
             fetch_result = await self.fetch_and_store_data(
                 None if scheduled_run else target_date
             )
         except Exception as exc:
-            await self._send_failure_broadcast(
+            return await self._handle_stage_failure(
                 target_date,
-                "数据抓取",
+                DAILY_JOB_STAGE_FETCH,
                 exc,
-                self._next_daily_retry_at(),
             )
-            raise
+
         if fetch_result.get("status") == "skipped":
-            logger.info("每日串行任务跳过: %s", target_date)
+            self._save_daily_job_run(
+                target_date,
+                stage=DAILY_JOB_STAGE_FETCH,
+                status="skipped",
+                attempt=0,
+            )
             return {
                 "date": target_date.isoformat(),
                 "status": "skipped",
@@ -463,59 +633,126 @@ class DailyJobScheduler:
         try:
             data_status = self.storage.get_data_status(target_date)
         except Exception as exc:
-            await self._send_failure_broadcast(
+            return await self._handle_stage_failure(
                 target_date,
-                "数据完整性检查",
+                DAILY_JOB_STAGE_FETCH,
                 exc,
-                self._next_daily_retry_at(),
             )
-            raise
         if errors or not data_status["is_complete"]:
-            error = RuntimeError(
-                "数据抓取不完整，取消Codex复盘和飞书播报: "
-                f"errors={len(errors)}, status={data_status}"
-            )
-            await self._send_failure_broadcast(
+            return await self._handle_stage_failure(
                 target_date,
-                "数据抓取",
-                error,
-                self._next_daily_retry_at(),
+                DAILY_JOB_STAGE_FETCH,
+                RuntimeError(
+                    "数据抓取不完整，取消Codex复盘和飞书播报: "
+                    f"errors={len(errors)}, status={data_status}"
+                ),
             )
-            raise error
 
-        review_result = await self._run_daily_review_with_retry(target_date)
+        self._mark_stage_running(target_date, DAILY_JOB_STAGE_REVIEW)
+        result = await self._run_review_stage(target_date, resumed=False)
+        if result.get("status") == "success":
+            result["fetch"] = fetch_result
+        return result
 
+    async def _run_review_stage(
+        self,
+        target_date: date,
+        *,
+        resumed: bool,
+    ) -> Dict[str, object]:
+        try:
+            review_result = await self.run_daily_market_review(
+                target_date,
+                force=not resumed,
+            )
+            if review_result.get("skipped"):
+                raise RuntimeError(
+                    "Codex每日复盘未生成: "
+                    f"{review_result.get('reason', 'unknown reason')}"
+                )
+        except Exception as exc:
+            return await self._handle_stage_failure(
+                target_date,
+                DAILY_JOB_STAGE_REVIEW,
+                exc,
+            )
+
+        self._mark_stage_running(target_date, DAILY_JOB_STAGE_NOTIFY)
+        result = await self._run_notify_stage(target_date)
+        if result.get("status") == "success":
+            result["review"] = review_result
+        return result
+
+    async def _run_notify_stage(self, target_date: date) -> Dict[str, object]:
         try:
             feishu_result = await self.send_feishu_report(target_date)
+            if feishu_result.get("skipped"):
+                raise RuntimeError(
+                    "飞书播报未发送: "
+                    f"{feishu_result.get('reason', 'unknown reason')}"
+                )
         except Exception as exc:
-            await self._send_failure_broadcast(
+            return await self._handle_stage_failure(
                 target_date,
-                "飞书播报",
+                DAILY_JOB_STAGE_NOTIFY,
                 exc,
-                self._next_daily_retry_at(),
             )
-            raise
-        if feishu_result.get("skipped"):
-            error = RuntimeError(
-                "飞书播报未发送: "
-                f"{feishu_result.get('reason', 'unknown reason')}"
-            )
-            await self._send_failure_broadcast(
-                target_date,
-                "飞书播报",
-                error,
-                self._next_daily_retry_at(),
-            )
-            raise error
 
+        self._save_daily_job_run(
+            target_date,
+            stage=DAILY_JOB_STAGE_NOTIFY,
+            status="completed",
+            attempt=0,
+        )
         logger.info("每日串行任务完成: %s", target_date)
         return {
             "date": target_date.isoformat(),
             "status": "success",
-            "fetch": fetch_result,
-            "review": review_result,
             "feishu": feishu_result,
         }
+
+    async def resume_daily_job(self, target_date: date) -> Dict[str, object]:
+        """Resume today's durable workflow from its failed or interrupted stage."""
+        run = self._get_daily_job_run(target_date)
+        if run is None or run.status not in DAILY_JOB_ACTIVE_STATUSES:
+            return {
+                "date": target_date.isoformat(),
+                "status": "skipped",
+                "reason": "没有可恢复的每日任务",
+            }
+        if target_date != date.today():
+            self._save_daily_job_run(
+                target_date,
+                stage=run.stage,
+                status="failed",
+                attempt=run.attempt,
+                last_error="恢复任务已跨交易日，不再补跑历史播报",
+            )
+            return {
+                "date": target_date.isoformat(),
+                "status": "skipped",
+                "reason": "恢复任务已跨交易日",
+            }
+
+        logger.info("恢复每日任务: %s stage=%s attempt=%s", target_date, run.stage, run.attempt)
+        self._mark_stage_running(target_date, run.stage, attempt=run.attempt)
+        if run.stage == DAILY_JOB_STAGE_FETCH:
+            return await self._run_fetch_stage(target_date, scheduled_run=False)
+        if run.stage == DAILY_JOB_STAGE_REVIEW:
+            return await self._run_review_stage(target_date, resumed=True)
+        if run.stage == DAILY_JOB_STAGE_NOTIFY:
+            return await self._run_notify_stage(target_date)
+        raise RuntimeError(f"未知每日任务阶段: {run.stage}")
+
+    async def run_daily_job(self, target_date: Optional[date] = None):
+        """Start the durable fetch -> review -> Feishu workflow for one date."""
+        scheduled_run = target_date is None
+        if target_date is None:
+            target_date = date.today()
+
+        logger.info("开始每日串行任务: %s", target_date)
+        self._mark_stage_running(target_date, DAILY_JOB_STAGE_FETCH)
+        return await self._run_fetch_stage(target_date, scheduled_run=scheduled_run)
 
     def schedule_daily_job(
         self,
@@ -540,6 +777,9 @@ class DailyJobScheduler:
     def start(self):
         """启动调度器"""
         self.scheduler.start()
+        recovered = self._recover_persisted_jobs()
+        if recovered:
+            logger.info("已恢复 %s 个每日任务", recovered)
         logger.info("调度器已启动")
 
     def shutdown(self):
