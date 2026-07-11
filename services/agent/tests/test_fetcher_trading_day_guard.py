@@ -42,6 +42,10 @@ def test_fetch_all_data_runs_sources_sequentially_with_delays():
         calls.append(("pool", target_date))
         return [{"code": "000002"}]
 
+    async def fetch_lower_pool(target_date):
+        calls.append(("lower_pool", target_date))
+        return [{"code": "000004"}]
+
     async def fetch_eastmoney(target_date):
         calls.append(("eastmoney", target_date))
         return [{"c": "000003"}]
@@ -50,6 +54,7 @@ def test_fetch_all_data_runs_sources_sequentially_with_delays():
     fetcher.fetch_continuous_limit_up = fetch_continuous
     fetcher.fetch_block_top = fetch_block
     fetcher.fetch_limit_up_pool = fetch_pool
+    fetcher.fetch_lower_limit_pool = fetch_lower_pool
     fetcher.fetch_eastmoney_zt_pool = fetch_eastmoney
     fetcher._stale_fetch_reason = lambda result, target_date: None
 
@@ -59,16 +64,19 @@ def test_fetch_all_data_runs_sources_sequentially_with_delays():
         ("continuous", "20260706"),
         ("block", "20260706"),
         ("pool", "20260706"),
+        ("lower_pool", "20260706"),
         ("eastmoney", "20260706"),
     ]
     assert delays == [
         ((3.0, 8.0), "最强风口数据获取前"),
         ((3.0, 8.0), "涨停强度数据获取前"),
+        ((3.0, 8.0), "同花顺跌停池数据获取前"),
         ((3.0, 8.0), "东方财富涨停池数据获取前"),
     ]
     assert result["continuous_limit_up"] == [{"code": "000001"}]
     assert result["block_top"] == [{"name": "机器人概念"}]
     assert result["limit_up_pool"] == [{"code": "000002"}]
+    assert result["lower_limit_pool"] == [{"code": "000004"}]
     assert result["eastmoney_zt_pool"] == [{"c": "000003"}]
     assert result["errors"] == []
 
@@ -122,6 +130,25 @@ def test_limit_up_pool_requests_ths_time_and_reason_fields():
     assert "currency_value" in captured["field"]
     assert "reason_type" in captured["field"]
     assert "reason_info" in captured["field"]
+
+
+def test_lower_limit_pool_requests_documented_ths_fields():
+    fetcher = StockDataFetcher.__new__(StockDataFetcher)
+    captured = {}
+
+    async def request_json(_url, *, params, headers):
+        captured.update(params)
+        return {"data": {"info": [], "page": {"limit": 15, "page": 1, "total": 0}}}
+
+    fetcher._get_headers_with_referer = lambda _referer: {}
+    fetcher._request_json = request_json
+
+    result = asyncio.run(fetcher.fetch_lower_limit_pool_page(target_date="20260709"))
+
+    assert result == {"data": [], "has_more": False}
+    assert captured["field"] == "199112,10,330333,330334,1968584,3475914,9004"
+    assert captured["filter"] == "HS,GEM2STAR"
+    assert captured["order_field"] == "330334"
 
 
 def test_stale_fetch_reason_skips_when_ths_payload_date_differs():
@@ -205,5 +232,28 @@ def test_save_all_data_marks_fetch_skipped_without_saving_rows():
         "continuous_limit_up": (0, 0),
         "block_top": (0, 0),
         "limit_up_pool": (0, 0),
+        "lower_limit_pool": (0, 0),
         "eastmoney_zt_pool": (0, 0),
     }
+
+
+def test_save_all_data_records_source_error_as_failed_log():
+    storage = StockDataStorage.__new__(StockDataStorage)
+    recorded = []
+    storage.mark_fetch_failed = lambda target_date, data_type, error: recorded.append(
+        (target_date, data_type, error)
+    )
+    storage.save_lower_limit_pool = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("failed source must not be stored as an empty success")
+    )
+
+    result = storage.save_all_data(
+        {
+            "lower_limit_pool": [],
+            "errors": [{"type": "lower_limit_pool", "error": "403 Forbidden"}],
+        },
+        date(2026, 7, 9),
+    )
+
+    assert result == {"lower_limit_pool": (0, 1)}
+    assert recorded == [(date(2026, 7, 9), "lower_limit_pool", "403 Forbidden")]

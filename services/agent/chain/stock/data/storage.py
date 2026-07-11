@@ -17,6 +17,7 @@ from ..models.database import (
     BlockTop,
     BlockTopStock,
     LimitUpPool,
+    LowerLimitPool,
     DataFetchLog,
     EastmoneyZTPool,
     init_database,
@@ -512,6 +513,64 @@ class StockDataStorage:
 
         return success_count, failed_count
 
+    def save_lower_limit_pool(
+        self,
+        data: List[Dict[str, Any]],
+        target_date: Optional[date] = None,
+    ) -> Tuple[int, int]:
+        """保存同花顺跌停池原始事实数据。"""
+        if not target_date:
+            target_date = date.today()
+
+        success_count = 0
+        failed_count = 0
+        session: Session = self.Session()
+        try:
+            for item in data:
+                try:
+                    code = self._safe_str(self._first_value(item, 'code', '199112'))
+                    name = self._safe_str(self._first_value(item, 'name', '10'))
+                    if not code or not name:
+                        logger.warning("跳过跌停池记录，缺少股票代码或名称: %s", item)
+                        failed_count += 1
+                        continue
+
+                    values = {
+                        'date': target_date,
+                        'code': code,
+                        'name': name,
+                        'latest_price': self._safe_decimal(self._first_value(item, 'latest', 'latest_price', '330333')),
+                        'change_percent': self._safe_decimal(self._first_value(item, 'change_rate', 'change_percent')),
+                        'first_limit_down_time': self._safe_str(self._first_value(item, 'first_limit_down_time', '330333')),
+                        'last_limit_down_time': self._safe_str(self._first_value(item, 'last_limit_down_time', '330334')),
+                        'turnover_rate': self._safe_decimal(self._first_value(item, 'turnover_rate', '3475914')),
+                        'market_value': self._safe_decimal(self._first_value(item, 'currency_value')),
+                        'market_id': self._safe_int(item.get('market_id')),
+                        'market_type': self._safe_str(self._first_value(item, 'market_type')),
+                        'is_new': self._safe_int(item.get('is_new')),
+                        'is_again_limit': self._safe_int(item.get('is_again_limit')),
+                        'change_tag': self._safe_str(self._first_value(item, 'change_tag')),
+                        'time_preview': json.dumps(item.get('time_preview'), ensure_ascii=False, cls=DecimalEncoder),
+                        'raw_json': json.dumps(item, ensure_ascii=False, cls=DecimalEncoder),
+                    }
+                    self._upsert_by_keys(session, LowerLimitPool, values, ('date', 'code'))
+                    success_count += 1
+                except Exception as exc:
+                    logger.error("保存跌停池记录失败 %s: %s", item.get('code'), exc)
+                    failed_count += 1
+
+            self._save_log(session, target_date, 'lower_limit_pool', success_count)
+            session.commit()
+            logger.info("同花顺跌停池保存完成: 成功%s条，失败%s条", success_count, failed_count)
+        except Exception:
+            session.rollback()
+            logger.exception("保存同花顺跌停池失败")
+            raise
+        finally:
+            session.close()
+
+        return success_count, failed_count
+
     def save_eastmoney_zt_pool(
         self,
         data: List[Dict[str, Any]],
@@ -606,33 +665,62 @@ class StockDataStorage:
                 'continuous_limit_up': (0, 0),
                 'block_top': (0, 0),
                 'limit_up_pool': (0, 0),
+                'lower_limit_pool': (0, 0),
                 'eastmoney_zt_pool': (0, 0),
             }
 
         results = {}
+        fetch_errors = {
+            self._safe_str(item.get('type')): self._safe_str(item.get('error'))
+            for item in data.get('errors', [])
+            if isinstance(item, dict) and item.get('type')
+        }
+
+        def save_or_record_failure(data_type: str, save_func) -> None:
+            if data_type in fetch_errors:
+                self.mark_fetch_failed(target_date, data_type, fetch_errors[data_type])
+                results[data_type] = (0, 1)
+                return
+            results[data_type] = save_func()
 
         # 保存连板天梯
         if 'continuous_limit_up' in data:
-            results['continuous_limit_up'] = self.save_continuous_limit_up(
-                data['continuous_limit_up'], target_date
+            save_or_record_failure(
+                'continuous_limit_up',
+                lambda: self.save_continuous_limit_up(
+                    data['continuous_limit_up'], target_date
+                ),
             )
 
         # 保存最强风口
         if 'block_top' in data:
-            results['block_top'] = self.save_block_top(
-                data['block_top'], target_date
+            save_or_record_failure(
+                'block_top',
+                lambda: self.save_block_top(data['block_top'], target_date),
             )
 
         # 保存涨停强度
         if 'limit_up_pool' in data:
-            results['limit_up_pool'] = self.save_limit_up_pool(
-                data['limit_up_pool'], target_date
+            save_or_record_failure(
+                'limit_up_pool',
+                lambda: self.save_limit_up_pool(data['limit_up_pool'], target_date),
+            )
+
+        if 'lower_limit_pool' in data:
+            save_or_record_failure(
+                'lower_limit_pool',
+                lambda: self.save_lower_limit_pool(
+                    data['lower_limit_pool'], target_date
+                ),
             )
 
         # 保存东方财富涨停池
         if 'eastmoney_zt_pool' in data:
-            results['eastmoney_zt_pool'] = self.save_eastmoney_zt_pool(
-                data['eastmoney_zt_pool'], target_date
+            save_or_record_failure(
+                'eastmoney_zt_pool',
+                lambda: self.save_eastmoney_zt_pool(
+                    data['eastmoney_zt_pool'], target_date
+                ),
             )
 
         return results
@@ -644,6 +732,7 @@ class StockDataStorage:
                 'continuous_limit_up',
                 'block_top',
                 'limit_up_pool',
+                'lower_limit_pool',
                 'eastmoney_zt_pool',
             ):
                 self._save_log(
@@ -654,6 +743,27 @@ class StockDataStorage:
                     status='skipped',
                     error_message=reason,
                 )
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def mark_fetch_failed(
+        self, target_date: date, data_type: str, error_message: str
+    ) -> None:
+        """Persist one source failure instead of recording an empty success."""
+        session: Session = self.Session()
+        try:
+            self._save_log(
+                session,
+                target_date,
+                data_type,
+                0,
+                status='failed',
+                error_message=error_message,
+            )
             session.commit()
         except Exception:
             session.rollback()
@@ -734,6 +844,10 @@ class StockDataStorage:
 
             status['limit_up_pool'] = session.query(LimitUpPool).filter(
                 LimitUpPool.date == target_date
+            ).count()
+
+            status['lower_limit_pool'] = session.query(LowerLimitPool).filter(
+                LowerLimitPool.date == target_date
             ).count()
 
             # 查询东方财富涨停池

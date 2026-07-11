@@ -45,14 +45,18 @@ Use `DataFetchLog` for successful batch counts. If adding failed fetch logging, 
 ## Codex Daily Review Failures
 
 `DailyMarketReviewAgent.run` either returns a complete saved review or raises. It must not
-fall back to legacy programmatic scores or Moonshot factor output.
+fall back to legacy programmatic scores or Moonshot factor output. When
+`AI_FALLBACK_PROVIDER=moonshot`, it may retry the same complete market-review prompt through
+Moonshot after a Codex runtime failure.
 
 - Reuse an existing target-date row unless `force=True`.
-- Missing strategy file or unavailable Codex login fails before replacing a saved row.
-- Empty Codex output fails without committing.
+- Missing strategy file fails before any provider call. Unavailable Codex login uses Moonshot
+  only when the explicit fallback is configured and `MOONSHOT_API_KEY` is present; otherwise it fails.
+- Empty Codex output fails without committing. Moonshot validates its conservative prompt budget before the HTTP call and reports context exhaustion explicitly instead of truncating facts.
 - Feishu remains usable without a review and renders the factual material plus a clear
-  "尚未生成当日 Codex 复盘" marker.
-- Tests use a fake Codex client; do not consume a real subscription during unit tests.
+  "尚未生成当日市场复盘" marker.
+- Tests use fake Codex and Moonshot clients; assert the fallback receives exactly the same prompt
+  and do not consume a real subscription during unit tests.
 
 ## Scenario: Feishu Webhook Rate Limit Retry
 

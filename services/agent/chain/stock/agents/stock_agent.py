@@ -472,10 +472,11 @@ class StockAgent:
                 f"- 连板天梯 {data_status['continuous_limit_up']} 条",
                 f"- 最强风口 {data_status['block_top']} 条",
                 f"- 涨停强度 {data_status['limit_up_pool']} 条",
+                f"- 同花顺跌停池 {data_status['lower_limit_pool']} 条",
                 f"- 东财涨停池 {data_status['eastmoney_zt_pool']} 条",
                 f"- 完整性：{'完整' if data_status['is_complete'] else '不完整'}",
                 "",
-                "Codex每日市场复盘：",
+                "每日市场复盘：",
                 f"- 状态：{'已生成' if review_status['available'] else '尚未生成'}",
             ]
         )

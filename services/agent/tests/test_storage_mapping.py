@@ -211,3 +211,53 @@ def test_save_limit_up_pool_persists_open_num_and_currency_value_without_fallbac
     assert saved_values[0]["open_count"] == 3
     assert str(saved_values[0]["market_value"]) == "67472008000"
     assert saved_values[1]["open_count"] == 0
+
+
+def test_save_lower_limit_pool_persists_ths_downside_fields():
+    storage = StockDataStorage.__new__(StockDataStorage)
+    saved_values = []
+
+    class Session:
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            return None
+
+    storage.Session = lambda: Session()
+    storage._upsert_by_keys = (
+        lambda _session, _model, values, _keys: saved_values.append(values)
+    )
+    storage._save_log = lambda *_args: None
+
+    success, failed = storage.save_lower_limit_pool(
+        [
+            {
+                "code": "600350",
+                "name": "山东高速",
+                "latest": 12.14,
+                "change_rate": -10.0074,
+                "first_limit_down_time": "1783563565",
+                "last_limit_down_time": "1783579867",
+                "turnover_rate": 0.2888,
+                "currency_value": 58691690000,
+                "market_id": 17,
+                "market_type": "HS",
+                "is_again_limit": 0,
+                "change_tag": "LIMIT_DOWN",
+                "time_preview": [-1.56, -10.01],
+            }
+        ],
+        date(2026, 7, 9),
+    )
+
+    assert (success, failed) == (1, 0)
+    values = saved_values[0]
+    assert values["first_limit_down_time"] == "1783563565"
+    assert values["last_limit_down_time"] == "1783579867"
+    assert str(values["change_percent"]) == "-10.0074"
+    assert str(values["market_value"]) == "58691690000"
+    assert json.loads(values["time_preview"]) == [-1.56, -10.01]

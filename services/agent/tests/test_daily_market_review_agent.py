@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chain.stock.agents.daily_market_review_agent import (
     DailyMarketReviewAgent,
+    MoonshotReviewClient,
     STRATEGY_RELATIVE_PATH,
 )
 from chain.stock.models.database import DailyMarketReview
@@ -26,6 +27,21 @@ class FakeCodexClient:
     def review(self, prompt):
         self.prompts.append(prompt)
         return f"### 市场情绪\n测试复盘内容 {len(self.prompts)}"
+
+    def close(self):
+        self.closed = True
+
+
+class FakeMoonshotClient:
+    def __init__(self, content="### Kimi复盘\n备用模型内容"):
+        self.model = "moonshot-test"
+        self.content = content
+        self.prompts = []
+        self.closed = False
+
+    def review(self, prompt):
+        self.prompts.append(prompt)
+        return self.content
 
     def close(self):
         self.closed = True
@@ -186,6 +202,84 @@ def test_failed_review_releases_codex_runtime(tmp_path):
 
     assert client.closed is True
     assert agent.codex_client is None
+
+
+def test_failed_codex_reuses_identical_prompt_with_moonshot_fallback(
+    tmp_path, monkeypatch
+):
+    class FailingCodexClient(FakeCodexClient):
+        def review(self, prompt):
+            self.prompts.append(prompt)
+            raise RuntimeError("Codex unavailable")
+
+    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path.parent.mkdir(parents=True)
+    strategy_path.write_text("交易体系", encoding="utf-8")
+    database_path = tmp_path / "review.db"
+    codex_client = FailingCodexClient()
+    moonshot_client = FakeMoonshotClient()
+    monkeypatch.setattr(
+        "chain.stock.agents.daily_market_review_agent.config.ai.fallback_provider",
+        "moonshot",
+    )
+    agent = DailyMarketReviewAgent(
+        f"sqlite:///{database_path}",
+        codex_client=codex_client,
+        moonshot_client=moonshot_client,
+        notifier=FakeNotifier(),
+        project_root=tmp_path,
+        session_factory=create_review_session(database_path),
+    )
+
+    result = agent.run(date(2026, 7, 10))
+
+    assert result.provider == "moonshot"
+    assert result.model == "moonshot-test"
+    assert result.content == "### Kimi复盘\n备用模型内容"
+    assert codex_client.prompts == moonshot_client.prompts
+    assert codex_client.closed is True
+
+
+def test_failed_codex_without_moonshot_fallback_still_raises(tmp_path, monkeypatch):
+    class FailingCodexClient(FakeCodexClient):
+        def review(self, prompt):
+            del prompt
+            raise RuntimeError("Codex unavailable")
+
+    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path.parent.mkdir(parents=True)
+    strategy_path.write_text("交易体系", encoding="utf-8")
+    database_path = tmp_path / "review.db"
+    monkeypatch.setattr(
+        "chain.stock.agents.daily_market_review_agent.config.ai.fallback_provider",
+        "none",
+    )
+    agent = DailyMarketReviewAgent(
+        f"sqlite:///{database_path}",
+        codex_client=FailingCodexClient(),
+        notifier=FakeNotifier(),
+        project_root=tmp_path,
+        session_factory=create_review_session(database_path),
+    )
+
+    with pytest.raises(RuntimeError, match="Codex unavailable"):
+        agent.run(date(2026, 7, 10))
+
+
+def test_moonshot_fallback_rejects_prompt_beyond_context_budget():
+    client = MoonshotReviewClient(
+        api_key="test-key",
+        model="kimi-k2.5",
+        base_url="https://example.test/v1",
+        temperature=0.3,
+        max_tokens=20,
+        context_window=100,
+        timeout=60,
+        max_retries=0,
+    )
+
+    with pytest.raises(RuntimeError, match="Moonshot上下文预算不足"):
+        client.ensure_prompt_fits("复盘材料" * 100)
 
 
 def test_empty_strategy_file_fails_before_starting_codex(tmp_path, monkeypatch):

@@ -250,11 +250,11 @@ class DailyJobScheduler:
         *,
         force: bool = False,
     ):
-        """Generate the persisted daily Codex market review."""
+        """Generate the persisted daily market review."""
         if not target_date:
             target_date = date.today()
 
-        skipped = self._skip_if_non_trading_day(target_date, "Codex每日市场复盘")
+        skipped = self._skip_if_non_trading_day(target_date, "每日市场复盘")
         if skipped:
             return skipped
 
@@ -265,7 +265,7 @@ class DailyJobScheduler:
                 "reason": "AI_PROVIDER is not codex",
             }
 
-        logger.info("开始Codex每日市场复盘: %s", target_date)
+        logger.info("开始每日市场复盘: %s", target_date)
 
         try:
             if not self.daily_review_agent:
@@ -284,17 +284,20 @@ class DailyJobScheduler:
 
             if self.notification_callback:
                 state = "复用已有报告" if result.get("cached") else "新生成并保存"
+                provider = result.get("provider", "unknown")
+                model = result.get("model", "default")
                 self.notification_callback(
-                    f"🤖 Codex每日市场复盘完成: {target_date}\n{state}"
+                    f"🤖 每日市场复盘完成: {target_date}\n{state}\n"
+                    f"Provider: {provider} | Model: {model}"
                 )
 
             return result
 
         except Exception as e:
-            logger.error("Codex每日市场复盘失败: %s", e)
+            logger.error("每日市场复盘失败: %s", e)
             if self.notification_callback:
                 self.notification_callback(
-                    f"❌ Codex每日市场复盘失败: {target_date}, 错误: {e}"
+                    f"❌ 每日市场复盘失败: {target_date}, 错误: {e}"
                 )
             raise
 

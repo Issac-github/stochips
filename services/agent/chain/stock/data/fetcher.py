@@ -585,6 +585,78 @@ class StockDataFetcher:
         logger.info(f"涨停强度数据获取完成: 共{page}页，{len(all_data)}条记录")
         return all_data
 
+    async def fetch_lower_limit_pool_page(
+        self,
+        page: int = 1,
+        limit: int = 15,
+        target_date: Optional[str] = None,
+        filter_params: str = "HS,GEM2STAR",
+        order_field: str = "330334",
+        order_type: int = 0,
+        timestamp: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """获取同花顺跌停池单页数据。"""
+        if not target_date:
+            target_date = date.today().strftime("%Y%m%d")
+
+        params = {
+            "page": page,
+            "limit": limit,
+            "field": "199112,10,330333,330334,1968584,3475914,9004",
+            "filter": filter_params,
+            "date": target_date,
+            "order_field": order_field,
+            "order_type": order_type,
+        }
+        if timestamp:
+            params["_"] = timestamp
+
+        headers = self._get_headers_with_referer(
+            "https://data.10jqka.com.cn/datacenterph/limitup/limtupInfo.html"
+        )
+        logger.debug("获取同花顺跌停池: page=%s, limit=%s, date=%s", page, limit, target_date)
+        data = await self._request_json(
+            "https://data.10jqka.com.cn/dataapi/limit_up/lower_limit_pool",
+            params=params,
+            headers=headers,
+        )
+        return self._extract_limit_up_pool_page(data, page, limit)
+
+    async def fetch_lower_limit_pool(
+        self,
+        target_date: Optional[str] = None,
+        filter_params: str = "HS,GEM2STAR",
+        batch_size: int = 15,
+        max_pages: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """获取同花顺全部跌停池数据。"""
+        if not target_date:
+            target_date = date.today().strftime("%Y%m%d")
+
+        all_data: List[Dict[str, Any]] = []
+        page = 1
+        has_more = True
+        logger.info("开始获取同花顺跌停池（分页）: date=%s", target_date)
+        while has_more and page <= max_pages:
+            result = await self.fetch_lower_limit_pool_page(
+                page=page,
+                limit=batch_size,
+                target_date=target_date,
+                filter_params=filter_params,
+            )
+            all_data.extend(result.get("data", []))
+            has_more = result.get("has_more", False)
+            logger.debug("跌停池第%s页，%s条记录，has_more=%s", page, len(result.get("data", [])), has_more)
+            if has_more:
+                page += 1
+                await self._sleep_random_delay(
+                    self.page_delay_range,
+                    "跌停池分页继续抓取前",
+                )
+
+        logger.info("同花顺跌停池获取完成: 共%s页，%s条记录", page, len(all_data))
+        return all_data
+
     def _parse_jsonp(self, jsonp_str: str) -> Dict[str, Any]:
         """
         解析JSONP格式数据
@@ -739,6 +811,7 @@ class StockDataFetcher:
                 'continuous_limit_up': [...],
                 'block_top': [...],
                 'limit_up_pool': [...],
+                'lower_limit_pool': [...],
                 'eastmoney_zt_pool': [...]
             }
         """
@@ -756,6 +829,7 @@ class StockDataFetcher:
             "continuous_limit_up": [],
             "block_top": [],
             "limit_up_pool": [],
+            "lower_limit_pool": [],
             "eastmoney_zt_pool": [],
             "errors": [],
         }
@@ -764,6 +838,7 @@ class StockDataFetcher:
             ("continuous_limit_up", "连板天梯", self.fetch_continuous_limit_up),
             ("block_top", "最强风口", self.fetch_block_top),
             ("limit_up_pool", "涨停强度", self.fetch_limit_up_pool),
+            ("lower_limit_pool", "同花顺跌停池", self.fetch_lower_limit_pool),
             ("eastmoney_zt_pool", "东方财富涨停池", self.fetch_eastmoney_zt_pool),
         ]
         for index, (data_type, label, fetch_func) in enumerate(fetch_steps):
@@ -784,6 +859,7 @@ class StockDataFetcher:
             f"连板天梯{len(result['continuous_limit_up'])}条, "
             f"最强风口{len(result['block_top'])}条, "
             f"涨停强度{len(result['limit_up_pool'])}条, "
+            f"同花顺跌停池{len(result['lower_limit_pool'])}条, "
             f"东财涨停池{len(result['eastmoney_zt_pool'])}条"
         )
 
@@ -802,6 +878,7 @@ class StockDataFetcher:
             "continuous_limit_up": [],
             "block_top": [],
             "limit_up_pool": [],
+            "lower_limit_pool": [],
             "eastmoney_zt_pool": [],
             "errors": [],
             "skipped": True,
@@ -826,6 +903,7 @@ class StockDataFetcher:
             len(result["continuous_limit_up"])
             + len(result["block_top"])
             + len(result["limit_up_pool"])
+            + len(result.get("lower_limit_pool", []))
         )
         em_total = len(result["eastmoney_zt_pool"])
         if not actual_dates and ths_total == 0 and em_total > 0:
@@ -838,7 +916,12 @@ class StockDataFetcher:
 
     def _infer_actual_trade_dates(self, result: Dict[str, Any]) -> Set[date]:
         dates: Set[date] = set()
-        for key in ("continuous_limit_up", "block_top", "limit_up_pool"):
+        for key in (
+            "continuous_limit_up",
+            "block_top",
+            "limit_up_pool",
+            "lower_limit_pool",
+        ):
             for item in result.get(key, []):
                 dates.update(self._extract_dates_from_payload(item))
         return dates
@@ -877,7 +960,8 @@ class StockDataFetcher:
     ) -> None:
         """Emit a loud warning when THS endpoints look like they lost auth.
 
-        THS (`continuous_limit_up`, `block_top`, `limit_up_pool`) depend on
+        THS (`continuous_limit_up`, `block_top`, `limit_up_pool`,
+        `lower_limit_pool`) depend on
         STOCK_COOKIE; EastMoney does not. If THS comes back fully empty while
         EastMoney has data, the cookie has almost certainly expired.
         """
@@ -892,11 +976,12 @@ class StockDataFetcher:
             len(result["continuous_limit_up"])
             + len(result["block_top"])
             + len(result["limit_up_pool"])
+            + len(result.get("lower_limit_pool", []))
         )
         em_total = len(result["eastmoney_zt_pool"])
         if ths_total == 0 and em_total > 0:
             logger.warning(
-                "⚠️ 同花顺三个接口均返回 0 条但东方财富有数据 — "
+                "⚠️ 同花顺四个接口均返回 0 条但东方财富有数据 — "
                 "STOCK_COOKIE 大概率已过期。请到浏览器 DevTools 重新复制 "
                 "data.10jqka.com.cn 的 v=... cookie 写入 .env 并重启服务。"
             )
@@ -956,6 +1041,22 @@ class StockDataFetcherSync:
         return asyncio.run(
             self._async_fetch(
                 self.fetcher.fetch_limit_up_pool(
+                    target_date, filter_params, batch_size, max_pages
+                )
+            )
+        )
+
+    def fetch_lower_limit_pool(
+        self,
+        target_date: Optional[str] = None,
+        filter_params: str = "HS,GEM2STAR",
+        batch_size: int = 15,
+        max_pages: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """同步获取同花顺跌停池数据。"""
+        return asyncio.run(
+            self._async_fetch(
+                self.fetcher.fetch_lower_limit_pool(
                     target_date, filter_params, batch_size, max_pages
                 )
             )

@@ -22,8 +22,8 @@ Usage:
 Environment Variables:
     DATABASE_URL: MySQL连接URL (required)
     STOCK_COOKIE: 数据抓取的cookie (optional)
-    AI_PROVIDER: 每日市场复盘必须设为 codex
-    AI_FALLBACK_PROVIDER: 建议设为 none
+    AI_PROVIDER: 每日市场复盘主服务商，使用订阅时设为 codex
+    AI_FALLBACK_PROVIDER: 可设为 moonshot，在Codex失败时使用Kimi回退
     CODEX_MODEL: Codex模型（可选，留空使用账号默认模型）
     FEISHU_WEBHOOK_URL: 飞书自定义机器人Webhook (飞书播报需要)
     FEISHU_WEBHOOK_SECRET: 飞书机器人签名密钥 (optional)
@@ -109,7 +109,7 @@ def parse_date_and_flags(args: list[str]) -> tuple[Optional[str], set[str]]:
     return target_date, flags
 
 
-def cmd_fetch(target_date: Optional[str] = None):
+def cmd_fetch(target_date: Optional[str] = None) -> Optional[bool]:
     """抓取数据命令"""
     date_obj = parse_date(target_date)
     date_str = date_obj.strftime("%Y%m%d")
@@ -141,7 +141,7 @@ def cmd_fetch(target_date: Optional[str] = None):
         results = storage.save_all_data(data, date_obj)
         if data.get("skipped"):
             print(f"\n⏭️ 数据抓取跳过：{data.get('skip_reason', 'skipped')}")
-            return
+            return None
 
         print("\n数据保存结果：")
         for data_type, (success, failed) in results.items():
@@ -157,12 +157,14 @@ def cmd_fetch(target_date: Optional[str] = None):
         print(f"  连板天梯: {status['continuous_limit_up']} 条")
         print(f"  最强风口: {status['block_top']} 条")
         print(f"  涨停强度: {status['limit_up_pool']} 条")
+        print(f"  同花顺跌停池: {status['lower_limit_pool']} 条")
         print(f"  东财涨停池: {status['eastmoney_zt_pool']} 条")
 
         if status["is_complete"]:
             print("\n✅ 数据抓取完成")
         else:
             print("\n⚠️ 数据不完整")
+        return not errors and status["is_complete"]
 
     except Exception as e:
         print(f"错误：{e}")
@@ -187,14 +189,14 @@ def cmd_assess_daily_review(
     """Generate one qualitative Codex review from the daily market material."""
     date_obj = parse_date(target_date)
 
-    print(f"开始Codex每日市场复盘: {date_obj}")
+    print(f"开始每日市场复盘: {date_obj}")
 
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         print("错误：未设置DATABASE_URL环境变量")
         sys.exit(1)
 
-    if should_skip_after_fetch(database_url, date_obj, "Codex每日市场复盘"):
+    if should_skip_after_fetch(database_url, date_obj, "每日市场复盘"):
         return
 
     if config.ai.provider != "codex":
@@ -205,19 +207,19 @@ def cmd_assess_daily_review(
     try:
         agent = create_daily_market_review_agent(database_url)
         if force_ai:
-            print("🔁 已开启强制重跑，将替换已有Codex每日复盘")
+            print("🔁 已开启强制重跑，将替换已有每日复盘")
 
         result = agent.run(date_obj, force=force_ai)
-        print("\nCodex每日市场复盘完成：")
+        print("\n每日市场复盘完成：")
         print(f"  日期: {result.date}")
         print(f"  来源: {result.provider}")
         print(f"  模型: {result.model}")
         print(f"  状态: {'复用已有报告' if result.cached else '新生成并保存'}")
-        print("\n✅ Codex每日市场复盘完成")
+        print("\n✅ 每日市场复盘完成")
 
     except Exception as e:
         print(f"错误：{e}")
-        logging.exception("Codex每日市场复盘失败")
+        logging.exception("每日市场复盘失败")
         sys.exit(1)
     finally:
         if agent is not None:
@@ -232,7 +234,10 @@ def cmd_run(target_date: Optional[str] = None):
     print("=" * 50)
 
     # 1. 抓取数据
-    cmd_fetch(target_date)
+    fetch_succeeded = cmd_fetch(target_date)
+    if fetch_succeeded is not True:
+        print("\n⏭️ 抓取未完整成功，停止后续市场复盘")
+        return
 
     print("\n" + "=" * 50)
 
@@ -340,6 +345,7 @@ def cmd_status(target_date: Optional[str] = None):
         print(f"  连板天梯: {status['continuous_limit_up']} 条")
         print(f"  最强风口: {status['block_top']} 条")
         print(f"  涨停强度: {status['limit_up_pool']} 条")
+        print(f"  同花顺跌停池: {status['lower_limit_pool']} 条")
         print(f"  东财涨停池: {status['eastmoney_zt_pool']} 条")
 
         if status["is_complete"]:
@@ -507,7 +513,9 @@ def main():
         if command == "schedule":
             commands[command]()
         else:
-            commands[command](date_arg)
+            outcome = commands[command](date_arg)
+            if command == "fetch" and outcome is False:
+                sys.exit(1)
     else:
         print(f"未知命令: {command}")
         print(__doc__)

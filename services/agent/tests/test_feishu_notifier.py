@@ -17,6 +17,8 @@ from chain.stock.agents.feishu_notifier import (
     FeishuStockNotifier,
     FeishuStockReport,
     IndustrySummary,
+    LimitUpPoolAnalysisSummary,
+    LowerLimitSummary,
     StockSummary,
     WeakBoardSummary,
     next_feishu_send_at,
@@ -26,6 +28,7 @@ from chain.stock.models.database import (
     ContinuousLimitUp,
     DataFetchLog,
     LimitUpPool,
+    LowerLimitPool,
 )
 
 
@@ -50,6 +53,7 @@ def test_build_card_contains_daily_report_sections():
         block_count=2,
         hr_limit_up_count=10,
         em_limit_up_count=11,
+        lower_limit_count=2,
         max_continuous_days=4,
         continuous_distribution={4: 1, 3: 2},
         limit_up_type_distribution={"首板": 7, "连板": 3},
@@ -152,6 +156,17 @@ def test_build_card_contains_daily_report_sections():
                 reason="涨停突破前高",
             )
         ],
+        lower_limit_stocks=[
+            LowerLimitSummary(
+                code="000010",
+                name="跌停股份",
+                change_percent=-10.01,
+                first_limit_down_time="09:31",
+                last_limit_down_time="14:51",
+                turnover_rate=3.2,
+                is_again_limit=False,
+            )
+        ],
         daily_review=DailyReviewSummary(
             content="### 情绪阶段\n市场处于试错修复期。",
             provider="codex",
@@ -166,6 +181,7 @@ def test_build_card_contains_daily_report_sections():
     assert "StoChips 每日涨停播报 - 2026-07-04" == card["header"]["title"]["content"]
     assert "同花顺 10 只" in content
     assert "涨停结构" in content
+    assert "**跌停概览**：同花顺 2 只" in content
     assert "4板 1只" in content
     assert "同花顺板块热度" in content
     assert "热点板块交集（同花顺成员去重）" in content
@@ -183,6 +199,8 @@ def test_build_card_contains_daily_report_sections():
     assert "早盘强势（同花顺首次涨停时间）" in content
     assert "早盘股份(000002)：1板" in content
     assert "分歧股份(000003)：开板 5 次" in content
+    assert "同花顺跌停池" in content
+    assert "跌停股份(000010)：跌幅 -10.01%，首次跌停 09:31，最后跌停 14:51，换手 3.20%" in content
     assert "突破股份(000006)：前期3板，断板6个交易日" in content
     assert "涨停前高突破 Top 10" not in content
     assert "6-10个交易日内涨停前高突破" in content
@@ -191,8 +209,8 @@ def test_build_card_contains_daily_report_sections():
     assert "建议分布" not in content
     assert "高风险关注" not in content
     assert "机会观察" not in content
-    assert "Codex 市场复盘" in content
-    assert "**抓取日志**\n- limit_up_pool：success，10 条\n\n\n**Codex 市场复盘**" in content
+    assert "市场复盘" in content
+    assert "**抓取日志**\n- limit_up_pool：success，10 条\n\n\n**市场复盘**" in content
     assert "市场处于试错修复期" in content
     assert "Agent: main | Model: gpt-test-codex" in content
     assert "Provider: openai-codex" in content
@@ -205,13 +223,14 @@ def test_build_card_contains_daily_report_sections():
     assert empty_early == "- 暂无早盘强势数据"
 
     material = notifier.build_analysis_material(report)
-    assert "Codex 市场复盘" not in material
+    assert "市场复盘" not in material
     assert "风险评估" not in material
 
     reason_material = notifier.build_codex_reason_material(report)
     assert "简略原因（reason_type）：机器人+业绩增长" in reason_material
     assert "详细原因（reason_info）" in reason_material
     assert "行业原因：机器人产业提速" in reason_material
+    assert "同花顺全量涨停池指标" not in reason_material
 
 
 def test_generate_sign_matches_feishu_custom_bot_algorithm():
@@ -578,6 +597,43 @@ def test_codex_reason_material_includes_ths_pool_reason_fields():
     assert "公司聚焦智能交互显示与AI教育" in content
 
 
+def test_codex_reason_material_includes_turnover_for_every_limit_up_stock():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    report = SimpleNamespace(
+        top_blocks=[],
+        pool_stock_reasons=[],
+        limit_up_pool_metrics=[
+            LimitUpPoolAnalysisSummary(
+                code="000001",
+                name="换手股份",
+                change_percent=10.01,
+                limit_up_type="换手板",
+                first_limit_up_time="09:31",
+                last_limit_up_time="14:20",
+                open_count=2,
+                turnover_rate=18.5,
+            ),
+            LimitUpPoolAnalysisSummary(
+                code="000002",
+                name="无换手字段",
+                change_percent=9.99,
+                limit_up_type="一字板",
+                first_limit_up_time="09:25",
+                last_limit_up_time="09:25",
+                open_count=0,
+                turnover_rate=None,
+            ),
+        ],
+    )
+
+    content = notifier.build_codex_reason_material(report)
+
+    assert "同花顺全量涨停池指标（Codex分析补充）" in content
+    assert "换手股份(000001)：涨幅 10.01%，换手板，首次涨停 09:31，最后涨停 14:20，开板 2 次，换手 18.50%" in content
+    assert "无换手字段(000002)" in content
+    assert "换手 暂无" in content
+
+
 def test_ths_pool_supplies_early_strength_and_previous_high_feedback():
     engine = create_engine("sqlite://")
     for model in (ContinuousLimitUp, LimitUpPool):
@@ -752,6 +808,7 @@ def test_previous_trading_day_material_contains_full_prior_facts_and_reasons():
         block_count=1,
         hr_limit_up_count=2,
         em_limit_up_count=2,
+        lower_limit_count=1,
         max_continuous_days=2,
         continuous_distribution={2: 1},
         limit_up_type_distribution={"连板": 1, "首板": 1},
@@ -782,6 +839,17 @@ def test_previous_trading_day_material_contains_full_prior_facts_and_reasons():
         ],
         weak_boards=[],
         breakout_stocks=[],
+        lower_limit_stocks=[
+            LowerLimitSummary(
+                code="000004",
+                name="昨日跌停",
+                change_percent=-10.0,
+                first_limit_down_time="09:32",
+                last_limit_down_time="09:32",
+                turnover_rate=1.0,
+                is_again_limit=False,
+            )
+        ],
         one_word_stocks=[
             StockSummary("000003", "昨日一字", 1, "09:25", "商业航天", "一字")
         ],
@@ -810,6 +878,7 @@ def test_previous_trading_day_material_contains_full_prior_facts_and_reasons():
     assert "昨日详细原因" in content
     assert "AI教育" in content
     assert "昨日涨停池详细原因" in content
+    assert "昨日跌停(000004)" in content
 
 
 def test_recent_trading_dates_uses_successful_fetch_logs_and_skips_weekends():
@@ -1003,6 +1072,7 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
         block_count=2,
         hr_limit_up_count=1,
         em_limit_up_count=1,
+        lower_limit_count=0,
         max_continuous_days=0,
         continuous_distribution={},
         limit_up_type_distribution={},
@@ -1018,6 +1088,7 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
         early_stocks=[],
         weak_boards=[],
         breakout_stocks=[],
+        lower_limit_stocks=[],
     )
 
     content = notifier.build_card(report)["body"]["elements"][0]["content"]
@@ -1027,6 +1098,48 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
     assert "东财行业涨停" in content
     assert "电力：宝塔实业（2板）" in content
     assert "行业热度请看东财行业涨停" in content
+
+
+def test_lower_limit_pool_is_rendered_in_full_time_order():
+    engine = create_engine("sqlite://")
+    LowerLimitPool.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    try:
+        session.add_all(
+            [
+                LowerLimitPool(
+                    id=1,
+                    date=date(2026, 7, 9),
+                    code="000002",
+                    name="晚跌停",
+                    change_percent=-10.0,
+                    first_limit_down_time="1783565385",
+                    last_limit_down_time="1783579821",
+                    turnover_rate=8.2,
+                ),
+                LowerLimitPool(
+                    id=2,
+                    date=date(2026, 7, 9),
+                    code="000001",
+                    name="早跌停",
+                    change_percent=-10.01,
+                    first_limit_down_time="1783563565",
+                    last_limit_down_time="1783579867",
+                    turnover_rate=0.28,
+                    is_again_limit=1,
+                ),
+            ]
+        )
+        session.commit()
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        stocks = notifier._build_lower_limit_stocks(session, date(2026, 7, 9))
+    finally:
+        session.close()
+
+    assert [item.code for item in stocks] == ["000001", "000002"]
+    content = notifier._format_lower_limit_stocks(stocks)
+    assert "早跌停(000001)：跌幅 -10.01%，首次跌停 10:19，最后跌停 14:51，换手 0.28%，再次跌停" in content
+    assert "晚跌停(000002)" in content
 
 
 def test_build_weak_boards_requires_opened_limit_up_board():

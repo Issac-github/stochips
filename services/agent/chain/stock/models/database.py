@@ -158,6 +158,37 @@ class LimitUpPool(Base):
     )
 
 
+class LowerLimitPool(Base):
+    """同花顺跌停池数据表。"""
+    __tablename__ = 'lower_limit_pool'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False, index=True, comment='数据日期')
+    code = Column(String(20), nullable=False, index=True, comment='股票代码')
+    name = Column(String(100), nullable=False, comment='股票名称')
+    latest_price = Column(Decimal(10, 2), nullable=True, comment='最新价')
+    change_percent = Column(Decimal(10, 4), nullable=True, comment='涨跌幅%')
+    first_limit_down_time = Column(String(20), nullable=True, comment='首次跌停时间')
+    last_limit_down_time = Column(String(20), nullable=True, comment='最后跌停时间')
+    turnover_rate = Column(Decimal(10, 4), nullable=True, comment='换手率%')
+    market_value = Column(Decimal(20, 2), nullable=True, comment='流通市值')
+    market_id = Column(Integer, nullable=True, comment='市场ID')
+    market_type = Column(String(20), nullable=True, comment='市场类型')
+    is_new = Column(Integer, nullable=True, comment='是否新标记')
+    is_again_limit = Column(Integer, nullable=True, comment='是否再次跌停')
+    change_tag = Column(String(50), nullable=True, comment='跌停状态标签')
+    time_preview = Column(Text, nullable=True, comment='盘中涨跌幅预览JSON')
+    raw_json = Column(Text, nullable=True, comment='原始JSON')
+    created_at = Column(DateTime, default=datetime.now, comment='创建时间')
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
+
+    __table_args__ = (
+        Index('idx_date_code_lower_pool', 'date', 'code', unique=True),
+        Index('idx_date_first_down_time', 'date', 'first_limit_down_time'),
+        {'comment': '同花顺跌停池数据'}
+    )
+
+
 class RiskAssessment(Base):
     """
     风险评估结果表

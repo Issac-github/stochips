@@ -26,6 +26,7 @@ from ..models.database import (
     DailyMarketReview,
     DataFetchLog,
     EastmoneyZTPool,
+    LowerLimitPool,
     LimitUpPool,
     get_session_maker,
     init_database,
@@ -122,6 +123,29 @@ class WeakBoardSummary:
 
 
 @dataclass
+class LowerLimitSummary:
+    code: str
+    name: str
+    change_percent: Optional[float]
+    first_limit_down_time: str
+    last_limit_down_time: str
+    turnover_rate: Optional[float]
+    is_again_limit: bool
+
+
+@dataclass
+class LimitUpPoolAnalysisSummary:
+    code: str
+    name: str
+    change_percent: Optional[float]
+    limit_up_type: str
+    first_limit_up_time: str
+    last_limit_up_time: str
+    open_count: int
+    turnover_rate: Optional[float]
+
+
+@dataclass
 class PreviousHighBoardSummary:
     code: str
     name: str
@@ -166,6 +190,7 @@ class FeishuStockReport:
     block_count: int
     hr_limit_up_count: int
     em_limit_up_count: int
+    lower_limit_count: int
     max_continuous_days: int
     continuous_distribution: Dict[int, int]
     limit_up_type_distribution: Dict[str, int]
@@ -177,12 +202,16 @@ class FeishuStockReport:
     early_stocks: List[StockSummary]
     weak_boards: List[WeakBoardSummary]
     breakout_stocks: List[BreakoutSummary]
+    lower_limit_stocks: List[LowerLimitSummary]
     daily_review: Optional[DailyReviewSummary] = None
     one_word_stocks: List[StockSummary] = field(default_factory=list)
     previous_high_feedback: List[PreviousHighBoardSummary] = field(
         default_factory=list
     )
     pool_stock_reasons: List[BlockStockReasonSummary] = field(default_factory=list)
+    limit_up_pool_metrics: List[LimitUpPoolAnalysisSummary] = field(
+        default_factory=list
+    )
     board_overlaps: List[BoardOverlapSummary] = field(default_factory=list)
 
 
@@ -234,6 +263,11 @@ class FeishuStockNotifier:
                 .filter(EastmoneyZTPool.date == target_date)
                 .count()
             )
+            lower_limit_count = (
+                session.query(LowerLimitPool)
+                .filter(LowerLimitPool.date == target_date)
+                .count()
+            )
             max_days = (
                 session.query(func.max(ContinuousLimitUp.continuous_days))
                 .filter(ContinuousLimitUp.date == target_date)
@@ -276,6 +310,13 @@ class FeishuStockNotifier:
                 .order_by(DataFetchLog.data_type.asc())
                 .all()
             ]
+            lower_limit_log = next(
+                (
+                    item for item in fetch_logs
+                    if item["data_type"] == "lower_limit_pool"
+                ),
+                None,
+            )
 
             top_blocks = [
                 self._build_block_summary(session, target_date, item)
@@ -286,6 +327,14 @@ class FeishuStockNotifier:
             ]
             block_top_has_counts = any(item.stock_count > 0 for item in top_blocks)
             data_warnings = []
+            if lower_limit_log is None:
+                data_warnings.append(
+                    "同花顺跌停池尚未抓取，跌停数量不能按 0 解读"
+                )
+            elif lower_limit_log["status"] != "success":
+                data_warnings.append(
+                    "同花顺跌停池抓取失败，跌停数量不能用于情绪判断"
+                )
             if block_count > 0 and not block_top_has_counts:
                 data_warnings.append(
                     "block_top 已入库但涨停家数字段为空，"
@@ -353,6 +402,9 @@ class FeishuStockNotifier:
             early_stocks = self._build_early_stocks(session, target_date)
             weak_boards = self._build_weak_boards(session, target_date)
             breakout_stocks = self._build_breakout_stocks(session, target_date)
+            lower_limit_stocks = self._build_lower_limit_stocks(
+                session, target_date
+            )
             one_word_stocks = self._build_one_word_stocks(session, target_date)
             board_overlaps = self._build_board_overlaps(
                 session, target_date, top_blocks
@@ -387,6 +439,12 @@ class FeishuStockNotifier:
                     "同花顺涨停池缺少最后涨停时间且未识别开板次数，"
                     "分歧弱板无法判断"
                 )
+            pool_rows = (
+                session.query(LimitUpPool)
+                .filter(LimitUpPool.date == target_date)
+                .order_by(LimitUpPool.code.asc())
+                .all()
+            )
             pool_stock_reasons = [
                 BlockStockReasonSummary(
                     code=item.code,
@@ -394,10 +452,23 @@ class FeishuStockNotifier:
                     reason_type=item.concept or "",
                     reason_info=item.reason or "",
                 )
-                for item in session.query(LimitUpPool)
-                .filter(LimitUpPool.date == target_date)
-                .all()
+                for item in pool_rows
                 if item.concept or item.reason
+            ]
+            limit_up_pool_metrics = [
+                LimitUpPoolAnalysisSummary(
+                    code=item.code,
+                    name=item.name,
+                    change_percent=self._to_float(item.change_percent),
+                    limit_up_type=item.limit_up_type or "",
+                    first_limit_up_time=self._normalize_limit_up_time(
+                        item.limit_up_time
+                    ),
+                    last_limit_up_time=self._normalize_limit_up_time(item.last_time),
+                    open_count=item.open_count or 0,
+                    turnover_rate=self._to_float(item.turnover_rate),
+                )
+                for item in pool_rows
             ]
             daily_review_row = (
                 session.query(DailyMarketReview)
@@ -430,6 +501,7 @@ class FeishuStockNotifier:
                 block_count=block_count,
                 hr_limit_up_count=hr_limit_up_count,
                 em_limit_up_count=em_limit_up_count,
+                lower_limit_count=lower_limit_count,
                 max_continuous_days=int(max_days),
                 continuous_distribution=continuous_distribution,
                 limit_up_type_distribution=limit_up_type_distribution,
@@ -441,10 +513,12 @@ class FeishuStockNotifier:
                 early_stocks=early_stocks,
                 weak_boards=weak_boards,
                 breakout_stocks=breakout_stocks,
+                lower_limit_stocks=lower_limit_stocks,
                 daily_review=daily_review,
                 one_word_stocks=one_word_stocks,
                 previous_high_feedback=previous_high_feedback,
                 pool_stock_reasons=pool_stock_reasons,
+                limit_up_pool_metrics=limit_up_pool_metrics,
                 board_overlaps=board_overlaps,
             )
         finally:
@@ -453,7 +527,7 @@ class FeishuStockNotifier:
     def build_card(self, report: FeishuStockReport) -> Dict[str, Any]:
         """Build a Feishu Card 2.0 payload body."""
         material = self.build_analysis_material(report)
-        review_parts = ["", "", "**Codex 市场复盘**"]
+        review_parts = ["", "", "**市场复盘**"]
         if report.daily_review:
             review_parts.extend(
                 [
@@ -467,7 +541,7 @@ class FeishuStockNotifier:
                 ]
             )
         else:
-            review_parts.append("- 尚未生成当日 Codex 复盘")
+            review_parts.append("- 尚未生成当日市场复盘")
 
         content = "\n".join([material, *review_parts])
         date_text = report.target_date.strftime("%Y-%m-%d")
@@ -513,6 +587,9 @@ class FeishuStockNotifier:
         )
         weak_lines = self._format_weak_boards(report.weak_boards)
         breakout_lines = self._format_breakouts(report.breakout_stocks)
+        lower_limit_lines = self._format_lower_limit_stocks(
+            report.lower_limit_stocks
+        )
         one_word_lines = self._format_stocks(
             report.one_word_stocks,
             empty_message="暂无一字板明细",
@@ -534,6 +611,7 @@ class FeishuStockNotifier:
                     f"最高 {report.max_continuous_days} 板"
                 ),
                 f"**涨停结构**：{limit_type_text}；连板梯队：{continuous_text}",
+                f"**跌停概览**：同花顺 {report.lower_limit_count} 只",
                 warning_lines,
                 "",
                 "**同花顺板块热度**",
@@ -559,6 +637,9 @@ class FeishuStockNotifier:
                 "",
                 "**分歧弱板/回封样本**",
                 weak_lines,
+                "",
+                "**同花顺跌停池**",
+                lower_limit_lines,
                 "",
                 "**涨停前高突破**",
                 breakout_lines,
@@ -621,6 +702,7 @@ class FeishuStockNotifier:
                 (
                     f"- 涨停概览：同花顺 {previous_report.hr_limit_up_count} 只，"
                     f"东财 {previous_report.em_limit_up_count} 只，"
+                    f"跌停 {getattr(previous_report, 'lower_limit_count', 0)} 只，"
                     f"连板 {previous_report.continuous_count} 只，"
                     f"最高 {previous_report.max_continuous_days} 板"
                 ),
@@ -688,23 +770,49 @@ class FeishuStockNotifier:
             for item in grouped.values()
             if item["reason_types"] or item["reason_infos"]
         ]
-        if not reason_items:
-            return "**同花顺个股涨停原因（Codex分析补充）**\n- 暂无原因数据"
+        sections = []
+        if reason_items:
+            lines = ["**同花顺个股涨停原因（Codex分析补充）**"]
+            for index, item in enumerate(reason_items, 1):
+                code = f"({item['code']})" if item["code"] else ""
+                reason_types = "；".join(item["reason_types"]) or "暂无"
+                reason_infos = "\n\n".join(item["reason_infos"]) or "暂无"
+                lines.extend(
+                    [
+                        f"{index}. {item['name']}{code}",
+                        f"- 所属热度板块：{'、'.join(item['blocks'])}",
+                        f"- 简略原因（reason_type）：{reason_types}",
+                        f"- 详细原因（reason_info）：\n{reason_infos}",
+                    ]
+                )
+            sections.append("\n".join(lines))
 
-        lines = ["**同花顺个股涨停原因（Codex分析补充）**"]
-        for index, item in enumerate(reason_items, 1):
-            code = f"({item['code']})" if item["code"] else ""
-            reason_types = "；".join(item["reason_types"]) or "暂无"
-            reason_infos = "\n\n".join(item["reason_infos"]) or "暂无"
-            lines.extend(
-                [
-                    f"{index}. {item['name']}{code}",
-                    f"- 所属热度板块：{'、'.join(item['blocks'])}",
-                    f"- 简略原因（reason_type）：{reason_types}",
-                    f"- 详细原因（reason_info）：\n{reason_infos}",
-                ]
-            )
-        return "\n".join(lines)
+        metrics = getattr(report, "limit_up_pool_metrics", [])
+        if metrics:
+            lines = ["**同花顺全量涨停池指标（Codex分析补充）**"]
+            for index, item in enumerate(metrics, 1):
+                details = []
+                if item.change_percent is not None:
+                    details.append(f"涨幅 {self._format_percent(item.change_percent)}")
+                if item.limit_up_type:
+                    details.append(item.limit_up_type)
+                if item.first_limit_up_time:
+                    details.append(f"首次涨停 {item.first_limit_up_time}")
+                if item.last_limit_up_time:
+                    details.append(f"最后涨停 {item.last_limit_up_time}")
+                details.append(f"开板 {item.open_count} 次")
+                if item.turnover_rate is not None:
+                    details.append(f"换手 {self._format_percent(item.turnover_rate)}")
+                else:
+                    details.append("换手 暂无")
+                lines.append(
+                    f"{index}. {item.name}({item.code})：{'，'.join(details)}"
+                )
+            sections.append("\n".join(lines))
+
+        if not sections:
+            return "**同花顺个股涨停原因（Codex分析补充）**\n- 暂无原因和涨停池指标数据"
+        return "\n\n".join(sections)
 
     def send_report(self, target_date: date) -> Dict[str, Any]:
         """Collect stock data and send a Feishu card."""
@@ -722,6 +830,7 @@ class FeishuStockNotifier:
             "is_complete": report.is_complete,
             "hr_limit_up_count": report.hr_limit_up_count,
             "em_limit_up_count": report.em_limit_up_count,
+            "lower_limit_count": report.lower_limit_count,
             "daily_review_available": report.daily_review is not None,
         }
 
@@ -1219,6 +1328,35 @@ class FeishuStockNotifier:
             for item in rows
         ]
 
+    def _build_lower_limit_stocks(
+        self, session: Session, target_date: date
+    ) -> List[LowerLimitSummary]:
+        rows = (
+            session.query(LowerLimitPool)
+            .filter(LowerLimitPool.date == target_date)
+            .order_by(
+                LowerLimitPool.first_limit_down_time.asc(),
+                LowerLimitPool.code.asc(),
+            )
+            .all()
+        )
+        return [
+            LowerLimitSummary(
+                code=item.code,
+                name=item.name,
+                change_percent=self._to_float(item.change_percent),
+                first_limit_down_time=self._normalize_limit_up_time(
+                    item.first_limit_down_time
+                ),
+                last_limit_down_time=self._normalize_limit_up_time(
+                    item.last_limit_down_time
+                ),
+                turnover_rate=self._to_float(item.turnover_rate),
+                is_again_limit=bool(item.is_again_limit),
+            )
+            for item in rows
+        ]
+
     def _build_previous_high_feedback(
         self, session: Session, target_date: date
     ) -> List[PreviousHighBoardSummary]:
@@ -1617,6 +1755,25 @@ class FeishuStockNotifier:
                 f"{index}. {item.name}({item.code})：开板 {item.open_count} 次，"
                 f"换手 {turnover}{block}{reason}"
             )
+        return "\n".join(lines)
+
+    def _format_lower_limit_stocks(
+        self, stocks: List[LowerLimitSummary]
+    ) -> str:
+        if not stocks:
+            return "- 暂无跌停数据"
+        lines = []
+        for index, item in enumerate(stocks, 1):
+            details = [f"跌幅 {self._format_percent(item.change_percent)}"]
+            if item.first_limit_down_time:
+                details.append(f"首次跌停 {item.first_limit_down_time}")
+            if item.last_limit_down_time:
+                details.append(f"最后跌停 {item.last_limit_down_time}")
+            if item.turnover_rate is not None:
+                details.append(f"换手 {self._format_percent(item.turnover_rate)}")
+            if item.is_again_limit:
+                details.append("再次跌停")
+            lines.append(f"{index}. {item.name}({item.code})：{'，'.join(details)}")
         return "\n".join(lines)
 
     @staticmethod

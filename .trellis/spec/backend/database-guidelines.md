@@ -7,6 +7,7 @@ Python SQLAlchemy models in `agent/chain/stock/models/database.py` define the ap
 - `continuous_limit_up`
 - `block_top`
 - `limit_up_pool`
+- `lower_limit_pool`
 - `eastmoney_zt_pool`
 - `risk_assessment`
 - `daily_market_review`
@@ -53,6 +54,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - `/dataapi/limit_up/continuous_limit_up` -> `continuous_limit_up`
   - `/dataapi/limit_up/block_top` -> `block_top`
   - `/dataapi/limit_up/limit_up_pool` -> `limit_up_pool`
+  - `/dataapi/limit_up/lower_limit_pool` -> `lower_limit_pool`
 - Eastmoney upstream endpoint:
   - `fetch_eastmoney_zt_pool` -> `eastmoney_zt_pool`
 
@@ -68,10 +70,11 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - `stock_list[0].first_limit_up_time` -> `avg_limit_up_time` fallback
 - `block_top_stock` stores every member from THS `block_top.stock_list`, keyed by `(date, block_code, code)`. It is the source for expanding `同花顺板块热度` stock lists in Feishu and should preserve analysis fields: first/last limit-up time, `continue_num`, `high`, `high_days`, `change_rate`, `latest`, `reason_type`, `reason_info`, `concept`, `market_id`, `market_type`, `is_new`, `is_st`, `change_tag`, and raw JSON.
 - `limit_up_pool` is the THS 涨停强度 table. It stores limit-up type, first/last limit-up time, `open_num` as open count (`null` means no open-count data), seal strength/amount, volume ratio, turnover rate, `currency_value` as circulating market value, `reason_type` as the concise reason label, `reason_info` as the detailed reason, and optional block name.
+- `lower_limit_pool` is the THS 跌停池 table, keyed by `(date, code)`. Store first/last limit-down time, change rate, turnover rate, circulating market value, market flags, `time_preview`, and raw JSON. A successful fetch with zero rows is a valid market fact; an upstream error must write `data_fetch_log.status='failed'`, never a zero-row success.
 - `eastmoney_zt_pool` is the Eastmoney 涨停池 table. Feishu uses its `block_name` as the industry/sector dimension and reports all grouped industries, not Top 10.
 - `fetch_all_data` must not save or advance stale holiday data. If the target date is a weekend, or THS payload timestamps prove the upstream returned a different trading date, return `skipped=True` with `skip_reason`; `save_all_data` writes `data_fetch_log.status='skipped'` for every data type and does not upsert stock rows.
 - Feishu report ownership:
-  - THS tables drive short-term structure: limit-up overview, 连板梯队, 核心连板, 一字板明细, 早盘强势, 分歧弱板, 涨停前高突破, 昨日高标反馈, 同花顺板块热度, and 热点板块交集. 东财只提供独立的行业涨停交叉视图。
+  - THS tables drive short-term structure: limit-up overview, limit-down overview and full 跌停池, 连板梯队, 核心连板, 一字板明细, 早盘强势, 分歧弱板, 涨停前高突破, 昨日高标反馈, 同花顺板块热度, and 热点板块交集. 东财只提供独立的行业涨停交叉视图。
   - Eastmoney drives the independent `东财行业涨停` section by grouping `eastmoney_zt_pool.block_name`.
   - Board/industry, early-strength, weak-board, and overlap sections are all-item summaries. 涨停前高突破 renders every qualifying stock, grouped into non-overlapping windows of `<=5`, `6-10`, `11-30`, and `31-60` trading days after the previous limit-up chain.
   - `同花顺板块热度` should keep the board summary and then render every stock available from `block_top_stock` for each THS board. Use compact labels with board count, not source labels: `板块：31 家涨停，涨幅 3.22%，股票A（3板）、股票B（1板）`. Do not match `block_top.block_name` against `limit_up_pool.block_name` to infer concept-board membership; those names are not a stable one-to-one contract.
@@ -183,8 +186,9 @@ Correct:
 - Trigger: changing the daily Codex review, shared Feishu material, persistence, CLI, or schedule.
 
 ### 2. Signatures
-- Required provider: `AI_PROVIDER=codex`; recommended `AI_FALLBACK_PROVIDER=none`.
-- Python client: `CodexSubscriptionClient.review(prompt) -> str` with no output schema.
+- Primary provider: `AI_PROVIDER=codex`; optional fallback: `AI_FALLBACK_PROVIDER=moonshot`.
+- Python clients: `CodexSubscriptionClient.review(prompt) -> str` and the OpenAI-compatible `MoonshotReviewClient.review(prompt) -> str`, both with no output schema.
+- Moonshot fallback uses `MOONSHOT_MODEL`, whose default is `kimi-k2.5`, and `MOONSHOT_CONTEXT_WINDOW=262144`. It uses the same source material and prompt as the Codex primary call, but must reserve `MOONSHOT_MAX_TOKENS` and fail clearly when its conservative input budget estimate exceeds the remaining context.
 - Agent: `DailyMarketReviewAgent.run(date, force=False) -> DailyMarketReviewResult`.
 - CLI: `python main.py assess-ai [date] [--force-ai]`; `assess` and `ai-analyze` are compatibility aliases.
 - DB: `daily_market_review` has one unique row per `date`, with `content`, `provider`, `model`, `strategy_path`, and `source_material_digest`.
@@ -193,7 +197,7 @@ Correct:
 - `Codex()` owns the local app-server connection and ChatGPT OAuth under the `/root/.codex` Docker volume. Python must not log OAuth tokens, browser cookies, or subscription Bearer headers.
 - Codex runs with `Sandbox.read_only`, `ApprovalMode.deny_all`, an ephemeral thread, and the Agent project root as `cwd`, so it can read the strategy Markdown included in the Docker image.
 - The program checks that the strategy path exists, reads its complete UTF-8 content, and includes it in the prompt. This avoids relying on Codex file-tool sandboxing inside Docker while preserving the SDK `read_only` sandbox and denied approvals.
-- `build_analysis_material` is the compact factual text contract shared by model input and Feishu. Codex additionally receives `build_codex_reason_material`, which deduplicates all same-day THS board and pool stocks while retaining every distinct `reason_type` and full `reason_info`. Neither material includes saved review text, scores, factors, or suggestions.
+  - `build_analysis_material` is the compact factual text contract shared by model input and Feishu. Codex additionally receives `build_codex_reason_material`, which deduplicates all same-day THS board and pool stocks while retaining every distinct `reason_type` and full `reason_info`, then lists every THS `limit_up_pool` row with its change, board type, first/last limit-up time, open count, and turnover rate. Neither material includes saved review text, scores, factors, or suggestions.
 - Codex returns concise free-form Markdown, not JSON. Persist the actual provider/model and render that saved metadata in Feishu.
 - Normal execution reuses the target-date row. `--force-ai` makes exactly one new Codex call and replaces that row.
 - Historical `risk_assessment` data is not dropped, but it is not part of the active daily review.
@@ -201,8 +205,9 @@ Correct:
 ### 4. Validation & Error Matrix
 - `AI_PROVIDER` is not `codex` -> CLI exits clearly and scheduler skips the review.
 - Strategy file missing -> fail before the model call with the full missing path.
-- Codex login/runtime unavailable, timeout, or subscription limit -> fail the review; do not synthesize scores or downgrade to the legacy Moonshot scorer.
-- Codex returns empty text -> fail without replacing a saved report.
+- Codex login/runtime unavailable, timeout, subscription limit, or empty text -> when `AI_FALLBACK_PROVIDER=moonshot` and `MOONSHOT_API_KEY` are configured, retry the exact same full prompt with Moonshot; otherwise fail without replacing a saved report. Never downgrade to the legacy Moonshot scorer.
+- Both Codex and Moonshot fallback fail -> raise one error containing both provider failures; do not save a partial review.
+- Moonshot prompt estimate exceeds `MOONSHOT_CONTEXT_WINDOW - MOONSHOT_MAX_TOKENS` -> fail before the HTTP request with the estimated input, available input, context window, and output reservation; never silently truncate material.
 - Codex default-model lookup fails after successful analysis -> keep the analysis and render `Model: default`.
 - Existing target-date `daily_market_review` -> reuse it unless `--force-ai` is present.
 

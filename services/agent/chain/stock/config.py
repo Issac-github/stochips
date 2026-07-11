@@ -59,7 +59,12 @@ class AIConfig:
     api_key: str = field(default_factory=lambda: os.getenv('MOONSHOT_API_KEY', ''))
 
     # 模型名称
-    model: str = field(default_factory=lambda: os.getenv('MOONSHOT_MODEL', 'moonshot-v1-8k'))
+    model: str = field(default_factory=lambda: os.getenv('MOONSHOT_MODEL', 'kimi-k2.5'))
+
+    # 模型上下文窗口，包含输入和输出 token。
+    moonshot_context_window: int = field(
+        default_factory=lambda: int(os.getenv('MOONSHOT_CONTEXT_WINDOW', '262144'))
+    )
 
     # API基础URL
     base_url: str = field(default_factory=lambda: os.getenv('MOONSHOT_BASE_URL', 'https://api.moonshot.cn/v1'))
