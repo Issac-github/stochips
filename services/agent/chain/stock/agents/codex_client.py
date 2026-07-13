@@ -1,7 +1,8 @@
 """Direct client for the official Python Codex SDK."""
 
+from contextlib import contextmanager
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 ANALYSIS_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -75,26 +76,27 @@ class CodexSubscriptionClient:
         prompt: str,
         output_schema: Optional[Dict[str, Any]] = None,
     ) -> str:
-        thread = self._codex.thread_start(
-            model=self.model,
-            cwd=self.working_directory,
-            ephemeral=True,
-            approval_mode=self._ApprovalMode.deny_all,
-            sandbox=self._Sandbox.read_only,
-        )
-        run_options: Dict[str, Any] = {
-            "cwd": self.working_directory,
-            "model": self.model,
-            "approval_mode": self._ApprovalMode.deny_all,
-            "sandbox": self._Sandbox.read_only,
-        }
-        if output_schema is not None:
-            run_options["output_schema"] = output_schema
-        result = thread.run(prompt, **run_options)
-        if not result.final_response:
-            raise RuntimeError("Codex 未返回分析结果")
-        self._resolve_default_model()
-        return result.final_response
+        with _codex_proxy_environment():
+            thread = self._codex.thread_start(
+                model=self.model,
+                cwd=self.working_directory,
+                ephemeral=True,
+                approval_mode=self._ApprovalMode.deny_all,
+                sandbox=self._Sandbox.read_only,
+            )
+            run_options: Dict[str, Any] = {
+                "cwd": self.working_directory,
+                "model": self.model,
+                "approval_mode": self._ApprovalMode.deny_all,
+                "sandbox": self._Sandbox.read_only,
+            }
+            if output_schema is not None:
+                run_options["output_schema"] = output_schema
+            result = thread.run(prompt, **run_options)
+            if not result.final_response:
+                raise RuntimeError("Codex 未返回分析结果")
+            self._resolve_default_model()
+            return result.final_response
 
     def _resolve_default_model(self) -> None:
         """Resolve the SDK-selected model for user-visible output metadata."""
@@ -115,9 +117,38 @@ def login_chatgpt_device_code() -> None:
     """Perform one device-code login and persist it in Codex's home directory."""
     from openai_codex import Codex
 
-    with Codex() as codex:
-        login = codex.login_chatgpt_device_code()
-        print(f"请打开: {login.verification_url}")
-        print(f"请输入设备码: {login.user_code}")
-        result = login.wait()
-        print(f"Codex 登录{'成功' if result.success else '失败'}")
+    with _codex_proxy_environment():
+        with Codex() as codex:
+            login = codex.login_chatgpt_device_code()
+            print(f"请打开: {login.verification_url}")
+            print(f"请输入设备码: {login.user_code}")
+            result = login.wait()
+            print(f"Codex 登录{'成功' if result.success else '失败'}")
+
+
+@contextmanager
+def _codex_proxy_environment() -> Iterator[None]:
+    """Apply CODEX_* proxy variables only while calling the Codex SDK."""
+    proxy_mapping = {
+        "CODEX_HTTP_PROXY": ("HTTP_PROXY", "http_proxy"),
+        "CODEX_HTTPS_PROXY": ("HTTPS_PROXY", "https_proxy"),
+        "CODEX_ALL_PROXY": ("ALL_PROXY", "all_proxy"),
+        "CODEX_NO_PROXY": ("NO_PROXY", "no_proxy"),
+    }
+    target_keys = [key for targets in proxy_mapping.values() for key in targets]
+    original = {key: os.environ.get(key) for key in target_keys}
+
+    try:
+        for source_key, target_keys_for_source in proxy_mapping.items():
+            value = os.getenv(source_key)
+            if not value:
+                continue
+            for target_key in target_keys_for_source:
+                os.environ[target_key] = value
+        yield
+    finally:
+        for key, value in original.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value

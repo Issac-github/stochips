@@ -210,6 +210,33 @@ PROXY_URL=http://127.0.0.1:7890 ./scripts/stochips-with-proxy.sh --login
 容器退出后代理环境变量随即消失，`--rebuild` 创建的常驻 `stock_agent` 容器也不会继承代理。
 Docker daemon 拉取基础镜像同样不使用这个临时代理。
 
+常驻 `stock_agent` 的定时 Codex 复盘需要运行期代理时，在 `.env` 显式设置 `CODEX_*_PROXY`。
+Compose 会把它们传给 `stock_agent` 和 `stock_rpc`，Python 只在调用 Codex SDK 时临时转换成
+标准代理环境变量；飞书、Moonshot 和数据抓取不会继承这组代理。
+
+如果服务器代理只监听宿主机 `127.0.0.1:7890`，Docker bridge 容器不能直接访问它。启用
+`codex_proxy_bridge` 可用 host 网络把宿主机 loopback 代理转发到容器可访问的桥端口：
+
+```bash
+CODEX_HOST_PROXY_HOST=127.0.0.1
+CODEX_HOST_PROXY_PORT=7890
+CODEX_PROXY_BRIDGE_BIND=0.0.0.0
+CODEX_PROXY_BRIDGE_PORT=7891
+CODEX_HTTP_PROXY=http://host.docker.internal:7891
+CODEX_HTTPS_PROXY=http://host.docker.internal:7891
+CODEX_ALL_PROXY=http://host.docker.internal:7891
+CODEX_NO_PROXY=localhost,127.0.0.1,host.docker.internal,mysql,stock_agent,stock_rpc,rag_agent
+```
+
+启动长期代理桥和常驻服务：
+
+```bash
+docker compose up -d codex_proxy_bridge stock_agent stock_rpc
+```
+
+`CODEX_PROXY_BRIDGE_BIND=0.0.0.0` 会在宿主机所有网卡监听桥端口；生产服务器应配合防火墙只允许本机
+Docker 网段访问，或改成明确的 Docker 网关地址。
+
 当前脚本不会自动从 `7892` 切换到 `7890`。如果隧道断开，请显式传入上述 `PROXY_URL=...7890`；
 自动探测并回退需要在脚本中额外实现，不能由 Docker 自身完成。
 
@@ -597,6 +624,10 @@ WHERE date = CURDATE();
 | `MOONSHOT_CONTEXT_WINDOW` | ❌ | Kimi 输入和输出共享的上下文窗口，默认 `262144`；调用前会预留输出并检查预算 |
 | `CODEX_MODEL` | ❌ | Codex 模型，留空使用账号默认模型 |
 | `CODEX_WORKING_DIRECTORY` | ❌ | 旧版单股分析配置；每日复盘固定使用 Agent 根目录 |
+| `CODEX_HTTP_PROXY` / `CODEX_HTTPS_PROXY` / `CODEX_ALL_PROXY` | ❌ | Codex SDK 专用运行期代理，只在复盘调用期间临时生效 |
+| `CODEX_NO_PROXY` | ❌ | Codex SDK 专用代理绕过列表，默认包含 MySQL 和本项目容器名 |
+| `CODEX_HOST_PROXY_HOST` / `CODEX_HOST_PROXY_PORT` | ❌ | `codex_proxy_bridge` 连接的宿主机代理地址，默认 `127.0.0.1:7890` |
+| `CODEX_PROXY_BRIDGE_BIND` / `CODEX_PROXY_BRIDGE_PORT` | ❌ | `codex_proxy_bridge` 暴露给 Docker 容器访问的监听地址，默认 `0.0.0.0:7891` |
 | `LOG_LEVEL`        | ❌   | 日志级别(DEBUG/INFO/WARNING) |
 | `TZ`               | ❌   | 时区(默认Asia/Shanghai)      |
 
