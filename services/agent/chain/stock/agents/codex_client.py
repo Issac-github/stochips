@@ -1,8 +1,12 @@
 """Direct client for the official Python Codex SDK."""
 
 from contextlib import contextmanager
+import logging
 import os
 from typing import Any, Dict, Iterator, List, Optional
+
+
+logger = logging.getLogger(__name__)
 
 ANALYSIS_SCHEMA: Dict[str, Any] = {
     "type": "object",
@@ -48,17 +52,18 @@ class CodexSubscriptionClient:
         from openai_codex import ApprovalMode, Codex, Sandbox
 
         self._ApprovalMode = ApprovalMode
+        self._Codex = Codex
         self._Sandbox = Sandbox
         self.model = model or os.getenv("CODEX_MODEL") or None
         self.resolved_model = self.model or ""
         self.working_directory = working_directory or os.getenv(
             "CODEX_WORKING_DIRECTORY", "/tmp"
         )
-        self._codex = Codex()
+        self._codex = None
 
     @property
     def is_available(self) -> bool:
-        return self._codex is not None
+        return self._Codex is not None
 
     def analyze(self, messages: List[Dict[str, str]]) -> str:
         prompt = "\n\n".join(
@@ -77,7 +82,8 @@ class CodexSubscriptionClient:
         output_schema: Optional[Dict[str, Any]] = None,
     ) -> str:
         with _codex_proxy_environment():
-            thread = self._codex.thread_start(
+            codex = self._get_codex()
+            thread = codex.thread_start(
                 model=self.model,
                 cwd=self.working_directory,
                 ephemeral=True,
@@ -98,6 +104,12 @@ class CodexSubscriptionClient:
             self._resolve_default_model()
             return result.final_response
 
+    def _get_codex(self) -> Any:
+        """Start the app-server after its scoped proxy environment is installed."""
+        if self._codex is None:
+            self._codex = self._Codex()
+        return self._codex
+
     def _resolve_default_model(self) -> None:
         """Resolve the SDK-selected model for user-visible output metadata."""
         if self.resolved_model:
@@ -110,7 +122,9 @@ class CodexSubscriptionClient:
             self.resolved_model = "default"
 
     def close(self) -> None:
-        self._codex.close()
+        if self._codex is not None:
+            self._codex.close()
+            self._codex = None
 
 
 def login_chatgpt_device_code() -> None:
@@ -129,18 +143,37 @@ def login_chatgpt_device_code() -> None:
 @contextmanager
 def _codex_proxy_environment() -> Iterator[None]:
     """Apply CODEX_* proxy variables only while calling the Codex SDK."""
+    https_proxy = os.getenv("CODEX_HTTPS_PROXY")
+    http_proxy = os.getenv("CODEX_HTTP_PROXY")
+    configured_all_proxy = os.getenv("CODEX_ALL_PROXY")
+    # Codex traffic is HTTPS. Keep ALL_PROXY aligned with the HTTPS bridge because
+    # some SDK transports prefer ALL_PROXY over protocol-specific proxy variables.
+    effective_all_proxy = https_proxy or http_proxy or configured_all_proxy
+    if (
+        configured_all_proxy
+        and effective_all_proxy
+        and configured_all_proxy != effective_all_proxy
+    ):
+        logger.warning(
+            "CODEX_ALL_PROXY与HTTPS/HTTP代理不一致，Codex将使用协议代理: %s",
+            effective_all_proxy,
+        )
+
     proxy_mapping = {
-        "CODEX_HTTP_PROXY": ("HTTP_PROXY", "http_proxy"),
-        "CODEX_HTTPS_PROXY": ("HTTPS_PROXY", "https_proxy"),
-        "CODEX_ALL_PROXY": ("ALL_PROXY", "all_proxy"),
-        "CODEX_NO_PROXY": ("NO_PROXY", "no_proxy"),
+        "HTTP_PROXY": (http_proxy, ("HTTP_PROXY", "http_proxy")),
+        "HTTPS_PROXY": (https_proxy, ("HTTPS_PROXY", "https_proxy")),
+        "ALL_PROXY": (effective_all_proxy, ("ALL_PROXY", "all_proxy")),
+        "NO_PROXY": (os.getenv("CODEX_NO_PROXY"), ("NO_PROXY", "no_proxy")),
     }
-    target_keys = [key for targets in proxy_mapping.values() for key in targets]
+    target_keys = [
+        key
+        for _, targets in proxy_mapping.values()
+        for key in targets
+    ]
     original = {key: os.environ.get(key) for key in target_keys}
 
     try:
-        for source_key, target_keys_for_source in proxy_mapping.items():
-            value = os.getenv(source_key)
+        for value, target_keys_for_source in proxy_mapping.values():
             if not value:
                 continue
             for target_key in target_keys_for_source:

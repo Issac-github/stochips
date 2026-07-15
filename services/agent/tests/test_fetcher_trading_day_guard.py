@@ -107,7 +107,7 @@ def test_limit_up_pool_uses_configured_page_delay():
     assert result == [{"code": "1"}, {"code": "2"}]
 
 
-def test_limit_up_pool_requests_ths_time_and_reason_fields():
+def test_limit_up_pool_requests_ths_type_field_without_narrowing_filter():
     fetcher = StockDataFetcher.__new__(StockDataFetcher)
     captured = {}
 
@@ -124,12 +124,11 @@ def test_limit_up_pool_requests_ths_time_and_reason_fields():
     result = asyncio.run(fetcher.fetch_limit_up_pool_page(target_date="20260710"))
 
     assert result == {"data": [], "has_more": False}
-    assert "first_limit_up_time" in captured["field"]
-    assert "last_limit_up_time" in captured["field"]
-    assert "open_num" in captured["field"]
-    assert "currency_value" in captured["field"]
-    assert "reason_type" in captured["field"]
-    assert "reason_info" in captured["field"]
+    assert captured["field"] == (
+        "199112,10,9001,330323,330324,330325,9002,330329,133971,133970,"
+        "1968584,3475914,9003,9004"
+    )
+    assert captured["filter"] == "HS,GEM2STAR,ST,NEW"
 
 
 def test_lower_limit_pool_requests_documented_ths_fields():

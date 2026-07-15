@@ -59,6 +59,13 @@ Do not introduce untracked configuration keys without updating `.env.example`, R
 - `CODEX_HTTP_PROXY`: optional HTTP proxy URL for Codex SDK calls.
 - `CODEX_HTTPS_PROXY`: optional HTTPS proxy URL for Codex SDK calls.
 - `CODEX_ALL_PROXY`: optional all-protocol proxy URL for Codex SDK calls.
+- When `CODEX_HTTPS_PROXY` or `CODEX_HTTP_PROXY` is set, the Codex client uses that
+  protocol proxy as its effective `ALL_PROXY` value. This prevents a stale
+  `CODEX_ALL_PROXY=http://127.0.0.1:...` from redirecting container traffic away
+  from the configured host bridge.
+- Create the Codex app-server inside that scoped proxy environment. Applying proxy
+  variables only around `thread.run()` is too late because its child process may
+  capture the environment during `Codex()` construction.
 - `CODEX_NO_PROXY`: optional no-proxy host list for Codex SDK calls; defaults include `host.docker.internal`, MySQL, and local service names.
 - `CODEX_HOST_PROXY_HOST`: host-side proxy address for `codex_proxy_bridge`; defaults to `127.0.0.1`.
 - `CODEX_HOST_PROXY_PORT`: host-side proxy port for `codex_proxy_bridge`; defaults to `7890`.

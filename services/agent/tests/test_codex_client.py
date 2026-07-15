@@ -74,3 +74,52 @@ def test_codex_proxy_environment_is_scoped(monkeypatch):
     assert os.environ.get("HTTPS_PROXY") is None
     assert os.environ.get("ALL_PROXY") is None
     assert os.environ.get("NO_PROXY") is None
+
+
+def test_codex_https_proxy_overrides_mismatched_all_proxy(monkeypatch, caplog):
+    monkeypatch.setenv("CODEX_HTTP_PROXY", "http://bridge.test:7891")
+    monkeypatch.setenv("CODEX_HTTPS_PROXY", "http://bridge.test:7891")
+    monkeypatch.setenv("CODEX_ALL_PROXY", "http://127.0.0.1:7890")
+
+    thread = FakeThread()
+    client = CodexSubscriptionClient.__new__(CodexSubscriptionClient)
+    client._ApprovalMode = SimpleNamespace(deny_all="deny_all")
+    client._Sandbox = SimpleNamespace(read_only="read_only")
+    client.model = None
+    client.resolved_model = ""
+    client.working_directory = "/app"
+    client._codex = FakeCodex(thread)
+
+    with caplog.at_level("WARNING"):
+        client.review("prompt")
+
+    assert thread.env_during_run["HTTPS_PROXY"] == "http://bridge.test:7891"
+    assert thread.env_during_run["ALL_PROXY"] == "http://bridge.test:7891"
+    assert "CODEX_ALL_PROXY与HTTPS/HTTP代理不一致" in caplog.text
+
+
+def test_codex_starts_app_server_inside_scoped_proxy_environment(monkeypatch):
+    monkeypatch.setenv("CODEX_HTTPS_PROXY", "http://bridge.test:7891")
+    captured_environment = {}
+    thread = FakeThread()
+
+    def create_codex():
+        captured_environment.update(
+            {key: os.environ.get(key) for key in ("HTTPS_PROXY", "ALL_PROXY")}
+        )
+        return FakeCodex(thread)
+
+    client = CodexSubscriptionClient.__new__(CodexSubscriptionClient)
+    client._ApprovalMode = SimpleNamespace(deny_all="deny_all")
+    client._Codex = create_codex
+    client._Sandbox = SimpleNamespace(read_only="read_only")
+    client.model = None
+    client.resolved_model = ""
+    client.working_directory = "/app"
+    client._codex = None
+
+    assert client.review("prompt") == "Codex response"
+    assert captured_environment == {
+        "HTTPS_PROXY": "http://bridge.test:7891",
+        "ALL_PROXY": "http://bridge.test:7891",
+    }

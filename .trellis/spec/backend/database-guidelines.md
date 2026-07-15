@@ -82,10 +82,11 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - Prefer THS `stock_list[].high` as the Feishu stock label when available, e.g. `华天科技（3天2板）`; fall back to `continue_num` as `N板`.
   - If historical `block_top` rows have no `block_top_stock` details yet, Feishu should render the count/change/leader summary without source labels. Do not present `leading_stock_name` alone as if it were the full stock list.
   - `东财行业涨停` should render all grouped industries and all limit-up stocks within each industry. Use compact stock labels with board count, not codes or `前三`: `行业：股票A（3板）、股票B（1板）`.
+  - Card presentation uses a scan-first Markdown summary followed by native Card 2.0 tables for THS board heat, continuous ladders, Eastmoney industries, and the lower-limit pool. Tables contain every available row and show at most 10 rows per page; they do not change the underlying facts.
   - `核心连板` should group by `continuous_days` rather than render one line per stock, e.g. `5板：国华退(000004)、*ST东智(002175)`.
   - `block_top_stock.limit_up_type` values such as `3天2板` are phase-height labels, not `continuous_days`. Codex may discuss them separately, but must not place them in continuous-board ladders or call them consecutive 2-board stocks.
 - Daily review ownership:
-  - `FeishuStockNotifier.build_analysis_material` renders the factual material shared by Codex input and the Feishu card.
+  - `FeishuStockNotifier.build_analysis_material` renders the complete factual material for Codex input. `build_card` has a separate condensed presentation layer so card tables do not truncate or alter Codex facts.
   - `FeishuStockNotifier.build_codex_reason_material` adds analysis-only THS stock reasons without expanding the Feishu card: `reason_type` is the concise reason label and `reason_info` is the complete detailed reason. Preserve both and do not shorten `reason_info` before Codex receives it.
   - Include reason fields from both `block_top_stock` and all same-day `limit_up_pool` rows. `早盘强势` sorts THS `first_limit_up_time`; `分歧弱板` first uses THS `open_count`, then may render an explicitly labeled inferred sample when THS first/last limit-up times show a later final seal.
   - Codex also receives a previous-trading-day comparison: prior overview, structure, core continuous stocks, all hot boards, all same-name board count changes versus today, plus the complete prior-day factual and reason material. Do not treat yesterday's facts as today's facts.
@@ -128,6 +129,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - `同花顺板块热度` and `东财行业涨停` are separate sections
   - board/industry section titles do not say Top 10
   - `同花顺板块热度` rows do not include source labels such as `风口接口` or `涨停池聚合`, and render every `block_top_stock` member as `名字（几板）`
+  - Card 2.0 tables keep the full source row list while setting `page_size` to at most 10, and the Markdown summary plus persisted review metadata remain present.
   - `同花顺板块热度` fallback rows summarize count/change/leader instead of showing a one-stock fake list
   - Eastmoney industry rows do not include `前三` or `N 只涨停`, and render every stock as `名字（几板）`
   - 核心连板 groups stocks by board count instead of repeating per-stock risk text

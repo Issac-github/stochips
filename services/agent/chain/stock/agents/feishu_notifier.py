@@ -8,7 +8,9 @@ import hmac
 import logging
 import os
 import random
+import re
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -40,6 +42,7 @@ FEISHU_SEND_RETRY_DELAYS = (20, 60)
 FEISHU_SEND_JITTER_MIN = 5.0
 FEISHU_SEND_JITTER_MAX = 20.0
 SHANGHAI_TIMEZONE = timezone(timedelta(hours=8))
+CARD_TABLE_PAGE_SIZE = 10
 
 
 def next_feishu_send_at(
@@ -108,6 +111,15 @@ class StockSummary:
     limit_up_time: str
     block_name: str
     reason: str
+    turnover_rate: Optional[float] = None
+
+
+@dataclass
+class LeaderAssistSummary:
+    leader: StockSummary
+    stock: StockSummary
+    shared_reason_tags: List[str] = field(default_factory=list)
+    shared_blocks: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -205,6 +217,7 @@ class FeishuStockReport:
     lower_limit_stocks: List[LowerLimitSummary]
     daily_review: Optional[DailyReviewSummary] = None
     one_word_stocks: List[StockSummary] = field(default_factory=list)
+    leader_assists: List[LeaderAssistSummary] = field(default_factory=list)
     previous_high_feedback: List[PreviousHighBoardSummary] = field(
         default_factory=list
     )
@@ -361,6 +374,14 @@ class FeishuStockNotifier:
                 session, target_date
             )
 
+            pool_rows = (
+                session.query(LimitUpPool)
+                .filter(LimitUpPool.date == target_date)
+                .order_by(LimitUpPool.code.asc())
+                .all()
+            )
+            pool_by_code = {item.code: item for item in pool_rows}
+
             top_stocks = []
             continuous_rows = (
                 session.query(ContinuousLimitUp)
@@ -373,14 +394,7 @@ class FeishuStockNotifier:
                 .all()
             )
             for item in continuous_rows:
-                pool = (
-                    session.query(LimitUpPool)
-                    .filter(
-                        LimitUpPool.date == target_date,
-                        LimitUpPool.code == item.code,
-                    )
-                    .one_or_none()
-                )
+                pool = pool_by_code.get(item.code)
                 top_stocks.append(
                     StockSummary(
                         code=item.code,
@@ -396,6 +410,9 @@ class FeishuStockNotifier:
                             (pool.concept if pool else "") or item.concept or "",
                             28,
                         ),
+                        turnover_rate=self._to_float(
+                            pool.turnover_rate if pool else None
+                        ),
                     )
                 )
 
@@ -406,6 +423,12 @@ class FeishuStockNotifier:
                 session, target_date
             )
             one_word_stocks = self._build_one_word_stocks(session, target_date)
+            leader_assists = self._build_leader_assists(
+                session,
+                target_date,
+                top_stocks,
+                pool_rows,
+            )
             board_overlaps = self._build_board_overlaps(
                 session, target_date, top_blocks
             )
@@ -439,12 +462,6 @@ class FeishuStockNotifier:
                     "同花顺涨停池缺少最后涨停时间且未识别开板次数，"
                     "分歧弱板无法判断"
                 )
-            pool_rows = (
-                session.query(LimitUpPool)
-                .filter(LimitUpPool.date == target_date)
-                .order_by(LimitUpPool.code.asc())
-                .all()
-            )
             pool_stock_reasons = [
                 BlockStockReasonSummary(
                     code=item.code,
@@ -516,6 +533,7 @@ class FeishuStockNotifier:
                 lower_limit_stocks=lower_limit_stocks,
                 daily_review=daily_review,
                 one_word_stocks=one_word_stocks,
+                leader_assists=leader_assists,
                 previous_high_feedback=previous_high_feedback,
                 pool_stock_reasons=pool_stock_reasons,
                 limit_up_pool_metrics=limit_up_pool_metrics,
@@ -526,8 +544,11 @@ class FeishuStockNotifier:
 
     def build_card(self, report: FeishuStockReport) -> Dict[str, Any]:
         """Build a Feishu Card 2.0 payload body."""
-        material = self.build_analysis_material(report)
-        review_parts = ["", "", "**市场复盘**"]
+        elements = [{"tag": "markdown", "content": self._build_card_summary(report)}]
+        elements.extend(self._build_card_charts(report))
+        elements.extend(self._build_card_tables(report))
+
+        review_parts = ["**市场复盘**"]
         if report.daily_review:
             review_parts.extend(
                 [
@@ -543,7 +564,7 @@ class FeishuStockNotifier:
         else:
             review_parts.append("- 尚未生成当日市场复盘")
 
-        content = "\n".join([material, *review_parts])
+        elements.append({"tag": "markdown", "content": "\n".join(review_parts)})
         date_text = report.target_date.strftime("%Y-%m-%d")
 
         return {
@@ -556,13 +577,259 @@ class FeishuStockNotifier:
                 "template": "green" if report.is_complete else "yellow",
             },
             "body": {
-                "elements": [
-                    {
-                        "tag": "markdown",
-                        "content": content,
-                    }
-                ]
+                "elements": elements
             },
+        }
+
+    def _build_card_summary(self, report: FeishuStockReport) -> str:
+        """Render the scan-first summary shown before the detailed tables."""
+        status_text = "基础完整" if report.is_complete else "不完整"
+        if report.is_complete and report.data_warnings:
+            status_text += "（部分分析字段缺失）"
+        continuous_text = self._format_continuous_distribution(
+            report.continuous_distribution
+        )
+        limit_type_text = self._format_named_distribution(
+            report.limit_up_type_distribution
+        )
+        lines = [
+            f"**数据状态**：{status_text}",
+            (
+                f"**涨停概览**：同花顺 {report.hr_limit_up_count} 只，"
+                f"东财 {report.em_limit_up_count} 只，"
+                f"连板 {report.continuous_count} 只，"
+                f"最高 {report.max_continuous_days} 板"
+            ),
+            f"**涨停结构**：{limit_type_text}；连板梯队：{continuous_text}",
+            f"**跌停概览**：同花顺 {report.lower_limit_count} 只",
+        ]
+        if report.data_warnings:
+            lines.extend(["", self._format_warnings(report.data_warnings)])
+        return "\n".join(lines)
+
+    def _build_card_charts(self, report: FeishuStockReport) -> List[Dict[str, Any]]:
+        """Render compact charts for distributions; tables retain stock-level detail."""
+        charts: List[Dict[str, Any]] = []
+        if report.limit_up_type_distribution:
+            charts.append(
+                self._build_bar_chart(
+                    "limit_up_structure",
+                    "涨停结构",
+                    [
+                        {"name": name, "value": count}
+                        for name, count in report.limit_up_type_distribution.items()
+                    ],
+                )
+            )
+        if report.continuous_distribution:
+            charts.append(
+                self._build_bar_chart(
+                    "continuous_ladder",
+                    "连板梯队",
+                    [
+                        {"name": f"{days}板", "value": count}
+                        for days, count in sorted(report.continuous_distribution.items())
+                    ],
+                )
+            )
+        if report.top_blocks:
+            charts.append(
+                self._build_bar_chart(
+                    "hot_blocks_chart",
+                    "热门板块 Top 8",
+                    [
+                        {"name": item.block_name, "value": item.stock_count}
+                        for item in report.top_blocks[:8]
+                    ],
+                    horizontal=True,
+                    height="260px",
+                )
+            )
+        if report.eastmoney_industries:
+            charts.append(
+                self._build_bar_chart(
+                    "eastmoney_industry",
+                    "东财行业涨停 Top 8",
+                    [
+                        {"name": item.industry_name, "value": item.stock_count}
+                        for item in report.eastmoney_industries[:8]
+                    ],
+                    horizontal=True,
+                    height="260px",
+                )
+            )
+        return charts
+
+    @staticmethod
+    def _build_bar_chart(
+        element_id: str,
+        title: str,
+        values: List[Dict[str, Any]],
+        *,
+        horizontal: bool = False,
+        height: str = "200px",
+    ) -> Dict[str, Any]:
+        chart_spec: Dict[str, Any] = {
+            "type": "bar",
+            "title": {"text": title},
+            "data": {"values": values},
+            "label": {"visible": True},
+        }
+        if horizontal:
+            chart_spec.update(
+                {"direction": "horizontal", "xField": "value", "yField": "name"}
+            )
+        else:
+            chart_spec.update({"xField": "name", "yField": "value"})
+        return {
+            "tag": "chart",
+            "element_id": element_id,
+            "height": height,
+            "color_theme": "brand",
+            "preview": True,
+            "chart_spec": chart_spec,
+        }
+
+    def _build_card_tables(self, report: FeishuStockReport) -> List[Dict[str, Any]]:
+        """Render compact structured data without changing the Codex material."""
+        elements: List[Dict[str, Any]] = []
+        tables = [
+            (
+                "热门板块",
+                "hot_blocks",
+                [
+                    ("block", "板块", "text"),
+                    ("count", "涨停", "number"),
+                    ("leader", "龙头", "text"),
+                    ("change", "涨幅", "text"),
+                ],
+                [
+                    {
+                        "block": item.block_name,
+                        "count": item.stock_count,
+                        "leader": item.leading_stock_name or "-",
+                        "change": (
+                            f"{item.change_percent:.2f}%"
+                            if item.change_percent is not None
+                            else "-"
+                        ),
+                    }
+                    for item in report.top_blocks
+                ],
+                {"block": "140px", "count": "80px", "change": "90px"},
+            ),
+            (
+                "连板天梯",
+                "continuous_ladder",
+                [
+                    ("days", "高度", "text"),
+                    ("stock", "股票", "text"),
+                    ("turnover", "换手", "text"),
+                    ("time", "首封", "text"),
+                ],
+                [
+                    {
+                        "days": f"{item.continuous_days}板",
+                        "stock": f"{item.name}({item.code})",
+                        "turnover": self._format_percent(item.turnover_rate),
+                        "time": item.limit_up_time or "-",
+                    }
+                    for item in report.top_stocks
+                ],
+                {"days": "80px", "turnover": "90px", "time": "80px"},
+            ),
+            (
+                "东财行业涨停",
+                "eastmoney_industries",
+                [
+                    ("industry", "行业", "text"),
+                    ("count", "涨停", "number"),
+                    ("leaders", "代表个股", "text"),
+                ],
+                [
+                    {
+                        "industry": item.industry_name,
+                        "count": item.stock_count,
+                        "leaders": "、".join(item.leaders) or "-",
+                    }
+                    for item in report.eastmoney_industries
+                ],
+                {"industry": "130px", "count": "80px"},
+            ),
+            (
+                "跌停池",
+                "lower_limit_pool",
+                [
+                    ("stock", "股票", "text"),
+                    ("change", "跌幅", "text"),
+                    ("time", "首次", "text"),
+                    ("status", "状态", "text"),
+                ],
+                [
+                    {
+                        "stock": f"{item.name}({item.code})",
+                        "change": (
+                            f"{item.change_percent:.2f}%"
+                            if item.change_percent is not None
+                            else "-"
+                        ),
+                        "time": item.first_limit_down_time or "-",
+                        "status": "再次跌停" if item.is_again_limit else "封死",
+                    }
+                    for item in report.lower_limit_stocks
+                ],
+                {"change": "90px", "time": "80px", "status": "90px"},
+            ),
+        ]
+        for table in tables:
+            title, element_id, columns, rows, *options = table
+            if not rows:
+                continue
+            column_widths = options[0] if options else None
+            elements.extend(
+                [
+                    {"tag": "markdown", "content": f"**{title}**"},
+                    self._build_table(
+                        element_id,
+                        columns,
+                        rows,
+                        column_widths=column_widths,
+                    ),
+                ]
+            )
+        return elements
+
+    @staticmethod
+    def _build_table(
+        element_id: str,
+        columns: List[tuple[str, str, str]],
+        rows: List[Dict[str, Any]],
+        *,
+        column_widths: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "tag": "table",
+            "element_id": element_id,
+            "page_size": min(len(rows), CARD_TABLE_PAGE_SIZE),
+            "row_height": "low",
+            "freeze_first_column": True,
+            "header_style": {
+                "text_align": "left",
+                "text_color": "grey",
+                "background_style": "none",
+                "bold": True,
+                "lines": 1,
+            },
+            "columns": [
+                {
+                    "name": name,
+                    "display_name": display_name,
+                    "data_type": data_type,
+                    "width": (column_widths or {}).get(name, "auto"),
+                }
+                for name, display_name, data_type in columns
+            ],
+            "rows": rows,
         }
 
     def build_analysis_material(self, report: FeishuStockReport) -> str:
@@ -594,6 +861,7 @@ class FeishuStockNotifier:
             report.one_word_stocks,
             empty_message="暂无一字板明细",
         )
+        assist_lines = self._format_leader_assists(report.leader_assists)
         previous_high_lines = self._format_previous_high_feedback(
             report.previous_high_feedback
         )
@@ -625,6 +893,9 @@ class FeishuStockNotifier:
                 "",
                 "**核心连板**",
                 stock_lines,
+                "",
+                "**龙头助攻明细（同属性或同板块、先于龙头涨停且板数更低）**",
+                assist_lines,
                 "",
                 "**昨日高标反馈（收盘涨停口径）**",
                 previous_high_lines,
@@ -1328,6 +1599,108 @@ class FeishuStockNotifier:
             for item in rows
         ]
 
+    def _build_leader_assists(
+        self,
+        session: Session,
+        target_date: date,
+        leaders: List[StockSummary],
+        pool_rows: List[LimitUpPool],
+    ) -> List[LeaderAssistSummary]:
+        """Find factual assists using same-day board/reason and seal-time evidence."""
+        continuous_days_by_code = {
+            item.code: item.continuous_days or 1
+            for item in session.query(ContinuousLimitUp)
+            .filter(ContinuousLimitUp.date == target_date)
+            .all()
+        }
+        board_names_by_stock: Dict[str, set[str]] = defaultdict(set)
+        for item in (
+            session.query(BlockTopStock)
+            .filter(BlockTopStock.date == target_date)
+            .all()
+        ):
+            if item.code and item.block_name:
+                board_names_by_stock[item.code].add(item.block_name)
+
+        pool_by_code = {item.code: item for item in pool_rows}
+        assists: List[LeaderAssistSummary] = []
+        for leader in leaders:
+            if leader.continuous_days <= 1:
+                continue
+            leader_pool = pool_by_code.get(leader.code)
+            leader_time = self._normalize_limit_up_time(
+                leader_pool.limit_up_time if leader_pool else leader.limit_up_time
+            )
+            if not leader_time:
+                continue
+            leader_reason_tags = self._reason_tags(
+                (leader_pool.concept if leader_pool else "")
+                or (leader_pool.reason if leader_pool else "")
+                or leader.reason
+            )
+            leader_boards = set(board_names_by_stock.get(leader.code, set()))
+            if leader_pool and leader_pool.block_name:
+                leader_boards.add(leader_pool.block_name)
+
+            leader_assists = []
+            for candidate in pool_rows:
+                if candidate.code == leader.code:
+                    continue
+                candidate_days = continuous_days_by_code.get(candidate.code, 1)
+                candidate_time = self._normalize_limit_up_time(candidate.limit_up_time)
+                if (
+                    candidate_days >= leader.continuous_days
+                    or not candidate_time
+                    or candidate_time >= leader_time
+                ):
+                    continue
+
+                candidate_reason_tags = self._reason_tags(
+                    candidate.concept or candidate.reason or ""
+                )
+                shared_reason_tags = sorted(
+                    leader_reason_tags & candidate_reason_tags
+                )
+                candidate_boards = set(
+                    board_names_by_stock.get(candidate.code, set())
+                )
+                if candidate.block_name:
+                    candidate_boards.add(candidate.block_name)
+                shared_blocks = sorted(leader_boards & candidate_boards)
+                if not shared_reason_tags and not shared_blocks:
+                    continue
+
+                leader_assists.append(
+                    LeaderAssistSummary(
+                        leader=leader,
+                        stock=StockSummary(
+                            code=candidate.code,
+                            name=candidate.name,
+                            continuous_days=candidate_days,
+                            limit_up_time=candidate_time,
+                            block_name=candidate.block_name or "",
+                            reason=self._shorten(
+                                candidate.concept or candidate.reason or "", 28
+                            ),
+                            turnover_rate=self._to_float(candidate.turnover_rate),
+                        ),
+                        shared_reason_tags=shared_reason_tags,
+                        shared_blocks=shared_blocks,
+                    )
+                )
+            assists.extend(
+                sorted(
+                    leader_assists,
+                    key=lambda item: (
+                        item.stock.limit_up_time,
+                        item.stock.continuous_days,
+                        item.stock.code,
+                    ),
+                )
+            )
+
+        return assists
+
     def _build_lower_limit_stocks(
         self, session: Session, target_date: date
     ) -> List[LowerLimitSummary]:
@@ -1711,6 +2084,56 @@ class FeishuStockNotifier:
             )
             lines.append(f"{index}. {days}板：{labels}")
         return "\n".join(lines)
+
+    def _format_leader_assists(self, assists: List[LeaderAssistSummary]) -> str:
+        if not assists:
+            return "- 暂无可由当日板块/原因标签和首次涨停时间核验的助攻"
+
+        grouped: Dict[str, List[LeaderAssistSummary]] = defaultdict(list)
+        leaders: Dict[str, StockSummary] = {}
+        for item in assists:
+            grouped[item.leader.code].append(item)
+            leaders[item.leader.code] = item.leader
+
+        lines = []
+        for index, leader_code in enumerate(
+            sorted(
+                grouped,
+                key=lambda code: (
+                    -leaders[code].continuous_days,
+                    leaders[code].limit_up_time,
+                    code,
+                ),
+            ),
+            1,
+        ):
+            leader = leaders[leader_code]
+            candidates = []
+            for item in grouped[leader_code]:
+                basis = []
+                if item.shared_reason_tags:
+                    basis.append("同属性 " + "、".join(item.shared_reason_tags))
+                if item.shared_blocks:
+                    basis.append("同板块 " + "、".join(item.shared_blocks))
+                candidates.append(
+                    f"{item.stock.name}({item.stock.code})"
+                    f" {item.stock.continuous_days}板 {item.stock.limit_up_time}"
+                    f"（{'；'.join(basis)}）"
+                )
+            lines.append(
+                f"{index}. 龙头 {leader.name}({leader.code})："
+                f"{leader.continuous_days}板 {leader.limit_up_time}\n"
+                f"   助攻：{'；'.join(candidates)}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _reason_tags(value: str) -> set[str]:
+        return {
+            tag.strip()
+            for tag in re.split(r"[+＋,，、/／;；|｜\\s]+", value or "")
+            if tag.strip()
+        }
 
     def _format_stocks(
         self,
