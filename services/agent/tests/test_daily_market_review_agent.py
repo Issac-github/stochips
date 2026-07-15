@@ -271,7 +271,6 @@ def test_moonshot_fallback_rejects_prompt_beyond_context_budget():
         api_key="test-key",
         model="kimi-k2.5",
         base_url="https://example.test/v1",
-        temperature=0.3,
         max_tokens=20,
         context_window=100,
         timeout=60,
@@ -280,6 +279,33 @@ def test_moonshot_fallback_rejects_prompt_beyond_context_budget():
 
     with pytest.raises(RuntimeError, match="Moonshot上下文预算不足"):
         client.ensure_prompt_fits("复盘材料" * 100)
+
+
+def test_moonshot_fallback_always_uses_kimi_required_temperature():
+    calls = []
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="备用复盘"))]
+            )
+
+    client = MoonshotReviewClient(
+        api_key="test-key",
+        model="kimi-k2.5",
+        base_url="https://example.test/v1",
+        max_tokens=20,
+        context_window=100,
+        timeout=60,
+        max_retries=0,
+    )
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=FakeCompletions())
+    )
+
+    assert client.review("复盘材料") == "备用复盘"
+    assert calls[0]["temperature"] == 1
 
 
 def test_empty_strategy_file_fails_before_starting_codex(tmp_path, monkeypatch):

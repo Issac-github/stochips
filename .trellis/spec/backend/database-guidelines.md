@@ -189,6 +189,7 @@ Correct:
 - Primary provider: `AI_PROVIDER=codex`; optional fallback: `AI_FALLBACK_PROVIDER=moonshot`.
 - Python clients: `CodexSubscriptionClient.review(prompt) -> str` and the OpenAI-compatible `MoonshotReviewClient.review(prompt) -> str`, both with no output schema.
 - Moonshot fallback uses `MOONSHOT_MODEL`, whose default is `kimi-k2.5`, and `MOONSHOT_CONTEXT_WINDOW=262144`. It uses the same source material and prompt as the Codex primary call, but must reserve `MOONSHOT_MAX_TOKENS` and fail clearly when its conservative input budget estimate exceeds the remaining context.
+- The Kimi daily-review fallback always sends `temperature=1`; it must not inherit `MOONSHOT_TEMPERATURE`, which remains a legacy-analysis setting. Kimi K2.5 rejects any other temperature.
 - Agent: `DailyMarketReviewAgent.run(date, force=False) -> DailyMarketReviewResult`.
 - CLI: `python main.py assess-ai [date] [--force-ai]`; `assess` and `ai-analyze` are compatibility aliases.
 - DB: `daily_market_review` has one unique row per `date`, with `content`, `provider`, `model`, `strategy_path`, and `source_material_digest`.
@@ -208,6 +209,7 @@ Correct:
 - Codex login/runtime unavailable, timeout, subscription limit, or empty text -> when `AI_FALLBACK_PROVIDER=moonshot` and `MOONSHOT_API_KEY` are configured, retry the exact same full prompt with Moonshot; otherwise fail without replacing a saved report. Never downgrade to the legacy Moonshot scorer.
 - Both Codex and Moonshot fallback fail -> raise one error containing both provider failures; do not save a partial review.
 - Moonshot prompt estimate exceeds `MOONSHOT_CONTEXT_WINDOW - MOONSHOT_MAX_TOKENS` -> fail before the HTTP request with the estimated input, available input, context window, and output reservation; never silently truncate material.
+- Moonshot fallback request -> send `temperature=1`; do not send the configurable legacy `MOONSHOT_TEMPERATURE` value.
 - Codex default-model lookup fails after successful analysis -> keep the analysis and render `Model: default`.
 - Existing target-date `daily_market_review` -> reuse it unless `--force-ai` is present.
 
@@ -220,6 +222,7 @@ Correct:
 
 ### 6. Tests Required
 - Use a fake Codex client to assert strategy-path instructions, shared factual input, both THS reason fields, one-call caching, and forced replacement without a live model call.
+- Moonshot fallback unit tests assert its completion request sends `temperature=1`.
 - Codex client tests assert `review()` does not pass the legacy score `output_schema`.
 - Feishu tests assert score/suggestion sections are absent and persisted review/provider/model are appended.
 - Scheduler tests assert one ordered daily job at 16:03, forced review after fetch, fetch -> review -> Feishu execution order, cancellation before review when data is incomplete, Codex retry timing/failure broadcasts, and odd-minute Feishu delay behavior.

@@ -24,6 +24,7 @@ from .feishu_notifier import FeishuStockNotifier
 logger = logging.getLogger(__name__)
 
 STRATEGY_RELATIVE_PATH = Path("chain/wiki/raw/001-连板龙头交易体系.md")
+MOONSHOT_FALLBACK_TEMPERATURE = 1
 
 
 class MoonshotReviewClient:
@@ -35,7 +36,6 @@ class MoonshotReviewClient:
         api_key: str,
         model: str,
         base_url: str,
-        temperature: float,
         max_tokens: int,
         context_window: int,
         timeout: int,
@@ -50,7 +50,8 @@ class MoonshotReviewClient:
             "timeout": timeout,
             "max_retries": max_retries,
         }
-        self.temperature = temperature
+        # Kimi K2.5's completion endpoint accepts only temperature=1.
+        self.temperature = MOONSHOT_FALLBACK_TEMPERATURE
         self.max_tokens = max_tokens
         self.context_window = context_window
         self._client = None
@@ -301,7 +302,6 @@ class DailyMarketReviewAgent:
                 api_key=config.ai.api_key,
                 model=config.ai.model,
                 base_url=config.ai.base_url,
-                temperature=config.ai.temperature,
                 max_tokens=config.ai.max_tokens,
                 context_window=config.ai.moonshot_context_window,
                 timeout=config.ai.timeout,

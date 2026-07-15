@@ -7,7 +7,7 @@
 #   ./scripts/rsync-to-server.sh root@server:/root/stochips/ --delete
 #
 # Notes:
-# - .env is intentionally excluded so server secrets are not overwritten.
+# - .env stays Git-ignored but is deployed so runtime configuration stays in sync.
 # - Generated protobuf Go code is kept because stock_rpc builds from it.
 #
 set -euo pipefail
@@ -40,7 +40,6 @@ else
 fi
 
 rsync -avz "$@" \
-  --exclude='.env' \
   --exclude='.git/' \
   --exclude='.trellis/' \
   --exclude='.agents/' \

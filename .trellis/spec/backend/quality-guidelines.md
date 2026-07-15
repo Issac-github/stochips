@@ -70,6 +70,7 @@ Do not introduce untracked configuration keys without updating `.env.example`, R
 - `stock_agent` and `stock_rpc` Compose builds should use the root multi-target `Dockerfile` and share the `python-runtime-base` stage so Poetry dependencies install once per dependency-lock change.
 - Python dependency install steps should use BuildKit cache mounts for pip/Poetry caches while preserving `POETRY_REQUESTS_TIMEOUT`, `PIP_DEFAULT_TIMEOUT`, `PIP_RETRIES`, and `poetry config installer.max-workers 1`.
 - The temporary proxy script must use an automatically removed Compose override with `build.network: host`; it must not write the proxy into `.env` or persistent Docker daemon configuration.
+- `.env` remains Git-ignored, but `scripts/rsync-to-server.sh` deploys it with the repository so server runtime configuration tracks the local deployment configuration.
 - Codex login from the temporary script must reuse the existing `stock_agent` image and `/root/.codex` volume, use host networking, and remove its one-off container after login.
 - Runtime AI/report commands from the temporary script must reuse the existing `stock_agent` image and `/root/.codex` volume, use host networking for a loopback SSH tunnel, and override `DATABASE_URL` to the MySQL host-published port so commands do not depend on the Compose-only `mysql` DNS name.
 - Runtime AI commands from the temporary script must pass through explicitly set `AI_PROVIDER`, `AI_FALLBACK_PROVIDER`, `CODEX_MODEL`, and `CODEX_WORKING_DIRECTORY` so one-off validation can override stale server `.env` values.
