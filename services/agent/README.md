@@ -18,7 +18,7 @@
 ### 🤖 AI智能分析
 
 - **Codex每日复盘**：每天只调用一次，不再逐股打分
-- **交易体系驱动**：Python读取 `chain/wiki/raw/001-连板龙头交易体系.md` 并完整传给 Codex
+- **交易体系驱动**：Python完整读取 `DAILY_REVIEW_STRATEGY_PATH` 指定的内部方法论文档并传给 Codex
 - **完整事实材料**：输入与飞书一致的板块热度、涨停结构、核心连板和异动数据
 - **定性自主研判**：不使用程序预设分数、权重、风险因子或建议标签
 
@@ -544,7 +544,7 @@ agent/
 ## 🧠 Codex每日复盘
 
 `assess-ai` 每个交易日最多生成一份定性复盘。Python会完整读取
-`chain/wiki/raw/001-连板龙头交易体系.md` 并嵌入 Codex 提示词，再分析飞书卡片使用的事实材料，包括涨停概览、
+`DAILY_REVIEW_STRATEGY_PATH` 指定的内部方法论文档并嵌入 Codex 提示词，再分析飞书卡片使用的事实材料，包括涨停概览、
 板块热度、行业涨停、核心连板、早盘强势、分歧弱板、前高突破和抓取日志。Codex还会收到
 同花顺板块成员与涨停池个股的 `reason_type` 简略原因、未经截断的 `reason_info` 详细原因，
 以及同花顺首次/最后涨停时间；飞书板块列表仍保持紧凑。
@@ -552,7 +552,8 @@ agent/
 为判断情绪和主线变化，Codex还会收到前一交易日的完整事实与原因材料，以及涨停概览、
 结构、核心连板、全部热点板块及与当日共同热点的涨停家数变化。飞书不会重复展示前一日材料。
 
-程序不再计算风险分数、权重或因子，也不要求Codex返回JSON。结果按日期写入
+交易体系原文只定义分析方法和判断边界，不作为当日市场事实；竞价、天量、缺口和分时弱转强等
+缺少事实数据时只能列为待观察。程序不再计算风险分数、权重或因子，也不要求Codex返回JSON。结果按日期写入
 `daily_market_review`，普通执行复用当日报告；`--force-ai` 会发起一次新调用并覆盖当日报告。
 飞书卡片保留事实材料，并在末尾追加保存的Codex复盘和实际模型来源。
 
@@ -624,6 +625,7 @@ WHERE date = CURDATE();
 | `MOONSHOT_CONTEXT_WINDOW` | ❌ | Kimi 输入和输出共享的上下文窗口，默认 `262144`；调用前会预留输出并检查预算 |
 | `CODEX_MODEL` | ❌ | Codex 模型，留空使用账号默认模型 |
 | `CODEX_WORKING_DIRECTORY` | ❌ | 旧版单股分析配置；每日复盘固定使用 Agent 根目录 |
+| `DAILY_REVIEW_STRATEGY_PATH` | ✅ | 内部方法论文档路径；实际值仅写入 `.env` |
 | `CODEX_HTTP_PROXY` / `CODEX_HTTPS_PROXY` / `CODEX_ALL_PROXY` | ❌ | Codex SDK 专用运行期代理，只在复盘调用期间临时生效 |
 | `CODEX_NO_PROXY` | ❌ | Codex SDK 专用代理绕过列表，默认包含 MySQL 和本项目容器名 |
 | `CODEX_HOST_PROXY_HOST` / `CODEX_HOST_PROXY_PORT` | ❌ | `codex_proxy_bridge` 连接的宿主机代理地址，默认 `127.0.0.1:7890` |
@@ -653,6 +655,7 @@ MOONSHOT_API_KEY=your_moonshot_api_key
 MOONSHOT_MODEL=kimi-k2.5
 MOONSHOT_CONTEXT_WINDOW=262144
 CODEX_MODEL=
+DAILY_REVIEW_STRATEGY_PATH=
 ```
 
 ## 🛠️ 故障排查

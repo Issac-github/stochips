@@ -89,6 +89,9 @@ class AIConfig:
     codex_working_directory: str = field(
         default_factory=lambda: os.getenv('CODEX_WORKING_DIRECTORY', '/app')
     )
+    daily_review_strategy_path: str = field(
+        default_factory=lambda: os.getenv('DAILY_REVIEW_STRATEGY_PATH', '').strip()
+    )
 
     @property
     def is_configured(self) -> bool:

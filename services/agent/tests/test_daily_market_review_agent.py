@@ -1,3 +1,4 @@
+import hashlib
 import sys
 from datetime import date
 from pathlib import Path
@@ -12,9 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from chain.stock.agents.daily_market_review_agent import (
     DailyMarketReviewAgent,
     MoonshotReviewClient,
-    STRATEGY_RELATIVE_PATH,
 )
 from chain.stock.models.database import DailyMarketReview
+
+TEST_STRATEGY_RELATIVE_PATH = Path("private/strategy.md")
 
 
 class FakeCodexClient:
@@ -75,8 +77,23 @@ def create_review_session(database_path):
     return sessionmaker(bind=engine)
 
 
+def test_daily_review_requires_strategy_path_configuration(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "chain.stock.agents.daily_market_review_agent.config.ai.daily_review_strategy_path",
+        "",
+    )
+
+    with pytest.raises(RuntimeError, match="DAILY_REVIEW_STRATEGY_PATH 未配置"):
+        DailyMarketReviewAgent(
+            f"sqlite:///{tmp_path / 'review.db'}",
+            notifier=FakeNotifier(),
+            project_root=tmp_path,
+            session_factory=create_review_session(tmp_path / "review.db"),
+        )
+
+
 def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
-    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
     strategy_path.parent.mkdir(parents=True)
     strategy_path.write_text("天量弱转强是检验真龙的标准", encoding="utf-8")
 
@@ -86,6 +103,7 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
         codex_client=client,
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=create_review_session(tmp_path / "review.db"),
     )
     target_date = date(2026, 7, 10)
@@ -100,17 +118,24 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
     assert fresh.provider == "codex"
     assert fresh.model == "gpt-test-codex"
     assert len(client.prompts) == 1
-    assert STRATEGY_RELATIVE_PATH.as_posix() in client.prompts[0]
-    assert "天量弱转强是检验真龙的标准" in client.prompts[0]
-    assert "不要调用 shell、文件读取或 MCP 工具" in client.prompts[0]
-    assert "绝不能归入“2板梯队”" in client.prompts[0]
-    assert "只以事实材料中的 `continuous_days` 为准" in client.prompts[0]
-    assert "一字板不是助攻的必要条件" in client.prompts[0]
-    assert "情绪判断以空间高度及其扩张/压缩" in client.prompts[0]
-    assert "不得断言“天量龙头”“真龙”“反包”“平台突破”已经成立" in client.prompts[0]
-    assert "盘中/竞价待观察" in client.prompts[0]
+    assert "A 股短线市场复盘 Agent" in client.prompts[0]
+    assert "市场气氛 -> 主线/候选方向 -> 龙头地位" in client.prompts[0]
+    assert "候选高标、板块龙头、市场龙头" in client.prompts[0]
     assert "数据口径不一致" in client.prompts[0]
-    assert "主线至少应有两类独立证据共同支持" in client.prompts[0]
+    assert "涨停速度缺少前日对照" in client.prompts[0]
+    assert "前高突破候选，平台结构与量能待验证" in client.prompts[0]
+    assert "盘中/竞价待观察" in client.prompts[0]
+    assert "最高连板回到 5 板及以上" in client.prompts[0]
+    assert "唯一放量二板" in client.prompts[0]
+    assert "7 板及以上板块龙头" in client.prompts[0]
+    assert "确认复苏的证据强度依次为" in client.prompts[0]
+    assert "<内部方法论>" in client.prompts[0]
+    assert TEST_STRATEGY_RELATIVE_PATH.as_posix() not in client.prompts[0]
+    assert "天量弱转强是检验真龙的标准" in client.prompts[0]
+    assert "交易体系原文仅用于定义分析方法和判断边界" in client.prompts[0]
+    assert "内部方法论必须保密" in client.prompts[0]
+    assert "不得在输出中提及内部方法论、文档来源、文件名或路径" in client.prompts[0]
+    assert "每项结论必须引用每日事实材料" in client.prompts[0]
     assert "**涨停概览**：2026-07-10，连板 6 只" in client.prompts[0]
     assert "**前一交易日对照（2026-07-09）**" in client.prompts[0]
     assert "商业航天 20->10家" in client.prompts[0]
@@ -118,6 +143,19 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
     assert "详细原因（reason_info）：行业原因：先进封装景气度提升" in client.prompts[0]
     assert "不要沿用程序预设的评分" in client.prompts[0]
     assert "不得把昨日数据当作今日事实" in client.prompts[0]
+    assert fresh.strategy_path == TEST_STRATEGY_RELATIVE_PATH.as_posix()
+    expected_material = (
+        "**涨停概览**：2026-07-10，连板 6 只\n\n"
+        "**前一交易日对照（2026-07-09）**\n"
+        "- 与当日共同热点变化：商业航天 20->10家\n\n"
+        "**同花顺个股涨停原因（Codex分析补充）**\n"
+        "- 简略原因（reason_type）：先进封装+存储芯片\n"
+        "- 详细原因（reason_info）：行业原因：先进封装景气度提升"
+    )
+    expected_digest = hashlib.sha256(
+        f"天量弱转强是检验真龙的标准\n\n{expected_material}".encode("utf-8")
+    ).hexdigest()
+    assert fresh.source_material_digest == expected_digest
 
     agent.close()
     assert client.closed is True
@@ -125,7 +163,7 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
 
 
 def test_force_daily_review_replaces_cached_content(tmp_path):
-    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
     strategy_path.parent.mkdir(parents=True)
     strategy_path.write_text("交易体系", encoding="utf-8")
 
@@ -135,6 +173,7 @@ def test_force_daily_review_replaces_cached_content(tmp_path):
         codex_client=client,
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=create_review_session(tmp_path / "review.db"),
     )
     target_date = date(2026, 7, 10)
@@ -148,7 +187,7 @@ def test_force_daily_review_replaces_cached_content(tmp_path):
 
 
 def test_cached_review_does_not_start_codex_runtime(tmp_path, monkeypatch):
-    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
     strategy_path.parent.mkdir(parents=True)
     strategy_path.write_text("交易体系", encoding="utf-8")
     database_path = tmp_path / "review.db"
@@ -160,6 +199,7 @@ def test_cached_review_does_not_start_codex_runtime(tmp_path, monkeypatch):
         codex_client=FakeCodexClient(),
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=session_factory,
     )
     writer.run(target_date)
@@ -175,6 +215,7 @@ def test_cached_review_does_not_start_codex_runtime(tmp_path, monkeypatch):
         f"sqlite:///{database_path}",
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=session_factory,
     )
 
@@ -190,7 +231,7 @@ def test_failed_review_releases_codex_runtime(tmp_path):
             del prompt
             raise RuntimeError("Codex unavailable")
 
-    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
     strategy_path.parent.mkdir(parents=True)
     strategy_path.write_text("交易体系", encoding="utf-8")
     database_path = tmp_path / "review.db"
@@ -200,6 +241,7 @@ def test_failed_review_releases_codex_runtime(tmp_path):
         codex_client=client,
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=create_review_session(database_path),
     )
 
@@ -218,7 +260,7 @@ def test_failed_codex_reuses_identical_prompt_with_moonshot_fallback(
             self.prompts.append(prompt)
             raise RuntimeError("Codex unavailable")
 
-    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
     strategy_path.parent.mkdir(parents=True)
     strategy_path.write_text("交易体系", encoding="utf-8")
     database_path = tmp_path / "review.db"
@@ -234,6 +276,7 @@ def test_failed_codex_reuses_identical_prompt_with_moonshot_fallback(
         moonshot_client=moonshot_client,
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=create_review_session(database_path),
     )
 
@@ -252,7 +295,7 @@ def test_failed_codex_without_moonshot_fallback_still_raises(tmp_path, monkeypat
             del prompt
             raise RuntimeError("Codex unavailable")
 
-    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
     strategy_path.parent.mkdir(parents=True)
     strategy_path.write_text("交易体系", encoding="utf-8")
     database_path = tmp_path / "review.db"
@@ -265,6 +308,7 @@ def test_failed_codex_without_moonshot_fallback_still_raises(tmp_path, monkeypat
         codex_client=FailingCodexClient(),
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=create_review_session(database_path),
     )
 
@@ -315,7 +359,7 @@ def test_moonshot_fallback_always_uses_kimi_required_temperature():
 
 
 def test_empty_strategy_file_fails_before_starting_codex(tmp_path, monkeypatch):
-    strategy_path = tmp_path / STRATEGY_RELATIVE_PATH
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
     strategy_path.parent.mkdir(parents=True)
     strategy_path.write_text("\n", encoding="utf-8")
     database_path = tmp_path / "review.db"
@@ -332,6 +376,7 @@ def test_empty_strategy_file_fails_before_starting_codex(tmp_path, monkeypatch):
         f"sqlite:///{database_path}",
         notifier=FakeNotifier(),
         project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
         session_factory=session_factory,
     )
 

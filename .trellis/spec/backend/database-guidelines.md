@@ -90,7 +90,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - `FeishuStockNotifier.build_codex_reason_material` adds analysis-only THS stock reasons without expanding the Feishu card: `reason_type` is the concise reason label and `reason_info` is the complete detailed reason. Preserve both and do not shorten `reason_info` before Codex receives it.
   - Include reason fields from both `block_top_stock` and all same-day `limit_up_pool` rows. `早盘强势` sorts THS `first_limit_up_time`; `分歧弱板` first uses THS `open_count`, then may render an explicitly labeled inferred sample when THS first/last limit-up times show a later final seal.
   - Codex also receives a previous-trading-day comparison: prior overview, structure, core continuous stocks, all hot boards, all same-name board count changes versus today, plus the complete prior-day factual and reason material. Do not treat yesterday's facts as today's facts.
-  - `DailyMarketReviewAgent` must read `chain/wiki/raw/001-连板龙头交易体系.md` in Python and include the complete original text in the Codex prompt before analyzing the factual material. Codex is instructed not to invoke file/shell/MCP tools for the strategy file, so Docker namespace restrictions cannot prevent a review.
+  - `DailyMarketReviewAgent` must read the complete document configured by `DAILY_REVIEW_STRATEGY_PATH` in Python and include it in the Codex prompt before analyzing the factual material. The strategy text is analysis methodology rather than market fact, and missing intraday fields must remain observation conditions.
   - The active daily flow must not calculate or display programmatic scores, weights, risk factors, risk levels, or suggestion distributions.
   - Historical `risk_assessment` rows remain compatibility data only; active CLI, scheduler, StockAgent, and Feishu paths do not write or consume them.
 - Scheduler default:
@@ -194,12 +194,14 @@ Correct:
 - The Kimi daily-review fallback always sends `temperature=1`; it must not inherit `MOONSHOT_TEMPERATURE`, which remains a legacy-analysis setting. Kimi K2.5 rejects any other temperature.
 - Agent: `DailyMarketReviewAgent.run(date, force=False) -> DailyMarketReviewResult`.
 - CLI: `python main.py assess-ai [date] [--force-ai]`; `assess` and `ai-analyze` are compatibility aliases.
+- Strategy document: required `DAILY_REVIEW_STRATEGY_PATH`; relative paths resolve from the Agent project root and absolute paths are accepted.
 - DB: `daily_market_review` has one unique row per `date`, with `content`, `provider`, `model`, `strategy_path`, and `source_material_digest`.
 
 ### 3. Contracts
 - `Codex()` owns the local app-server connection and ChatGPT OAuth under the `/root/.codex` Docker volume. Python must not log OAuth tokens, browser cookies, or subscription Bearer headers.
 - Codex runs with `Sandbox.read_only`, `ApprovalMode.deny_all`, an ephemeral thread, and the Agent project root as `cwd`, so it can read the strategy Markdown included in the Docker image.
-- The program checks that the strategy path exists, reads its complete UTF-8 content, and includes it in the prompt. This avoids relying on Codex file-tool sandboxing inside Docker while preserving the SDK `read_only` sandbox and denied approvals.
+- The program obtains the strategy path only from configuration, checks that it exists, reads its complete UTF-8 content, and includes only the content in the prompt. This avoids relying on Codex file-tool sandboxing inside Docker while preserving the SDK `read_only` sandbox and denied approvals. The digest covers both the strategy text and factual material so persisted metadata changes when either input changes.
+- The prompt must wrap strategy text in a path-free internal-methodology tag and forbid mentioning the methodology, document source, filename, path, or original content in model output. Every review conclusion must cite daily factual material; strategy-dependent fields absent from that material remain `数据不足` or `盘中/竞价待观察`.
   - `build_analysis_material` is the compact factual text contract shared by model input and Feishu. Codex additionally receives `build_codex_reason_material`, which deduplicates all same-day THS board and pool stocks while retaining every distinct `reason_type` and full `reason_info`, then lists every THS `limit_up_pool` row with its change, board type, first/last limit-up time, open count, and turnover rate. Neither material includes saved review text, scores, factors, or suggestions.
 - Codex returns concise free-form Markdown, not JSON. Persist the actual provider/model and render that saved metadata in Feishu.
 - Normal execution reuses the target-date row. `--force-ai` makes exactly one new Codex call and replaces that row.
@@ -207,7 +209,8 @@ Correct:
 
 ### 4. Validation & Error Matrix
 - `AI_PROVIDER` is not `codex` -> CLI exits clearly and scheduler skips the review.
-- Strategy file missing -> fail before the model call with the full missing path.
+- `DAILY_REVIEW_STRATEGY_PATH` missing or blank -> fail before the model call with a clear configuration error.
+- Strategy file missing -> fail before the model call with the resolved missing path.
 - Codex login/runtime unavailable, timeout, subscription limit, or empty text -> when `AI_FALLBACK_PROVIDER=moonshot` and `MOONSHOT_API_KEY` are configured, retry the exact same full prompt with Moonshot; otherwise fail without replacing a saved report. Never downgrade to the legacy Moonshot scorer.
 - Both Codex and Moonshot fallback fail -> raise one error containing both provider failures; do not save a partial review.
 - Moonshot prompt estimate exceeds `MOONSHOT_CONTEXT_WINDOW - MOONSHOT_MAX_TOKENS` -> fail before the HTTP request with the estimated input, available input, context window, and output reservation; never silently truncate material.
@@ -216,14 +219,14 @@ Correct:
 - Existing target-date `daily_market_review` -> reuse it unless `--force-ai` is present.
 
 ### 5. Good/Base/Bad Cases
-- Good: logged-in Codex reads the strategy file, receives Feishu factual material, returns one Markdown review, and writes one date-keyed row.
+- Good: logged-in Codex receives the complete strategy text plus Feishu factual material, returns one Markdown review, and writes one date-keyed row.
 - Good: `AI_PROVIDER=codex python main.py assess-ai 20260710 --force-ai` replaces the date-keyed report with one fresh call.
 - Base: Feishu runs before a review exists -> factual sections remain complete and the card says the Codex review is unavailable.
 - Bad: call Codex once per stock or ask it for risk score, confidence, factor weights, or a rigid JSON score schema.
 - Bad: call ChatGPT web/internal endpoints directly or copy OAuth tokens into `.env`.
 
 ### 6. Tests Required
-- Use a fake Codex client to assert strategy-path instructions, shared factual input, both THS reason fields, one-call caching, and forced replacement without a live model call.
+- Use a fake Codex client to assert environment-driven strategy loading, complete strategy inclusion, path-free prompt content, strategy-path metadata, shared factual input, both THS reason fields, one-call caching, and forced replacement without a live model call.
 - Moonshot fallback unit tests assert its completion request sends `temperature=1`.
 - Codex client tests assert `review()` does not pass the legacy score `output_schema`.
 - Feishu tests assert score/suggestion sections are absent and persisted review/provider/model are appended.
@@ -242,6 +245,13 @@ Correct:
 
 ```python
 CodexSubscriptionClient(working_directory="/app").review(prompt)
+```
+
+```python
+strategy_path = Path(os.environ["DAILY_REVIEW_STRATEGY_PATH"])
+strategy = strategy_path.read_text(encoding="utf-8")
+digest = sha256(f"{strategy}\n\n{material}".encode("utf-8"))
+prompt = build_prompt(strategy=strategy, material=material)
 ```
 
 ## Dates And Keys

@@ -87,6 +87,7 @@ def test_build_card_contains_daily_report_sections():
                         reason_info="行业原因：机器人产业提速。\n公司原因：订单增长。",
                     )
                 ],
+                leading_turnover_rate=12.3,
             )
         ],
         eastmoney_industries=[
@@ -99,11 +100,13 @@ def test_build_card_contains_daily_report_sections():
                     "强势设备（1板）",
                     "补充设备（1板）",
                 ],
+                leader_turnover_rates=[8.2, 6.5, 4.1, 2.8],
             ),
             IndustrySummary(
                 industry_name="汽车零部件",
                 stock_count=4,
                 leaders=["测试汽配（1板）"],
+                leader_turnover_rates=[3.6],
             ),
         ],
         top_stocks=[
@@ -181,6 +184,7 @@ def test_build_card_contains_daily_report_sections():
     tables = {element["element_id"]: element for element in elements if element["tag"] == "table"}
     charts = {element["element_id"]: element for element in elements if element["tag"] == "chart"}
     review_content = elements[-1]["content"]
+    breakout_content = elements[-2]["content"]
 
     assert card["schema"] == "2.0"
     assert "StoChips 每日涨停播报 - 2026-07-04" == card["header"]["title"]["content"]
@@ -211,7 +215,12 @@ def test_build_card_contains_daily_report_sections():
     assert charts["hot_blocks_chart"]["chart_spec"]["direction"] == "horizontal"
     assert charts["eastmoney_industry"]["chart_spec"]["direction"] == "horizontal"
     assert tables["hot_blocks"]["rows"] == [
-        {"block": "机器人概念", "count": 4, "leader": "测试龙头", "change": "3.21%"}
+        {
+            "block": "机器人概念",
+            "count": 4,
+            "leader": "测试龙头（换手 12.30%）",
+            "change": "3.21%",
+        }
     ]
     assert [column["width"] for column in tables["hot_blocks"]["columns"]] == [
         "140px",
@@ -234,7 +243,10 @@ def test_build_card_contains_daily_report_sections():
     assert tables["eastmoney_industries"]["rows"][0] == {
         "industry": "专用设备",
         "count": 6,
-        "leaders": "测试设备（3板）、龙头设备（2板）、强势设备（1板）、补充设备（1板）",
+        "leaders": (
+            "测试设备（3板）（换手 8.20%）、龙头设备（2板）（换手 6.50%）、"
+            "强势设备（1板）（换手 4.10%）、补充设备（1板）（换手 2.80%）"
+        ),
     }
     assert [column["width"] for column in tables["eastmoney_industries"]["columns"]] == [
         "130px",
@@ -242,10 +254,17 @@ def test_build_card_contains_daily_report_sections():
         "auto",
     ]
     assert tables["lower_limit_pool"]["rows"] == [
-        {"stock": "跌停股份(000010)", "change": "-10.01%", "time": "09:31", "status": "封死"}
+        {
+            "stock": "跌停股份(000010)",
+            "change": "-10.01%",
+            "turnover": "3.20%",
+            "time": "09:31",
+            "status": "封死",
+        }
     ]
     assert [column["width"] for column in tables["lower_limit_pool"]["columns"]] == [
         "auto",
+        "90px",
         "90px",
         "80px",
         "90px",
@@ -254,6 +273,8 @@ def test_build_card_contains_daily_report_sections():
     assert "市场处于试错修复期" in review_content
     assert "Agent: main | Model: gpt-test-codex" in review_content
     assert "Provider: openai-codex" in review_content
+    assert "涨停前高突破" in breakout_content
+    assert "5个交易日内涨停前高突破" in breakout_content
 
     empty_early = notifier._format_stocks(
         [],
@@ -271,6 +292,8 @@ def test_build_card_contains_daily_report_sections():
     assert "详细原因（reason_info）" in reason_material
     assert "行业原因：机器人产业提速" in reason_material
     assert "同花顺全量涨停池指标" not in reason_material
+    assert "东财行业代表涨停股换手（Codex分析补充）" in reason_material
+    assert "测试设备（3板）（换手 8.20%）" in reason_material
 
 
 def test_build_leader_assists_requires_shared_evidence_earlier_time_and_lower_board():
@@ -1116,7 +1139,10 @@ def test_format_industries_renders_eastmoney_industry_counts():
         ]
     )
 
-    assert "专用设备：测试设备（3板）、龙头设备（2板）、强势设备（1板）、补充设备（1板）" in content
+    assert (
+        "专用设备：测试设备（3板）（换手 -）、龙头设备（2板）（换手 -）、"
+        "强势设备（1板）（换手 -）、补充设备（1板）（换手 -）"
+    ) in content
     assert "专用设备：6 只涨停" not in content
     assert "前三" not in content
     assert notifier._format_industries([]) == "- 暂无东财行业数据"
@@ -1213,7 +1239,7 @@ def test_build_card_labels_ths_blocks_and_eastmoney_industries_separately():
     assert "行业热度请看东财行业涨停" in content
     assert set(tables) == {"eastmoney_industries"}
     assert tables["eastmoney_industries"]["rows"] == [
-        {"industry": "电力", "count": 8, "leaders": "宝塔实业（2板）"}
+        {"industry": "电力", "count": 8, "leaders": "宝塔实业（2板）（换手 -）"}
     ]
 
 

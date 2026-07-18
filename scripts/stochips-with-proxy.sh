@@ -319,6 +319,7 @@ if [ "${#RUNTIME_COMMAND[@]}" -gt 0 ]; then
   pass_env_if_set AI_FALLBACK_PROVIDER
   pass_env_if_set CODEX_MODEL
   pass_env_if_set CODEX_WORKING_DIRECTORY
+  pass_env_if_set DAILY_REVIEW_STRATEGY_PATH
 
   echo "Running through the temporary proxy: ${RUNTIME_COMMAND[*]}"
   docker run --rm "${DOCKER_TTY_ARGS[@]}" \
