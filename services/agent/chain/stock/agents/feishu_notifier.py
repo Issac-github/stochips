@@ -43,6 +43,8 @@ FEISHU_SEND_JITTER_MIN = 5.0
 FEISHU_SEND_JITTER_MAX = 20.0
 SHANGHAI_TIMEZONE = timezone(timedelta(hours=8))
 CARD_TABLE_PAGE_SIZE = 10
+HIGH_TURNOVER_HIGH_BOARD_MIN_DAYS = 3
+HIGH_TURNOVER_RATE_THRESHOLD = 10.0
 
 
 def next_feishu_send_at(
@@ -114,6 +116,8 @@ class StockSummary:
     block_name: str
     reason: str
     turnover_rate: Optional[float] = None
+    reason_type: str = ""
+    reason_info: str = ""
 
 
 @dataclass
@@ -383,6 +387,17 @@ class FeishuStockNotifier:
                 .all()
             )
             pool_by_code = {item.code: item for item in pool_rows}
+            block_reasons_by_code: Dict[str, Dict[str, str]] = {}
+            for block in top_blocks:
+                for stock in block.stock_reasons:
+                    reasons = block_reasons_by_code.setdefault(
+                        stock.code,
+                        {"reason_type": "", "reason_info": ""},
+                    )
+                    if not reasons["reason_type"] and stock.reason_type:
+                        reasons["reason_type"] = stock.reason_type
+                    if not reasons["reason_info"] and stock.reason_info:
+                        reasons["reason_info"] = stock.reason_info
 
             top_stocks = []
             continuous_rows = (
@@ -397,6 +412,7 @@ class FeishuStockNotifier:
             )
             for item in continuous_rows:
                 pool = pool_by_code.get(item.code)
+                block_reasons = block_reasons_by_code.get(item.code, {})
                 top_stocks.append(
                     StockSummary(
                         code=item.code,
@@ -415,6 +431,10 @@ class FeishuStockNotifier:
                         turnover_rate=self._to_float(
                             pool.turnover_rate if pool else None
                         ),
+                        reason_type=(pool.concept if pool else "")
+                        or block_reasons.get("reason_type", ""),
+                        reason_info=(pool.reason if pool else "")
+                        or block_reasons.get("reason_info", ""),
                     )
                 )
 
@@ -549,6 +569,7 @@ class FeishuStockNotifier:
         elements = [{"tag": "markdown", "content": self._build_card_summary(report)}]
         elements.extend(self._build_card_charts(report))
         elements.extend(self._build_card_tables(report))
+        elements.extend(self._build_high_turnover_high_boards(report))
         elements.append(
             {
                 "tag": "markdown",
@@ -633,7 +654,7 @@ class FeishuStockNotifier:
         if report.continuous_distribution:
             charts.append(
                 self._build_bar_chart(
-                    "continuous_ladder",
+                    "continuous_ladder_chart",
                     "连板梯队",
                     [
                         {"name": f"{days}板", "value": count}
@@ -645,29 +666,35 @@ class FeishuStockNotifier:
             charts.append(
                 self._build_bar_chart(
                     "hot_blocks_chart",
-                    "热门板块 Top 8",
+                    "热门板块",
                     [
                         {"name": item.block_name, "value": item.stock_count}
-                        for item in report.top_blocks[:8]
+                        for item in report.top_blocks
                     ],
                     horizontal=True,
-                    height="260px",
+                    height=self._horizontal_chart_height(len(report.top_blocks)),
                 )
             )
         if report.eastmoney_industries:
             charts.append(
                 self._build_bar_chart(
                     "eastmoney_industry",
-                    "东财行业涨停 Top 8",
+                    "东财行业涨停",
                     [
                         {"name": item.industry_name, "value": item.stock_count}
-                        for item in report.eastmoney_industries[:8]
+                        for item in report.eastmoney_industries
                     ],
                     horizontal=True,
-                    height="260px",
+                    height=self._horizontal_chart_height(
+                        len(report.eastmoney_industries)
+                    ),
                 )
             )
         return charts
+
+    @staticmethod
+    def _horizontal_chart_height(item_count: int) -> str:
+        return f"{max(260, 80 + item_count * 28)}px"
 
     @staticmethod
     def _build_bar_chart(
@@ -710,6 +737,7 @@ class FeishuStockNotifier:
                     ("block", "板块", "text"),
                     ("count", "涨停", "number"),
                     ("leader", "龙头", "text"),
+                    ("stocks", "全部个股", "text"),
                     ("change", "涨幅", "text"),
                 ],
                 [
@@ -720,6 +748,7 @@ class FeishuStockNotifier:
                             item.leading_stock_name,
                             item.leading_turnover_rate,
                         ),
+                        "stocks": "\n".join(item.stocks) or "-",
                         "change": (
                             f"{item.change_percent:.2f}%"
                             if item.change_percent is not None
@@ -728,7 +757,12 @@ class FeishuStockNotifier:
                     }
                     for item in report.top_blocks
                 ],
-                {"block": "140px", "count": "80px", "change": "90px"},
+                {
+                    "block": "140px",
+                    "count": "80px",
+                    "stocks": "320px",
+                    "change": "90px",
+                },
             ),
             (
                 "连板天梯",
@@ -738,6 +772,8 @@ class FeishuStockNotifier:
                     ("stock", "股票", "text"),
                     ("turnover", "换手", "text"),
                     ("time", "首封", "text"),
+                    ("reason_type", "简因", "text"),
+                    ("reason_info", "详因", "text"),
                 ],
                 [
                     {
@@ -745,10 +781,18 @@ class FeishuStockNotifier:
                         "stock": f"{item.name}({item.code})",
                         "turnover": self._format_percent(item.turnover_rate),
                         "time": item.limit_up_time or "-",
+                        "reason_type": item.reason_type or "-",
+                        "reason_info": item.reason_info or "-",
                     }
                     for item in report.top_stocks
                 ],
-                {"days": "80px", "turnover": "90px", "time": "80px"},
+                {
+                    "days": "80px",
+                    "turnover": "90px",
+                    "time": "80px",
+                    "reason_type": "180px",
+                    "reason_info": "320px",
+                },
             ),
             (
                 "东财行业涨停",
@@ -762,7 +806,10 @@ class FeishuStockNotifier:
                     {
                         "industry": item.industry_name,
                         "count": item.stock_count,
-                        "leaders": self._format_industry_leaders(item),
+                        "leaders": self._format_industry_leaders(
+                            item,
+                            separator="\n",
+                        ),
                     }
                     for item in report.eastmoney_industries
                 ],
@@ -817,6 +864,66 @@ class FeishuStockNotifier:
                 ]
             )
         return elements
+
+    def _build_high_turnover_high_boards(
+        self,
+        report: FeishuStockReport,
+    ) -> List[Dict[str, Any]]:
+        """List high boards whose same-day turnover exceeds the card threshold."""
+        title = "高换手高标（3板及以上、换手率 > 10%）"
+        stocks = sorted(
+            (
+                item
+                for item in report.top_stocks
+                if item.continuous_days >= HIGH_TURNOVER_HIGH_BOARD_MIN_DAYS
+                and item.turnover_rate is not None
+                and item.turnover_rate > HIGH_TURNOVER_RATE_THRESHOLD
+            ),
+            key=lambda item: (
+                -item.continuous_days,
+                -float(item.turnover_rate or 0),
+                item.code,
+            ),
+        )
+        title_element = {"tag": "markdown", "content": f"**{title}**"}
+        if not stocks:
+            return [
+                title_element,
+                {"tag": "markdown", "content": "- 暂无"},
+            ]
+
+        return [
+            title_element,
+            self._build_table(
+                "high_turnover_high_boards",
+                [
+                    ("days", "高度", "text"),
+                    ("stock", "股票", "text"),
+                    ("turnover", "换手", "text"),
+                    ("time", "首封", "text"),
+                    ("reason_type", "简因", "text"),
+                    ("reason_info", "详因", "text"),
+                ],
+                [
+                    {
+                        "days": f"{item.continuous_days}板",
+                        "stock": f"{item.name}({item.code})",
+                        "turnover": self._format_percent(item.turnover_rate),
+                        "time": item.limit_up_time or "-",
+                        "reason_type": item.reason_type or "-",
+                        "reason_info": item.reason_info or "-",
+                    }
+                    for item in stocks
+                ],
+                column_widths={
+                    "days": "80px",
+                    "turnover": "90px",
+                    "time": "80px",
+                    "reason_type": "180px",
+                    "reason_info": "320px",
+                },
+            ),
+        ]
 
     @staticmethod
     def _build_table(
@@ -1247,6 +1354,18 @@ class FeishuStockNotifier:
             if block_name in exclude:
                 continue
             leader = self._find_block_leader(session, target_date, block_name)
+            pool_stocks = (
+                session.query(LimitUpPool)
+                .filter(
+                    LimitUpPool.date == target_date,
+                    LimitUpPool.block_name == block_name,
+                )
+                .order_by(
+                    LimitUpPool.limit_up_time.asc(),
+                    LimitUpPool.code.asc(),
+                )
+                .all()
+            )
             blocks.append(
                 BlockSummary(
                     block_name=block_name,
@@ -1254,6 +1373,13 @@ class FeishuStockNotifier:
                     leading_stock_name=leader.name if leader else "",
                     change_percent=None,
                     source="limit_up_pool",
+                    stocks=[
+                        self._format_stock_turnover(
+                            stock.name,
+                            self._to_float(stock.turnover_rate),
+                        )
+                        for stock in pool_stocks
+                    ],
                     leading_turnover_rate=self._to_float(
                         leader.turnover_rate if leader else None
                     ),
@@ -1271,22 +1397,39 @@ class FeishuStockNotifier:
     ) -> BlockSummary:
         rows = self._block_stock_rows(session, target_date, item.block_code)
         leader_code = item.leading_stock or (rows[0].code if rows else "")
-        leader_pool = (
-            session.query(LimitUpPool)
-            .filter(
-                LimitUpPool.date == target_date,
-                LimitUpPool.code == leader_code,
+        stock_codes = {stock.code for stock in rows if stock.code}
+        if leader_code:
+            stock_codes.add(leader_code)
+        pool_by_code = {
+            pool.code: pool
+            for pool in (
+                session.query(LimitUpPool)
+                .filter(
+                    LimitUpPool.date == target_date,
+                    LimitUpPool.code.in_(stock_codes),
+                )
+                .all()
+                if stock_codes
+                else []
             )
-            .one_or_none()
-            if leader_code
-            else None
-        )
+        }
+        leader_pool = pool_by_code.get(leader_code)
         return BlockSummary(
             block_name=item.block_name,
             stock_count=item.stock_count or 0,
             leading_stock_name=item.leading_stock_name or item.leading_stock or "",
             change_percent=self._to_float(item.change_percent),
-            stocks=[self._block_stock_label(stock) for stock in rows],
+            stocks=[
+                self._block_stock_label(
+                    stock,
+                    self._to_float(
+                        pool_by_code[stock.code].turnover_rate
+                        if stock.code in pool_by_code
+                        else None
+                    ),
+                )
+                for stock in rows
+            ],
             block_code=item.block_code,
             stock_reasons=[
                 BlockStockReasonSummary(
@@ -1365,10 +1508,16 @@ class FeishuStockNotifier:
             reverse=True,
         )
 
-    @staticmethod
-    def _block_stock_label(stock: BlockTopStock) -> str:
+    def _block_stock_label(
+        self,
+        stock: BlockTopStock,
+        turnover_rate: Optional[float],
+    ) -> str:
         height = stock.limit_up_type or f"{int(stock.continuous_days or 1)}板"
-        return f"{stock.name}（{height}）"
+        return (
+            f"{stock.name}（{height}）"
+            f"（换手 {self._format_percent(turnover_rate)}）"
+        )
 
     def _block_stock_rows(
         self, session: Session, target_date: date, block_code: str
@@ -2122,10 +2271,11 @@ class FeishuStockNotifier:
         industry: IndustrySummary,
         *,
         empty_message: str = "-",
+        separator: str = "、",
     ) -> str:
         if not industry.leaders:
             return empty_message
-        return "、".join(
+        return separator.join(
             self._format_stock_turnover(
                 name,
                 (

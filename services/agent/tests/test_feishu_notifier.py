@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.schema import CreateTable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -25,9 +26,12 @@ from chain.stock.agents.feishu_notifier import (
     next_feishu_send_at,
 )
 from chain.stock.models.database import (
+    BlockTop,
     BlockTopStock,
     ContinuousLimitUp,
+    DailyMarketReview,
     DataFetchLog,
+    EastmoneyZTPool,
     LimitUpPool,
     LowerLimitPool,
 )
@@ -117,6 +121,9 @@ def test_build_card_contains_daily_report_sections():
                 limit_up_time="09:35",
                 block_name="机器人概念",
                 reason="题材发酵",
+                turnover_rate=12.5,
+                reason_type="机器人+业绩增长",
+                reason_info="行业原因：机器人产业提速。公司原因：订单增长。",
             ),
             StockSummary(
                 code="000007",
@@ -125,6 +132,9 @@ def test_build_card_contains_daily_report_sections():
                 limit_up_time="09:40",
                 block_name="机器人概念",
                 reason="连板延续",
+                turnover_rate=9.5,
+                reason_type="机器人",
+                reason_info="板块连板延续。",
             )
         ],
         early_stocks=[
@@ -195,20 +205,27 @@ def test_build_card_contains_daily_report_sections():
     assert set(tables) == {
         "hot_blocks",
         "continuous_ladder",
+        "high_turnover_high_boards",
         "eastmoney_industries",
         "lower_limit_pool",
     }
     assert set(charts) == {
         "limit_up_structure",
-        "continuous_ladder",
+        "continuous_ladder_chart",
         "hot_blocks_chart",
         "eastmoney_industry",
     }
+    element_ids = [
+        element["element_id"]
+        for element in elements
+        if element["tag"] in {"chart", "table"}
+    ]
+    assert len(element_ids) == len(set(element_ids))
     assert charts["limit_up_structure"]["chart_spec"]["data"]["values"] == [
         {"name": "首板", "value": 7},
         {"name": "连板", "value": 3},
     ]
-    assert charts["continuous_ladder"]["chart_spec"]["data"]["values"] == [
+    assert charts["continuous_ladder_chart"]["chart_spec"]["data"]["values"] == [
         {"name": "3板", "value": 2},
         {"name": "4板", "value": 1},
     ]
@@ -219,6 +236,12 @@ def test_build_card_contains_daily_report_sections():
             "block": "机器人概念",
             "count": 4,
             "leader": "测试龙头（换手 12.30%）",
+            "stocks": (
+                "测试股份（4板）\n"
+                "同板股份（4板）\n"
+                "补涨股份（1板）\n"
+                "低位股份（1板）"
+            ),
             "change": "3.21%",
         }
     ]
@@ -226,26 +249,43 @@ def test_build_card_contains_daily_report_sections():
         "140px",
         "80px",
         "auto",
+        "320px",
         "90px",
     ]
     assert tables["continuous_ladder"]["rows"][0] == {
         "days": "4板",
         "stock": "测试股份(000001)",
-        "turnover": "-",
+        "turnover": "12.50%",
         "time": "09:35",
+        "reason_type": "机器人+业绩增长",
+        "reason_info": "行业原因：机器人产业提速。公司原因：订单增长。",
     }
     assert [column["width"] for column in tables["continuous_ladder"]["columns"]] == [
         "80px",
         "auto",
         "90px",
         "80px",
+        "180px",
+        "320px",
+    ]
+    assert tables["high_turnover_high_boards"]["rows"] == [
+        {
+            "days": "4板",
+            "stock": "测试股份(000001)",
+            "turnover": "12.50%",
+            "time": "09:35",
+            "reason_type": "机器人+业绩增长",
+            "reason_info": "行业原因：机器人产业提速。公司原因：订单增长。",
+        }
     ]
     assert tables["eastmoney_industries"]["rows"][0] == {
         "industry": "专用设备",
         "count": 6,
         "leaders": (
-            "测试设备（3板）（换手 8.20%）、龙头设备（2板）（换手 6.50%）、"
-            "强势设备（1板）（换手 4.10%）、补充设备（1板）（换手 2.80%）"
+            "测试设备（3板）（换手 8.20%）\n"
+            "龙头设备（2板）（换手 6.50%）\n"
+            "强势设备（1板）（换手 4.10%）\n"
+            "补充设备（1板）（换手 2.80%）"
         ),
     }
     assert [column["width"] for column in tables["eastmoney_industries"]["columns"]] == [
@@ -294,6 +334,119 @@ def test_build_card_contains_daily_report_sections():
     assert "同花顺全量涨停池指标" not in reason_material
     assert "东财行业代表涨停股换手（Codex分析补充）" in reason_material
     assert "测试设备（3板）（换手 8.20%）" in reason_material
+
+
+def test_build_report_uses_pool_reason_type_and_block_reason_info_fallback():
+    engine = create_engine("sqlite://")
+    for model in (
+        ContinuousLimitUp,
+        BlockTop,
+        BlockTopStock,
+        LimitUpPool,
+        EastmoneyZTPool,
+        LowerLimitPool,
+        DailyMarketReview,
+    ):
+        model.__table__.create(engine)
+    with engine.begin() as connection:
+        connection.execute(CreateTable(DataFetchLog.__table__))
+    session = sessionmaker(bind=engine)()
+    target_date = date(2026, 7, 15)
+    detailed_reason = "行业原因：机器人产业提速。公司原因：订单持续增长。"
+    try:
+        session.add_all(
+            [
+                ContinuousLimitUp(
+                    id=1,
+                    date=target_date,
+                    code="000001",
+                    name="测试股份",
+                    continuous_days=4,
+                    latest_limit_up_time="09:35",
+                ),
+                BlockTop(
+                    id=1,
+                    date=target_date,
+                    block_code="885001",
+                    block_name="机器人概念",
+                    stock_count=1,
+                ),
+                BlockTopStock(
+                    id=1,
+                    date=target_date,
+                    block_code="885001",
+                    block_name="机器人概念",
+                    code="000001",
+                    name="测试股份",
+                    reason_type="最强风口简因",
+                    reason_info=detailed_reason,
+                ),
+                LimitUpPool(
+                    id=1,
+                    date=target_date,
+                    code="000001",
+                    name="测试股份",
+                    concept="机器人+业绩增长",
+                    turnover_rate=12.5,
+                ),
+            ]
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    notifier = FeishuStockNotifier("sqlite://")
+    notifier.Session = sessionmaker(bind=engine)
+    notifier._aggregate_blocks_from_pool = lambda *_args, **_kwargs: []
+    notifier._aggregate_eastmoney_industries = lambda *_args, **_kwargs: []
+    notifier._build_early_stocks = lambda *_args, **_kwargs: []
+    notifier._build_weak_boards = lambda *_args, **_kwargs: []
+    notifier._build_breakout_stocks = lambda *_args, **_kwargs: []
+    notifier._build_lower_limit_stocks = lambda *_args, **_kwargs: []
+    notifier._build_one_word_stocks = lambda *_args, **_kwargs: []
+    notifier._build_leader_assists = lambda *_args, **_kwargs: []
+    notifier._build_board_overlaps = lambda *_args, **_kwargs: []
+    notifier._build_previous_high_feedback = lambda *_args, **_kwargs: []
+
+    report = notifier.build_report(target_date)
+
+    assert report.top_stocks[0].reason_type == "机器人+业绩增长"
+    assert report.top_stocks[0].reason_info == detailed_reason
+    assert report.top_blocks[0].stocks == [
+        "测试股份（1板）（换手 12.50%）"
+    ]
+
+
+def test_pool_block_summary_includes_all_stocks_with_turnover():
+    engine = create_engine("sqlite://")
+    LimitUpPool.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    target_date = date(2026, 7, 15)
+    try:
+        session.add_all(
+            [
+                LimitUpPool(
+                    id=index,
+                    date=target_date,
+                    code=f"{index:06d}",
+                    name=f"测试股份{index}",
+                    block_name="机器人概念",
+                    limit_up_time=f"09{index:02d}00",
+                    turnover_rate=index,
+                )
+                for index in range(1, 12)
+            ]
+        )
+        session.commit()
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+        blocks = notifier._aggregate_blocks_from_pool(session, target_date)
+    finally:
+        session.close()
+
+    assert len(blocks[0].stocks) == 11
+    assert blocks[0].stocks[0] == "测试股份1（换手 1.00%）"
+    assert blocks[0].stocks[-1] == "测试股份11（换手 11.00%）"
 
 
 def test_build_leader_assists_requires_shared_evidence_earlier_time_and_lower_board():
@@ -368,6 +521,94 @@ def test_feishu_table_keeps_all_rows_and_pages_at_ten():
 
     assert table["page_size"] == 10
     assert table["rows"] == rows
+
+
+def test_feishu_charts_keep_all_blocks_and_industries():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    report = SimpleNamespace(
+        limit_up_type_distribution={},
+        continuous_distribution={},
+        top_blocks=[
+            BlockSummary(f"板块{i}", i, f"龙头{i}", None)
+            for i in range(1, 11)
+        ],
+        eastmoney_industries=[
+            IndustrySummary(f"行业{i}", i, [])
+            for i in range(1, 12)
+        ],
+    )
+
+    charts = {
+        item["element_id"]: item
+        for item in notifier._build_card_charts(report)
+    }
+
+    block_chart = charts["hot_blocks_chart"]
+    industry_chart = charts["eastmoney_industry"]
+    assert len(block_chart["chart_spec"]["data"]["values"]) == 10
+    assert block_chart["chart_spec"]["data"]["values"][-1] == {
+        "name": "板块10",
+        "value": 10,
+    }
+    assert block_chart["chart_spec"]["title"]["text"] == "热门板块"
+    assert block_chart["height"] == "360px"
+    assert len(industry_chart["chart_spec"]["data"]["values"]) == 11
+    assert industry_chart["chart_spec"]["data"]["values"][-1] == {
+        "name": "行业11",
+        "value": 11,
+    }
+    assert industry_chart["chart_spec"]["title"]["text"] == "东财行业涨停"
+    assert industry_chart["height"] == "388px"
+
+
+def test_high_turnover_high_boards_use_strict_height_and_turnover_thresholds():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+
+    def stock(code, days, turnover):
+        return StockSummary(
+            code=code,
+            name=f"测试{code}",
+            continuous_days=days,
+            limit_up_time="09:35",
+            block_name="测试板块",
+            reason="测试",
+            turnover_rate=turnover,
+        )
+
+    elements = notifier._build_high_turnover_high_boards(
+        SimpleNamespace(
+            top_stocks=[
+                stock("000001", 3, 10.0),
+                stock("000002", 2, 20.0),
+                stock("000003", 3, 10.01),
+                stock("000004", 4, 12.5),
+            ]
+        )
+    )
+
+    assert elements[1]["rows"] == [
+        {
+            "days": "4板",
+            "stock": "测试000004(000004)",
+            "turnover": "12.50%",
+            "time": "09:35",
+            "reason_type": "-",
+            "reason_info": "-",
+        },
+        {
+            "days": "3板",
+            "stock": "测试000003(000003)",
+            "turnover": "10.01%",
+            "time": "09:35",
+            "reason_type": "-",
+            "reason_info": "-",
+        },
+    ]
+
+    empty_elements = notifier._build_high_turnover_high_boards(
+        SimpleNamespace(top_stocks=[])
+    )
+    assert empty_elements[1] == {"tag": "markdown", "content": "- 暂无"}
 
 
 def test_generate_sign_matches_feishu_custom_bot_algorithm():
