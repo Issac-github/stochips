@@ -18,7 +18,6 @@ from chain.stock.agents.feishu_notifier import (
     FeishuStockNotifier,
     FeishuStockReport,
     IndustrySummary,
-    LeaderAssistSummary,
     LimitUpPoolAnalysisSummary,
     LowerLimitSummary,
     StockSummary,
@@ -534,7 +533,7 @@ def test_feishu_charts_keep_all_blocks_and_industries():
         ],
         eastmoney_industries=[
             IndustrySummary(f"行业{i}", i, [])
-            for i in range(1, 12)
+            for i in range(1, 42)
         ],
     )
 
@@ -552,13 +551,19 @@ def test_feishu_charts_keep_all_blocks_and_industries():
     }
     assert block_chart["chart_spec"]["title"]["text"] == "热门板块"
     assert block_chart["height"] == "360px"
-    assert len(industry_chart["chart_spec"]["data"]["values"]) == 11
+    assert len(industry_chart["chart_spec"]["data"]["values"]) == 41
     assert industry_chart["chart_spec"]["data"]["values"][-1] == {
-        "name": "行业11",
-        "value": 11,
+        "name": "行业41",
+        "value": 41,
     }
     assert industry_chart["chart_spec"]["title"]["text"] == "东财行业涨停"
-    assert industry_chart["height"] == "388px"
+    assert industry_chart["height"] == "999px"
+
+
+def test_feishu_horizontal_chart_height_is_capped_at_feishu_limit():
+    assert FeishuStockNotifier._horizontal_chart_height(32) == "976px"
+    assert FeishuStockNotifier._horizontal_chart_height(33) == "999px"
+    assert FeishuStockNotifier._horizontal_chart_height(100) == "999px"
 
 
 def test_high_turnover_high_boards_use_strict_height_and_turnover_thresholds():

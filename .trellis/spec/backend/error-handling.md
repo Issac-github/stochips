@@ -72,6 +72,7 @@ Moonshot after a Codex runtime failure.
 - Optional env: `FEISHU_WEBHOOK_SECRET`; when configured, include `timestamp` and `sign`.
 - Feishu success response: `{"code": 0, ...}`.
 - Feishu platform rate limit response: `{"code": 11232, "msg": "frequency limited ..."}`.
+- Horizontal chart height is calculated as `max(260, 80 + item_count * 28)` px and capped at `999px`, the maximum fixed height accepted by Feishu Card 2.0 charts.
 - The scheduled Feishu report has no independent cron trigger. `DailyJobScheduler.run_daily_job()` sends it only after complete data fetch and a successful Codex review.
 
 ### 4. Validation & Error Matrix
@@ -79,6 +80,7 @@ Moonshot after a Codex runtime failure.
 - Non-JSON Feishu response -> raise `RuntimeError("飞书返回非JSON响应: ...")`.
 - Feishu `code=11232` -> retry with bounded backoff, then return final response if still limited.
 - Feishu non-zero code other than `11232` -> do not retry; raise `RuntimeError("飞书发送失败: ...")` at the command boundary.
+- Feishu chart `height="1000px"` -> error `200551`; cap fixed chart heights at `999px` before building the webhook payload.
 - Scheduled fetch errors, incomplete data, Codex failures, and formal Feishu failures -> persist `daily_job_run` before sending a red failure status card. Each failed stage retries twice after 5 and 15 minutes; startup restores today's `running`/`retrying` row from its saved stage. After the final failure, the status card uses the next weekday 16:03 as the next automatic task time.
 - Failure cards prefer `FEISHU_ALERT_WEBHOOK_URL`; when it is absent they fall back to `FEISHU_WEBHOOK_URL`. A webhook/network outage can still prevent both cards, so logs remain the last-resort signal.
 - Codex succeeds during an even minute or exactly at `:00` -> wait until an odd-minute send window with a small random offset before calling `send_feishu_report`.
@@ -87,14 +89,28 @@ Moonshot after a Codex runtime failure.
 - Good: 11232, 11232, then code 0 -> logs warnings, sleeps between attempts, and reports success.
 - Base: code 0 first try -> no warning and no sleep.
 - Bad: bad signature or invalid webhook code -> fail fast instead of burning retries.
+- Bad: allowing an unbounded number of industry or block rows to produce a chart taller than `999px` -> Feishu rejects the entire card before delivery.
 - Bad: scheduling the daily webhook independently, because it can race the fetch or Codex review and send an incomplete card.
 
 ### 6. Tests Required
 - Unit test that monkeypatches `requests.post` and `time.sleep` to prove 11232 retries without real delay.
 - Unit test that a non-11232 Feishu error returns after one post attempt.
+- Unit test that a horizontal chart reaches but never exceeds `"999px"` while its data values are retained.
 - Unit test that the ordered daily job reaches Feishu only after fetch and Codex review, and stops before review when data is incomplete.
 
 ### 7. Wrong vs Correct
+
+Wrong:
+
+```python
+height = f"{min(1000, calculated_height)}px"
+```
+
+Correct:
+
+```python
+height = f"{min(999, calculated_height)}px"
+```
 
 Wrong:
 

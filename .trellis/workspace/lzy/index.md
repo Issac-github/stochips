@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-07-10
+- **Total Sessions**: 6
+- **Last Active**: 2026-07-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~168 | Active |
+| `journal-1.md` | ~201 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-07-21 | Cap Feishu chart height | `44e3484` | `main` |
 | 5 | 2026-07-10 | Extend THS downside facts and Codex fallback | - | `main` |
 | 4 | 2026-07-09 | Render THS board stocks in Feishu report | `70d5f8c` | `main` |
 | 3 | 2026-06-15 | Add DEPLOY.md and one-click deploy.sh | `4f06582` | `main` |

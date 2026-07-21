@@ -694,7 +694,9 @@ class FeishuStockNotifier:
 
     @staticmethod
     def _horizontal_chart_height(item_count: int) -> str:
-        return f"{max(260, 80 + item_count * 28)}px"
+        # Feishu only accepts fixed chart heights up to 999px. Cap the visual
+        # height without truncating the chart's underlying data.
+        return f"{min(999, max(260, 80 + item_count * 28))}px"
 
     @staticmethod
     def _build_bar_chart(
