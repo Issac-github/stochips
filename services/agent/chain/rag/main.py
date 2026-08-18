@@ -1,7 +1,7 @@
 """
 RAG 模块：基于本地向量数据库 + LangChain 实现检索增强生成
 
-- 向量数据库：ChromaDB（本地持久化）
+- 向量数据库：Qdrant（本地持久化）
 - Embedding 模型：HuggingFace 本地模型（BAAI/bge-small-zh-v1.5，适合中文）
 - 文档来源：rag/ 目录下的 .md 文件
 """
@@ -16,13 +16,14 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     # Type-only imports — pulled in by IDEs and `mypy`, not at runtime.
-    from langchain_chroma import Chroma
     from langchain_core.documents import Document
     from langchain_huggingface import HuggingFaceEmbeddings
+    from langchain_qdrant import QdrantVectorStore
 
 # 项目路径
 RAG_DIR = Path(__file__).parent
-CHROMA_PERSIST_DIR = str(RAG_DIR / "chroma_db")
+QDRANT_PERSIST_DIR = str(RAG_DIR / "qdrant_db")
+QDRANT_COLLECTION_NAME = "rag_documents"
 
 # 本地 Embedding 模型，首次运行会自动下载
 EMBEDDING_MODEL_NAME = "BAAI/bge-small-zh-v1.5"  # 模型大小约 1.5GB
@@ -514,7 +515,7 @@ def split_documents(docs, chunk_size=560, chunk_overlap=100, min_chunk_size=160)
     return semantic_docs
 
 
-def build_vector_store(force_rebuild: bool = False) -> "Chroma":
+def build_vector_store(force_rebuild: bool = False) -> "QdrantVectorStore":
     """
     构建或加载向量数据库
 
@@ -522,44 +523,43 @@ def build_vector_store(force_rebuild: bool = False) -> "Chroma":
         force_rebuild: 是否强制重建（忽略已有数据库）
 
     Returns:
-        Chroma 向量数据库实例
+        Qdrant 向量数据库实例
     """
-    from langchain_chroma import Chroma
+    from chain.rag.vector_store import open_local_vector_store
 
     embeddings = get_embeddings()
 
     # 如果已有持久化数据库且不强制重建，直接加载
-    if not force_rebuild and os.path.exists(CHROMA_PERSIST_DIR):
+    if not force_rebuild and os.path.exists(QDRANT_PERSIST_DIR):
         print("📂 加载已有向量数据库...")
-        return Chroma(
-            persist_directory=CHROMA_PERSIST_DIR,
-            embedding_function=embeddings,
+        return open_local_vector_store(
+            path=QDRANT_PERSIST_DIR,
+            collection_name=QDRANT_COLLECTION_NAME,
+            embeddings=embeddings,
         )
-    if force_rebuild and os.path.exists(CHROMA_PERSIST_DIR):
+    if force_rebuild and os.path.exists(QDRANT_PERSIST_DIR):
         print("🧹 清理旧向量数据库...")
-        _clear_directory_contents(CHROMA_PERSIST_DIR)
+        _clear_directory_contents(QDRANT_PERSIST_DIR)
 
     # 重新构建
     print("📄 加载文档...")
     docs = load_documents()
+    vector_store = open_local_vector_store(
+        path=QDRANT_PERSIST_DIR,
+        collection_name=QDRANT_COLLECTION_NAME,
+        embeddings=embeddings,
+    )
     if not docs:
         # 返回空的向量数据库
-        return Chroma(
-            persist_directory=CHROMA_PERSIST_DIR,
-            embedding_function=embeddings,
-        )
+        return vector_store
 
     print(f"✂️  分割文档，共 {len(docs)} 个文件...")
     chunks = split_documents(docs)
     print(f"📦 共生成 {len(chunks)} 个文本块")
 
     print("🔨 构建向量数据库...")
-    vector_store = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        persist_directory=CHROMA_PERSIST_DIR,
-    )
-    print(f"✅ 向量数据库构建完成，存储于 {CHROMA_PERSIST_DIR}")
+    vector_store.add_documents(chunks)
+    print(f"✅ 向量数据库构建完成，存储于 {QDRANT_PERSIST_DIR}")
     return vector_store
 
 
@@ -668,7 +668,7 @@ if __name__ == "__main__":
         q = " ".join(sys.argv[2:])
         results = query_rag(q)
         for i, r in enumerate(results, 1):
-            print(f"\n--- 结果 {i} (距离分数: {r['score']:.4f}，越小越相关) ---")
+            print(f"\n--- 结果 {i} (相似度分数: {r['score']:.4f}，越大越相关) ---")
             print(f"来源: {r['metadata'].get('source', '未知')}")
             print(f"内容: {r['content'][:200]}...")
     elif command == "chat" and len(sys.argv) >= 3:

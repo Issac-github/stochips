@@ -17,6 +17,10 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from langchain_qdrant import QdrantVectorStore
 
 # ---- 路径 ----
 WIKI_ROOT = Path(__file__).parent
@@ -25,7 +29,8 @@ WIKI_DIR = WIKI_ROOT / "wiki"
 SCHEMA_FILE = WIKI_ROOT / "WIKI.md"
 INDEX_FILE = WIKI_DIR / "index.md"
 LOG_FILE = WIKI_DIR / "log.md"
-CHROMA_DIR = str(WIKI_ROOT / "chroma_wiki_db")
+QDRANT_DIR = str(WIKI_ROOT / "qdrant_wiki_db")
+QDRANT_COLLECTION_NAME = "wiki_documents"
 
 
 def _clear_directory_contents(path: str):
@@ -76,22 +81,28 @@ def _get_llm():
 
 
 # ---- 向量数据库 ----
-def build_wiki_vector_store(force_rebuild: bool = False) -> "Chroma":
+def build_wiki_vector_store(
+    force_rebuild: bool = False,
+) -> "QdrantVectorStore":
     """构建或加载 wiki 页面的向量数据库"""
-    from langchain_chroma import Chroma
-    from langchain_community.document_loaders import DirectoryLoader, TextLoader
+    from chain.rag.vector_store import open_local_vector_store
+    from langchain_community.document_loaders import (
+        DirectoryLoader,
+        TextLoader,
+    )
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     embeddings = _get_embeddings()
 
-    if not force_rebuild and os.path.exists(CHROMA_DIR):
-        return Chroma(
-            persist_directory=CHROMA_DIR,
-            embedding_function=embeddings,
+    if not force_rebuild and os.path.exists(QDRANT_DIR):
+        return open_local_vector_store(
+            path=QDRANT_DIR,
+            collection_name=QDRANT_COLLECTION_NAME,
+            embeddings=embeddings,
         )
-    if force_rebuild and os.path.exists(CHROMA_DIR):
+    if force_rebuild and os.path.exists(QDRANT_DIR):
         print("🧹 清理旧 Wiki 向量数据库...")
-        _clear_directory_contents(CHROMA_DIR)
+        _clear_directory_contents(QDRANT_DIR)
 
     # 加载 wiki 目录下的所有 .md 文件
     loader = DirectoryLoader(
@@ -101,8 +112,13 @@ def build_wiki_vector_store(force_rebuild: bool = False) -> "Chroma":
         loader_kwargs={"encoding": "utf-8"},
     )
     docs = loader.load()
+    vector_store = open_local_vector_store(
+        path=QDRANT_DIR,
+        collection_name=QDRANT_COLLECTION_NAME,
+        embeddings=embeddings,
+    )
     if not docs:
-        return Chroma(persist_directory=CHROMA_DIR, embedding_function=embeddings)
+        return vector_store
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
@@ -111,11 +127,7 @@ def build_wiki_vector_store(force_rebuild: bool = False) -> "Chroma":
     )
     chunks = splitter.split_documents(docs)
 
-    vector_store = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        persist_directory=CHROMA_DIR,
-    )
+    vector_store.add_documents(chunks)
     print(f"✅ Wiki 向量数据库构建完成，共 {len(chunks)} 个文本块")
     return vector_store
 

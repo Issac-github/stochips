@@ -78,6 +78,8 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - THS tables drive short-term structure: limit-up overview, limit-down overview and full 跌停池, 连板梯队, 核心连板, 一字板明细, 早盘强势, 分歧弱板, 涨停前高突破, 昨日高标反馈, 同花顺板块热度, and 热点板块交集. 东财只提供独立的行业涨停交叉视图。
   - Eastmoney drives the independent `东财行业涨停` section by grouping `eastmoney_zt_pool.block_name`.
   - Board/industry, early-strength, weak-board, and overlap sections are all-item summaries. 涨停前高突破 renders every qualifying stock, grouped into non-overlapping windows of `<=5`, `6-10`, `11-30`, and `31-60` trading days after the previous limit-up chain.
+  - 涨停前高突破资格由目标日 `limit_up_pool`、历史二连板及以上链段、至少一个间隔交易日和目标涨停价大于或等于历史链段最高涨停价共同决定。目标日是否也存在于 `continuous_limit_up` 不得作为排除条件；断板后重新二板或更高板仍应纳入。选择历史基准时按链段从近到远检查，跳过与目标日没有间隔、属于当前连续晋级的链段，使用最近一段已经断开的连板。价格相等时仍属于对应时间窗口，展示为 `涨停触及前高`；严格高于时展示 `突破X%`。
+  - 涨停前高突破的间隔文案使用 `距前段连板结束N个交易日`。该数值是前段连板结束日至目标日之间的交易日数量，可能包含当前重新连板的交易日，不得称为全部“断板日”。
   - `同花顺板块热度` should keep the board summary and then render every stock available from `block_top_stock` for each THS board. Use compact labels with board count, not source labels: `板块：31 家涨停，涨幅 3.22%，股票A（3板）、股票B（1板）`. Do not match `block_top.block_name` against `limit_up_pool.block_name` to infer concept-board membership; those names are not a stable one-to-one contract.
   - `热点板块交集` derives from `block_top_stock` codes only. It reports every significant pairwise member intersection and each board's overlap ratio, so Codex does not sum overlapping concept labels as independent market capacity.
   - Prefer THS `stock_list[].high` as the Feishu stock label when available, e.g. `华天科技（3天2板）`; fall back to `continue_num` as `N板`.
@@ -135,7 +137,7 @@ Do not use `session.merge` for records keyed by `(date, code)` or `(date, block_
   - Eastmoney industry rows do not include `前三` or `N 只涨停`, and render every stock as `名字（几板）`
   - 核心连板 groups stocks by board count instead of repeating per-stock risk text
   - `分歧弱板` requires `open_count > 0`
-  - 涨停前高突破 uses successful `data_fetch_log` `limit_up_pool` dates as the trading-date sequence (with historical pool-date fallback), looks back 60 trading days, renders all qualifying stocks in the four trading-day windows, and renders the gap as trading days
+  - 涨停前高突破 uses successful `data_fetch_log` `limit_up_pool` dates as the trading-date sequence (with historical pool-date fallback), looks back 60 trading days, renders all qualifying stocks in the four trading-day windows, and renders the gap as trading days. Its calculation tests must include equal-high restarted 2-board, 3-board, and 4-board chains plus a no-gap continuous advance, asserting that restarted chains use the prior completed chain while uninterrupted chains do not qualify. Formatting tests must distinguish equal-high `涨停触及前高` from strict `突破X%` and use `距前段连板结束N个交易日`.
   - THS `first_limit_up_time`, `last_limit_up_time`, `reason_type`, and `reason_info` map into the stored pool fields and Codex material; early-strength ordering must not depend on Eastmoney time fields
 - Fetch guard tests should assert:
   - weekend target dates return `skipped=True` before network calls

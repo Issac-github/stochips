@@ -14,6 +14,7 @@ Read these guides before changing backend behavior:
 | [Error Handling](./error-handling.md) | CLI exits, fetch/storage failures, gRPC status mapping, task errors |
 | [Logging Guidelines](./logging-guidelines.md) | Python and Go logging conventions |
 | [Quality Guidelines](./quality-guidelines.md) | Tests, command contracts, generated files, config, and forbidden patterns |
+| [Vector Store Guidelines](./vector-store-guidelines.md) | Optional wiki/RAG Qdrant persistence, rebuild, and test contracts |
 
 Primary references:
 

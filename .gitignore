@@ -35,6 +35,8 @@ services/agent/chain/wiki/raw/
 services/agent/chain/wiki/wiki/
 services/agent/chain/wiki/chroma_wiki_db/
 services/agent/chain/rag/chroma_db/
+services/agent/chain/wiki/qdrant_wiki_db/
+services/agent/chain/rag/qdrant_db/
 services/agent/examples/ai_analysis_example.md
 
 # Local runtime state

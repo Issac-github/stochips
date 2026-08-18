@@ -209,8 +209,8 @@ services:
     volumes:
       - ./services/agent/chain/wiki/raw:/app/chain/wiki/raw
       - ./services/agent/chain/wiki/wiki:/app/chain/wiki/wiki
-      - wiki_chroma:/app/chain/wiki/chroma_wiki_db
-      - rag_chroma:/app/chain/rag/chroma_db
+      - wiki_qdrant:/app/chain/wiki/qdrant_wiki_db
+      - rag_qdrant:/app/chain/rag/qdrant_db
       - hf_cache:/root/.cache/huggingface
       - ./services/agent/logs:/app/logs
     networks:
@@ -219,8 +219,8 @@ services:
 
 volumes:
   mysql_data:
-  wiki_chroma:
-  rag_chroma:
+  wiki_qdrant:
+  rag_qdrant:
   hf_cache:
   codex_home:
 

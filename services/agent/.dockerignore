@@ -29,3 +29,5 @@ docker/mysql/data/
 mysql_data/
 chain/wiki/chroma_wiki_db/
 chain/rag/chroma_db/
+chain/wiki/qdrant_wiki_db/
+chain/rag/qdrant_db/

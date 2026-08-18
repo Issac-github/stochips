@@ -1,6 +1,6 @@
 # RAG / Wiki service image.
 # This image is intentionally separate from stock_agent because HuggingFace,
-# Chroma and torch make the image much larger.
+# Qdrant and torch make the image much larger.
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -40,14 +40,14 @@ RUN pip install --no-cache-dir poetry && \
       --extra-index-url "${PIP_INDEX_URL}" \
       "torch==${TORCH_VERSION}" && \
     pip install --no-cache-dir \
-      "langchain-chroma>=0.2.0,<0.3.0" \
+      "langchain-qdrant>=0.2.0,<0.3.0" \
       "langchain-community>=0.3.0,<0.4.0" \
       "langchain-huggingface>=0.1.0,<0.2.0" \
       "onnxruntime>=1.23.0,<1.24.0"
 
 COPY . .
 
-RUN mkdir -p logs chain/wiki/chroma_wiki_db chain/rag/chroma_db /root/.cache/huggingface && \
+RUN mkdir -p logs chain/wiki/qdrant_wiki_db chain/rag/qdrant_db /root/.cache/huggingface && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 CMD ["python", "-m", "main", "wiki", "pages"]

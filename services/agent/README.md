@@ -90,7 +90,7 @@ MOONSHOT_CONTEXT_WINDOW=262144
 | `stock_rpc`   | Go gRPC 网关，提交任务并调用现有 Python 股票命令执行  |
 | `rag_agent`   | 可选服务，运行 wiki/RAG 向量检索，使用 CPU-only torch |
 
-`stock_agent` 镜像默认只安装股票抓取、风控和 Moonshot AI 分析依赖，不安装 HuggingFace/Chroma/Torch，避免镜像过大。需要 wiki/RAG 时启动单独的 `rag_agent`，它会安装 CPU-only torch，并把模型缓存、Chroma 向量库挂到 Docker volume。
+`stock_agent` 镜像默认只安装股票抓取、风控和 Moonshot AI 分析依赖，不安装 HuggingFace/Qdrant/Torch，避免镜像过大。需要 wiki/RAG 时启动单独的 `rag_agent`，它会安装 CPU-only torch，并把模型缓存、Qdrant 向量库挂到 Docker volume。
 
 #### 基础启动
 
@@ -398,13 +398,13 @@ docker compose --profile rag run --rm rag_agent python -m chain.rag.main chat "�
 
 # 删除 RAG/wiki 向量库 volume（会清空已构建索引，保留模型缓存）
 docker compose down
-docker volume rm agent_rag_chroma agent_wiki_chroma
+docker volume rm agent_rag_qdrant agent_wiki_qdrant
 
 # 如果连 HuggingFace 模型缓存也要清空，再执行这个
 docker volume rm agent_hf_cache
 ```
 
-`rag_agent` 使用 Docker volume 保存 Chroma 向量库和 HuggingFace 模型缓存。重建镜像不会删除向量库和模型缓存；删除 `agent_rag_chroma`、`agent_wiki_chroma` 会强制重新构建索引，删除 `agent_hf_cache` 会导致下次重新下载 embedding 模型。
+`rag_agent` 使用 Docker volume 保存 Qdrant 向量库和 HuggingFace 模型缓存。重建镜像不会删除向量库和模型缓存；删除 `agent_rag_qdrant`、`agent_wiki_qdrant` 会强制重新构建索引，删除 `agent_hf_cache` 会导致下次重新下载 embedding 模型。升级前已有的 Chroma 索引不会原地迁移，请分别执行 wiki/RAG 的 build 或 rebuild 命令生成 Qdrant 索引；确认新索引可用后，可手动删除旧的 `agent_rag_chroma`、`agent_wiki_chroma` volume。
 
 国内服务器首次下载 embedding 模型时建议保留 `.env` 中的：
 
