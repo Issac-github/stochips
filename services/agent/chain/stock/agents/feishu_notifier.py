@@ -1995,12 +1995,6 @@ class FeishuStockNotifier:
         if not previous_dates:
             return []
 
-        current_continuous_codes = {
-            item.code
-            for item in session.query(ContinuousLimitUp)
-            .filter(ContinuousLimitUp.date == target_date)
-            .all()
-        }
         candidates = (
             session.query(LimitUpPool)
             .filter(LimitUpPool.date == target_date)
@@ -2009,9 +2003,6 @@ class FeishuStockNotifier:
 
         results = []
         for pool in candidates:
-            if pool.code in current_continuous_codes:
-                continue
-
             breakout_price = self._stock_price(pool)
             if breakout_price is None:
                 continue
@@ -2029,7 +2020,10 @@ class FeishuStockNotifier:
             if not chain_rows:
                 continue
 
-            chain_segment = self._latest_chain_segment(chain_rows, previous_dates)
+            chain_segment = self._latest_completed_chain_segment(
+                chain_rows,
+                previous_dates,
+            )
             if not chain_segment:
                 continue
 
@@ -2047,7 +2041,7 @@ class FeishuStockNotifier:
             previous_high = self._chain_high_price(session, chain_segment)
             if previous_high is None or previous_high <= 0:
                 continue
-            if breakout_price <= previous_high:
+            if breakout_price < previous_high:
                 continue
 
             previous_max_days = max(item.continuous_days or 0 for item in chain_segment)
@@ -2124,6 +2118,25 @@ class FeishuStockNotifier:
                 break
             segment.append(row)
         return segment
+
+    def _latest_completed_chain_segment(
+        self, chain_rows: List[ContinuousLimitUp], previous_dates: List[date]
+    ) -> List[ContinuousLimitUp]:
+        remaining_rows = list(chain_rows)
+        while remaining_rows:
+            segment = self._latest_chain_segment(remaining_rows, previous_dates)
+            if not segment:
+                return []
+
+            chain_end = max(item.date for item in segment)
+            if any(item > chain_end for item in previous_dates):
+                return segment
+
+            segment_dates = {item.date for item in segment}
+            remaining_rows = [
+                item for item in remaining_rows if item.date not in segment_dates
+            ]
+        return []
 
     def _chain_high_price(
         self, session: Session, chain_segment: List[ContinuousLimitUp]
@@ -2477,12 +2490,18 @@ class FeishuStockNotifier:
                 for index, item in enumerate(grouped, 1):
                     block = f"，{item.block_name}" if item.block_name else ""
                     reason = f"，{item.reason}" if item.reason else ""
+                    price_result = (
+                        "涨停触及前高"
+                        if item.breakout_ratio == 0
+                        else f"突破{item.breakout_ratio:.1f}%"
+                    )
                     lines.append(
                         f"{index}. {item.name}({item.code})："
-                        f"前期{item.previous_max_days}板，断板{item.gap_trading_days}个交易日，"
+                        f"前期{item.previous_max_days}板，"
+                        f"距前段连板结束{item.gap_trading_days}个交易日，"
                         f"前高{item.previous_high_price:.2f}，"
                         f"今涨停{item.breakout_price:.2f}，"
-                        f"突破{item.breakout_ratio:.1f}%{block}{reason}"
+                        f"{price_result}{block}{reason}"
                     )
             lower_bound = upper_bound
         # Feishu Markdown collapses single line breaks, so each time window must

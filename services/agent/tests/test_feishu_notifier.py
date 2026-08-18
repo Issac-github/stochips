@@ -826,7 +826,7 @@ def test_format_breakouts_groups_all_stocks_by_trading_day_window():
     assert "31-60个交易日内涨停前高突破" in content
     assert all(name in content for name in ["五日突破", "十日突破", "三十日突破", "六十日突破"])
     assert "前期3板" in content
-    assert "断板5个交易日" in content
+    assert "距前段连板结束5个交易日" in content
     assert "前高11.20" in content
     assert "今涨停12.50" in content
     assert "突破11.6%" in content
@@ -848,6 +848,246 @@ def test_format_breakouts_keeps_all_windows_when_there_are_no_stocks():
         "**11-30个交易日内涨停前高突破**\n\n- 暂无\n\n"
         "**31-60个交易日内涨停前高突破**\n\n- 暂无"
     )
+
+
+def test_build_breakouts_includes_equal_high_restarted_chain_but_not_continuous_advance():
+    engine = create_engine("sqlite://")
+    for model in (ContinuousLimitUp, LimitUpPool):
+        model.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    target_date = date(2026, 7, 10)
+    try:
+        session.add_all(
+            [
+                ContinuousLimitUp(
+                    id=1,
+                    date=date(2026, 7, 7),
+                    code="000001",
+                    name="重新连板",
+                    continuous_days=3,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=2,
+                    date=target_date,
+                    code="000001",
+                    name="重新连板",
+                    continuous_days=2,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=3,
+                    date=date(2026, 7, 9),
+                    code="000002",
+                    name="连续晋级",
+                    continuous_days=2,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=4,
+                    date=target_date,
+                    code="000002",
+                    name="连续晋级",
+                    continuous_days=3,
+                    limit_up_price=12,
+                ),
+                ContinuousLimitUp(
+                    id=5,
+                    date=date(2026, 7, 7),
+                    code="000003",
+                    name="未到前高",
+                    continuous_days=2,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=6,
+                    date=target_date,
+                    code="000003",
+                    name="未到前高",
+                    continuous_days=2,
+                    limit_up_price=9,
+                ),
+                LimitUpPool(
+                    id=1,
+                    date=target_date,
+                    code="000001",
+                    name="重新连板",
+                    limit_up_price=10,
+                ),
+                LimitUpPool(
+                    id=2,
+                    date=target_date,
+                    code="000002",
+                    name="连续晋级",
+                    limit_up_price=12,
+                ),
+                LimitUpPool(
+                    id=3,
+                    date=target_date,
+                    code="000003",
+                    name="未到前高",
+                    limit_up_price=9,
+                ),
+            ]
+        )
+        session.commit()
+
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        notifier._recent_trading_dates = lambda *_args, **_kwargs: [
+            target_date,
+            date(2026, 7, 9),
+            date(2026, 7, 8),
+            date(2026, 7, 7),
+        ]
+
+        breakouts = notifier._build_breakout_stocks(session, target_date)
+    finally:
+        session.close()
+
+    assert [item.code for item in breakouts] == ["000001"]
+    assert breakouts[0].gap_trading_days == 2
+    assert breakouts[0].previous_max_days == 3
+    assert breakouts[0].previous_high_price == 10
+    assert breakouts[0].breakout_price == 10
+    assert breakouts[0].breakout_ratio == 0
+    content = notifier._format_breakouts(breakouts)
+    assert "距前段连板结束2个交易日" in content
+    assert "涨停触及前高" in content
+    assert "突破0.0%" not in content
+
+
+def test_build_breakouts_uses_prior_completed_chain_for_restarted_higher_boards():
+    engine = create_engine("sqlite://")
+    for model in (ContinuousLimitUp, LimitUpPool):
+        model.__table__.create(engine)
+    session = sessionmaker(bind=engine)()
+    target_date = date(2026, 7, 10)
+    try:
+        session.add_all(
+            [
+                ContinuousLimitUp(
+                    id=1,
+                    date=date(2026, 7, 3),
+                    code="000003",
+                    name="重新三板",
+                    continuous_days=3,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=2,
+                    date=date(2026, 7, 9),
+                    code="000003",
+                    name="重新三板",
+                    continuous_days=2,
+                    limit_up_price=9,
+                ),
+                ContinuousLimitUp(
+                    id=3,
+                    date=target_date,
+                    code="000003",
+                    name="重新三板",
+                    continuous_days=3,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=4,
+                    date=date(2026, 7, 3),
+                    code="000004",
+                    name="重新四板",
+                    continuous_days=3,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=5,
+                    date=date(2026, 7, 8),
+                    code="000004",
+                    name="重新四板",
+                    continuous_days=2,
+                    limit_up_price=8,
+                ),
+                ContinuousLimitUp(
+                    id=6,
+                    date=date(2026, 7, 9),
+                    code="000004",
+                    name="重新四板",
+                    continuous_days=3,
+                    limit_up_price=9,
+                ),
+                ContinuousLimitUp(
+                    id=7,
+                    date=target_date,
+                    code="000004",
+                    name="重新四板",
+                    continuous_days=4,
+                    limit_up_price=10,
+                ),
+                ContinuousLimitUp(
+                    id=8,
+                    date=date(2026, 7, 8),
+                    code="000005",
+                    name="连续四板",
+                    continuous_days=2,
+                    limit_up_price=8,
+                ),
+                ContinuousLimitUp(
+                    id=9,
+                    date=date(2026, 7, 9),
+                    code="000005",
+                    name="连续四板",
+                    continuous_days=3,
+                    limit_up_price=9,
+                ),
+                ContinuousLimitUp(
+                    id=10,
+                    date=target_date,
+                    code="000005",
+                    name="连续四板",
+                    continuous_days=4,
+                    limit_up_price=10,
+                ),
+                LimitUpPool(
+                    id=1,
+                    date=target_date,
+                    code="000003",
+                    name="重新三板",
+                    limit_up_price=10,
+                ),
+                LimitUpPool(
+                    id=2,
+                    date=target_date,
+                    code="000004",
+                    name="重新四板",
+                    limit_up_price=10,
+                ),
+                LimitUpPool(
+                    id=3,
+                    date=target_date,
+                    code="000005",
+                    name="连续四板",
+                    limit_up_price=10,
+                ),
+            ]
+        )
+        session.commit()
+
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        notifier._recent_trading_dates = lambda *_args, **_kwargs: [
+            target_date,
+            date(2026, 7, 9),
+            date(2026, 7, 8),
+            date(2026, 7, 7),
+            date(2026, 7, 6),
+            date(2026, 7, 3),
+        ]
+
+        breakouts = notifier._build_breakout_stocks(session, target_date)
+    finally:
+        session.close()
+
+    assert {item.code for item in breakouts} == {"000003", "000004"}
+    assert {item.gap_trading_days for item in breakouts} == {4}
+    assert {item.previous_max_days for item in breakouts} == {3}
+    assert {item.breakout_ratio for item in breakouts} == {0}
 
 
 def test_normalize_limit_up_time_accepts_ths_timestamp_and_clock_values():
