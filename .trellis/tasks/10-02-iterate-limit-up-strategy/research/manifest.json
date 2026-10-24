@@ -1,0 +1,781 @@
+{
+  "candidate_rules": 85,
+  "train": "2026-07",
+  "validation": "2026-08",
+  "holdout": "2026-09",
+  "feature_fields": [
+    "date",
+    "month",
+    "code",
+    "name",
+    "height",
+    "type",
+    "turnover",
+    "open_count",
+    "first",
+    "last",
+    "slowdown",
+    "concave_proxy",
+    "supports",
+    "market_down_count"
+  ],
+  "boundary_policy": "During discovery exclude a signal if its next trading-day outcome belongs to a later month. July 31 and August 31 excluded from development scoring.",
+  "ranking": "Eligible rules ranked by pooled July+August Wilson lower bound; August hit rate and lower downside break ties.",
+  "gates": {
+    "july_n_min": 8,
+    "august_n_min": 15,
+    "pooled_n_min": 40,
+    "pooled_stocks_min": 20,
+    "pooled_dates_min": 15,
+    "each_month_hit_ge_own_unfiltered_type_baseline": true
+  },
+  "source_sha256": "407c0edacea3270d5ffd083deac299180d3b79f5f8077f5c433fc6f999e7ef9d",
+  "original_sha256": "ba7071cbe20946280ab96f90d2a56b0c7185a35e7e5e0e43ef637a021205bf5b",
+  "caveat": "September aggregate data was inspected in an earlier audit; temporal validation is not fully blind.",
+  "rules": [
+    {
+      "id": "B_all",
+      "group": "baseline",
+      "hmin": 1
+    },
+    {
+      "id": "B_2plus",
+      "group": "baseline",
+      "hmin": 2
+    },
+    {
+      "id": "B_3plus",
+      "group": "baseline",
+      "hmin": 3
+    },
+    {
+      "id": "B_nonword",
+      "group": "baseline",
+      "kind": "nonword",
+      "hmin": 2
+    },
+    {
+      "id": "B_oneword",
+      "group": "baseline",
+      "kind": "oneword",
+      "hmin": 2
+    },
+    {
+      "id": "A_height3",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 3
+    },
+    {
+      "id": "A_height4",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 4
+    },
+    {
+      "id": "A_seal0945",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "last_max": 35100
+    },
+    {
+      "id": "A_seal1000",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "last_max": 36000
+    },
+    {
+      "id": "A_seal1030",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "last_max": 37800
+    },
+    {
+      "id": "A_zeroopen",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "open_max": 0
+    },
+    {
+      "id": "A_oneopen",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "open_max": 1
+    },
+    {
+      "id": "A_turn10",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "turn_max": 10
+    },
+    {
+      "id": "A_turn20",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "turn_max": 20
+    },
+    {
+      "id": "A_notslower",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "not_slower": true
+    },
+    {
+      "id": "A_marketdown20",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "down_max": 19
+    },
+    {
+      "id": "A_support",
+      "group": "ablation",
+      "kind": "nonword",
+      "hmin": 2,
+      "support_min": 1
+    },
+    {
+      "id": "N_h2-5_s35100_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-5_s35100_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-5_s35100_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-5_s35100_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-5_s36000_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-5_s36000_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-5_s36000_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-5_s36000_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-5_s37800_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-5_s37800_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-5_s37800_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-5_s37800_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-10_s35100_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-10_s35100_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-10_s35100_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-10_s35100_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-10_s36000_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-10_s36000_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-10_s36000_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-10_s36000_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-10_s37800_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-10_s37800_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h2-10_s37800_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h2-10_s37800_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-5_s35100_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-5_s35100_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-5_s35100_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-5_s35100_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-5_s36000_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-5_s36000_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-5_s36000_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-5_s36000_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-5_s37800_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-5_s37800_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-5_s37800_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-5_s37800_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 5,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-10_s35100_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-10_s35100_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-10_s35100_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-10_s35100_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 35100,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-10_s36000_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-10_s36000_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-10_s36000_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-10_s36000_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-10_s37800_o0_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-10_s37800_o0_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 0,
+      "turn_max": 20
+    },
+    {
+      "id": "N_h3-10_s37800_o1_t10",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 10
+    },
+    {
+      "id": "N_h3-10_s37800_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 3,
+      "hmax": 10,
+      "last_max": 37800,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    {
+      "id": "O_h2-4_t5",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 4,
+      "turn_max": 5
+    },
+    {
+      "id": "O_h2-4_t10",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 4,
+      "turn_max": 10
+    },
+    {
+      "id": "O_h2-4_t20",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 4,
+      "turn_max": 20
+    },
+    {
+      "id": "O_h2-4_tNone",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 4
+    },
+    {
+      "id": "O_h2-5_t5",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 5,
+      "turn_max": 5
+    },
+    {
+      "id": "O_h2-5_t10",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 5,
+      "turn_max": 10
+    },
+    {
+      "id": "O_h2-5_t20",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 5,
+      "turn_max": 20
+    },
+    {
+      "id": "O_h2-5_tNone",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 5
+    },
+    {
+      "id": "O_h2-10_t5",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 10,
+      "turn_max": 5
+    },
+    {
+      "id": "O_h2-10_t10",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 10,
+      "turn_max": 10
+    },
+    {
+      "id": "O_h2-10_t20",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 10,
+      "turn_max": 20
+    },
+    {
+      "id": "O_h2-10_tNone",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 10
+    },
+    {
+      "id": "O_h3-5_t5",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 5,
+      "turn_max": 5
+    },
+    {
+      "id": "O_h3-5_t10",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 5,
+      "turn_max": 10
+    },
+    {
+      "id": "O_h3-5_t20",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 5,
+      "turn_max": 20
+    },
+    {
+      "id": "O_h3-5_tNone",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 5
+    },
+    {
+      "id": "O_h3-10_t5",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 10,
+      "turn_max": 5
+    },
+    {
+      "id": "O_h3-10_t10",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 10,
+      "turn_max": 10
+    },
+    {
+      "id": "O_h3-10_t20",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 10,
+      "turn_max": 20
+    },
+    {
+      "id": "O_h3-10_tNone",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 3,
+      "hmax": 10
+    }
+  ]
+}

@@ -2,6 +2,8 @@
 
 The frontend is an Electron + React + TypeScript app in `front/`. It has three runtime layers:
 
+An independent browser report viewer lives in `dashboard/` (React + Ant Design + ECharts, explicitly requested by the user). Its HTTP/data contract is documented in [Report Dashboard](../backend/report-dashboard.md); the Electron-specific rules below continue to apply to `front/`.
+
 - Electron main process under `front/src/main/`
 - preload bridge under `front/src/preload/`
 - React renderer under `front/src/renderer/src/`

@@ -136,7 +136,7 @@ ssh -NT \
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \
   -R 127.0.0.1:7892:127.0.0.1:7892 \
-  root@8.163.22.74
+  root@192.0.2.10
 ```
 
 另开一个服务器终端，确认 HTTP 代理可以访问 OpenAI：

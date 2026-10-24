@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
-FROM python:3.11-slim AS python-runtime-base
+ARG CODEX_CLI_BASE_IMAGE=stochips-stock_agent:codex-0.162.1-20261015
+FROM ${CODEX_CLI_BASE_IMAGE} AS codex_cli_runtime
+
+FROM python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce AS python-runtime-base
 
 WORKDIR /app
 
@@ -39,6 +42,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     poetry install --no-interaction --no-ansi --without dev
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+COPY --from=codex_cli_runtime /opt/codex-cli-0.162.1 /opt/codex-cli-0.162.1
 
 
 FROM python-runtime-base AS stock_agent

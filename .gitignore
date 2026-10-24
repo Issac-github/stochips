@@ -28,6 +28,7 @@ __pycache__/
 .vscode/
 
 # Private trading knowledge and generated vector indexes
+docs/strategy/
 services/agent/chain/wiki/README.md
 services/agent/chain/wiki/1.md
 services/agent/chain/wiki/WIKI.md

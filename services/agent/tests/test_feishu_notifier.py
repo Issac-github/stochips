@@ -20,6 +20,7 @@ from chain.stock.agents.feishu_notifier import (
     IndustrySummary,
     LimitUpPoolAnalysisSummary,
     LowerLimitSummary,
+    LeaderAssistSummary,
     StockSummary,
     WeakBoardSummary,
     next_feishu_send_at,
@@ -324,7 +325,8 @@ def test_build_card_contains_daily_report_sections():
     material = notifier.build_analysis_material(report)
     assert "市场复盘" not in material
     assert "风险评估" not in material
-    assert "龙头助攻明细" in material
+    assert "龙头助攻候选" in material
+    assert "首次封板更早不代表龙头封板时仍有效" in material
 
     reason_material = notifier.build_codex_reason_material(report)
     assert "简略原因（reason_type）：机器人+业绩增长" in reason_material
@@ -476,6 +478,7 @@ def test_build_leader_assists_requires_shared_evidence_earlier_time_and_lower_bo
                 LimitUpPool(
                     id=2, date=target_date, code="000002", name="助攻", limit_up_time="09:35",
                     concept="机器人+订单增长", block_name="其他板块",
+                    limit_up_type="换手板", last_time="10:30", open_count=2,
                 ),
                 LimitUpPool(
                     id=3, date=target_date, code="000003", name="同属性但晚", limit_up_time="10:05",
@@ -495,15 +498,18 @@ def test_build_leader_assists_requires_shared_evidence_earlier_time_and_lower_bo
             session,
             target_date,
             [leader],
-            session.query(LimitUpPool).all(),
+            session.query(LimitUpPool).all() * 2,
         )
 
         assert len(assists) == 1
         assert assists[0].stock.code == "000002"
         assert assists[0].shared_reason_tags == ["机器人"]
+        assert assists[0].board_type == "换手板"
+        assert assists[0].last_limit_up_time == "10:30"
+        assert assists[0].open_count == 2
         assert notifier._format_leader_assists(assists) == (
             "1. 龙头 龙头(000001)：4板 10:00\n"
-            "   助攻：助攻(000002) 2板 09:35（同属性 机器人）"
+            "   助攻候选：助攻(000002) 2板 09:35（同属性 机器人；板型 换手板；最后封板 10:30；开板2次）"
         )
     finally:
         session.close()
@@ -1827,3 +1833,89 @@ def test_recent_trading_dates_excludes_weekends_from_lookback_window():
         date(2026, 7, 3),
         date(2026, 7, 2),
     ]
+
+
+def test_assist_material_distinguishes_unknown_open_count_from_zero():
+    notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+    leader = StockSummary("000001", "龙头", 4, "10:00", "机器人", "")
+    stock = StockSummary("000002", "首板", 1, "09:35", "机器人", "")
+    candidate = LeaderAssistSummary(leader=leader, stock=stock, shared_blocks=["机器人"])
+    text = notifier._format_leader_assists([candidate])
+    assert "开板次数未知" in text
+    assert "板型 未知" in text
+    assert "最后封板 未知" in text
+    candidate.open_count = 0
+    assert "开板0次" in notifier._format_leader_assists([candidate])
+    assert "不代表盘中没有助攻" in notifier._format_leader_assists([])
+
+
+def test_reason_tags_split_whitespace_without_corrupting_english_s():
+    assert FeishuStockNotifier._reason_tags("SaaS+机器人\t消费电子\nSales") == {
+        "SaaS", "机器人", "消费电子", "Sales"
+    }
+
+
+def test_assist_time_bounds_validate_precision_and_timestamp_date():
+    target = date(2026, 7, 9)
+    parse = FeishuStockNotifier._assist_time_bounds
+    assert parse("09:35", target) == (34500, 34559)
+    assert parse("09:35:10", target) == (34510, 34510)
+    assert parse("093510", target) == (34510, 34510)
+    assert parse("93510", target) == (34510, 34510)
+    assert parse("1783563090", target) is not None
+    assert parse("1783563090", date(2026, 7, 10)) is None
+    for bad in [None, "", "unknown", "25:00", "09:99", "09:35:61", "09:35garbage"]:
+        assert parse(bad, target) is None
+
+
+def test_assist_same_minute_order_requires_nonoverlapping_time_evidence():
+    engine = create_engine("sqlite://")
+    for table in (ContinuousLimitUp.__table__, LimitUpPool.__table__, BlockTopStock.__table__):
+        table.create(engine)
+    session = sessionmaker(bind=engine)()
+    target = date(2026, 7, 15)
+    try:
+        session.add(ContinuousLimitUp(
+            id=1, date=target, code="000001", name="龙头", continuous_days=3
+        ))
+        leader_row = LimitUpPool(
+            id=1, date=target, code="000001", name="龙头",
+            limit_up_time="09:35:40", concept="SaaS"
+        )
+        candidate = LimitUpPool(
+            id=2, date=target, code="000002", name="首板候选",
+            limit_up_time="09:35:10", concept="SaaS", limit_up_type="换手板"
+        )
+        session.add_all([leader_row, candidate])
+        session.commit()
+        notifier = FeishuStockNotifier.__new__(FeishuStockNotifier)
+        leader = StockSummary("000001", "龙头", 3, "09:35", "", "SaaS")
+        for value, expected in [
+            ("09:35:10", 1), ("093510", 1), ("09:35:40", 0),
+            ("09:35:50", 0), ("09:35", 0), ("09:34", 1),
+            ("09:35bad", 0), (None, 0),
+        ]:
+            candidate.limit_up_time = value
+            result = notifier._build_leader_assists(
+                session, target, [leader], [leader_row, candidate]
+            )
+            assert len(result) == expected, value
+            if result:
+                assert result[0].stock.continuous_days == 1
+                assert result[0].shared_reason_tags == ["SaaS"]
+                assert result[0].leader_first_limit_up_time == "09:35:40"
+                rendered = notifier._format_leader_assists(result)
+                assert "3板 09:35:40" in rendered
+                if value in ("09:35:10", "093510"):
+                    assert "1板 09:35:10" in rendered
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_assist_time_display_preserves_available_precision():
+    format_time = FeishuStockNotifier._format_assist_time
+    assert format_time((34510, 34510)) == "09:35:10"
+    assert format_time((34500, 34500)) == "09:35:00"
+    assert format_time((34500, 34559)) == "09:35"
+    assert format_time(None) == ""

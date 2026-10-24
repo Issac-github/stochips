@@ -1,0 +1,800 @@
+{
+  "B_all": {
+    "2026-07": {
+      "pool": {
+        "n": 981,
+        "hits": 167,
+        "hit_pct": 17.02,
+        "downs": 41,
+        "down_pct": 4.18,
+        "dates": 16,
+        "stocks": 649,
+        "wilson95": [
+          14.8,
+          19.5
+        ]
+      },
+      "top1": {
+        "n": 16,
+        "hits": 10,
+        "hit_pct": 62.5,
+        "downs": 1,
+        "down_pct": 6.25,
+        "dates": 16,
+        "stocks": 6,
+        "wilson95": [
+          38.64,
+          81.52
+        ]
+      }
+    },
+    "2026-08": {
+      "pool": {
+        "n": 1422,
+        "hits": 297,
+        "hit_pct": 20.89,
+        "downs": 29,
+        "down_pct": 2.04,
+        "dates": 21,
+        "stocks": 809,
+        "wilson95": [
+          18.85,
+          23.08
+        ]
+      },
+      "top1": {
+        "n": 21,
+        "hits": 11,
+        "hit_pct": 52.38,
+        "downs": 1,
+        "down_pct": 4.76,
+        "dates": 21,
+        "stocks": 12,
+        "wilson95": [
+          32.37,
+          71.66
+        ]
+      }
+    },
+    "2026-09": {
+      "pool": {
+        "n": 1080,
+        "hits": 235,
+        "hit_pct": 21.76,
+        "downs": 35,
+        "down_pct": 3.24,
+        "dates": 20,
+        "stocks": 636,
+        "wilson95": [
+          19.4,
+          24.32
+        ]
+      },
+      "top1": {
+        "n": 20,
+        "hits": 9,
+        "hit_pct": 45.0,
+        "downs": 1,
+        "down_pct": 5.0,
+        "dates": 20,
+        "stocks": 12,
+        "wilson95": [
+          25.82,
+          65.79
+        ]
+      }
+    },
+    "all": {
+      "pool": {
+        "n": 3483,
+        "hits": 699,
+        "hit_pct": 20.07,
+        "downs": 105,
+        "down_pct": 3.01,
+        "dates": 57,
+        "stocks": 1416,
+        "wilson95": [
+          18.77,
+          21.43
+        ]
+      },
+      "top1": {
+        "n": 57,
+        "hits": 30,
+        "hit_pct": 52.63,
+        "downs": 3,
+        "down_pct": 5.26,
+        "dates": 57,
+        "stocks": 28,
+        "wilson95": [
+          39.92,
+          65.01
+        ]
+      }
+    }
+  },
+  "B_2plus": {
+    "2026-07": {
+      "pool": {
+        "n": 160,
+        "hits": 51,
+        "hit_pct": 31.87,
+        "downs": 11,
+        "down_pct": 6.88,
+        "dates": 16,
+        "stocks": 107,
+        "wilson95": [
+          25.15,
+          39.45
+        ]
+      },
+      "top1": {
+        "n": 16,
+        "hits": 10,
+        "hit_pct": 62.5,
+        "downs": 1,
+        "down_pct": 6.25,
+        "dates": 16,
+        "stocks": 6,
+        "wilson95": [
+          38.64,
+          81.52
+        ]
+      }
+    },
+    "2026-08": {
+      "pool": {
+        "n": 301,
+        "hits": 116,
+        "hit_pct": 38.54,
+        "downs": 14,
+        "down_pct": 4.65,
+        "dates": 21,
+        "stocks": 179,
+        "wilson95": [
+          33.22,
+          44.15
+        ]
+      },
+      "top1": {
+        "n": 21,
+        "hits": 11,
+        "hit_pct": 52.38,
+        "downs": 1,
+        "down_pct": 4.76,
+        "dates": 21,
+        "stocks": 12,
+        "wilson95": [
+          32.37,
+          71.66
+        ]
+      }
+    },
+    "2026-09": {
+      "pool": {
+        "n": 241,
+        "hits": 90,
+        "hit_pct": 37.34,
+        "downs": 14,
+        "down_pct": 5.81,
+        "dates": 20,
+        "stocks": 147,
+        "wilson95": [
+          31.48,
+          43.61
+        ]
+      },
+      "top1": {
+        "n": 20,
+        "hits": 9,
+        "hit_pct": 45.0,
+        "downs": 1,
+        "down_pct": 5.0,
+        "dates": 20,
+        "stocks": 12,
+        "wilson95": [
+          25.82,
+          65.79
+        ]
+      }
+    },
+    "all": {
+      "pool": {
+        "n": 702,
+        "hits": 257,
+        "hit_pct": 36.61,
+        "downs": 39,
+        "down_pct": 5.56,
+        "dates": 57,
+        "stocks": 379,
+        "wilson95": [
+          33.13,
+          40.24
+        ]
+      },
+      "top1": {
+        "n": 57,
+        "hits": 30,
+        "hit_pct": 52.63,
+        "downs": 3,
+        "down_pct": 5.26,
+        "dates": 57,
+        "stocks": 28,
+        "wilson95": [
+          39.92,
+          65.01
+        ]
+      }
+    }
+  },
+  "B_3plus": {
+    "2026-07": {
+      "pool": {
+        "n": 48,
+        "hits": 24,
+        "hit_pct": 50.0,
+        "downs": 6,
+        "down_pct": 12.5,
+        "dates": 15,
+        "stocks": 27,
+        "wilson95": [
+          36.39,
+          63.61
+        ]
+      },
+      "top1": {
+        "n": 15,
+        "hits": 10,
+        "hit_pct": 66.67,
+        "downs": 1,
+        "down_pct": 6.67,
+        "dates": 15,
+        "stocks": 5,
+        "wilson95": [
+          41.71,
+          84.82
+        ]
+      }
+    },
+    "2026-08": {
+      "pool": {
+        "n": 113,
+        "hits": 50,
+        "hit_pct": 44.25,
+        "downs": 9,
+        "down_pct": 7.96,
+        "dates": 21,
+        "stocks": 65,
+        "wilson95": [
+          35.43,
+          53.44
+        ]
+      },
+      "top1": {
+        "n": 21,
+        "hits": 11,
+        "hit_pct": 52.38,
+        "downs": 1,
+        "down_pct": 4.76,
+        "dates": 21,
+        "stocks": 12,
+        "wilson95": [
+          32.37,
+          71.66
+        ]
+      }
+    },
+    "2026-09": {
+      "pool": {
+        "n": 94,
+        "hits": 38,
+        "hit_pct": 40.43,
+        "downs": 10,
+        "down_pct": 10.64,
+        "dates": 20,
+        "stocks": 57,
+        "wilson95": [
+          31.07,
+          50.53
+        ]
+      },
+      "top1": {
+        "n": 20,
+        "hits": 9,
+        "hit_pct": 45.0,
+        "downs": 1,
+        "down_pct": 5.0,
+        "dates": 20,
+        "stocks": 12,
+        "wilson95": [
+          25.82,
+          65.79
+        ]
+      }
+    },
+    "all": {
+      "pool": {
+        "n": 255,
+        "hits": 112,
+        "hit_pct": 43.92,
+        "downs": 25,
+        "down_pct": 9.8,
+        "dates": 56,
+        "stocks": 136,
+        "wilson95": [
+          37.97,
+          50.06
+        ]
+      },
+      "top1": {
+        "n": 56,
+        "hits": 30,
+        "hit_pct": 53.57,
+        "downs": 3,
+        "down_pct": 5.36,
+        "dates": 56,
+        "stocks": 27,
+        "wilson95": [
+          40.7,
+          65.98
+        ]
+      }
+    }
+  },
+  "B_nonword": {
+    "2026-07": {
+      "pool": {
+        "n": 105,
+        "hits": 28,
+        "hit_pct": 26.67,
+        "downs": 6,
+        "down_pct": 5.71,
+        "dates": 12,
+        "stocks": 76,
+        "wilson95": [
+          19.14,
+          35.84
+        ]
+      },
+      "top1": {
+        "n": 12,
+        "hits": 6,
+        "hit_pct": 50.0,
+        "downs": 1,
+        "down_pct": 8.33,
+        "dates": 12,
+        "stocks": 7,
+        "wilson95": [
+          25.38,
+          74.62
+        ]
+      }
+    },
+    "2026-08": {
+      "pool": {
+        "n": 239,
+        "hits": 71,
+        "hit_pct": 29.71,
+        "downs": 9,
+        "down_pct": 3.77,
+        "dates": 21,
+        "stocks": 164,
+        "wilson95": [
+          24.27,
+          35.78
+        ]
+      },
+      "top1": {
+        "n": 21,
+        "hits": 8,
+        "hit_pct": 38.1,
+        "downs": 1,
+        "down_pct": 4.76,
+        "dates": 21,
+        "stocks": 15,
+        "wilson95": [
+          20.75,
+          59.12
+        ]
+      }
+    },
+    "2026-09": {
+      "pool": {
+        "n": 186,
+        "hits": 59,
+        "hit_pct": 31.72,
+        "downs": 9,
+        "down_pct": 4.84,
+        "dates": 20,
+        "stocks": 127,
+        "wilson95": [
+          25.46,
+          38.72
+        ]
+      },
+      "top1": {
+        "n": 20,
+        "hits": 7,
+        "hit_pct": 35.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 20,
+        "stocks": 14,
+        "wilson95": [
+          18.12,
+          56.71
+        ]
+      }
+    },
+    "all": {
+      "pool": {
+        "n": 530,
+        "hits": 158,
+        "hit_pct": 29.81,
+        "downs": 24,
+        "down_pct": 4.53,
+        "dates": 53,
+        "stocks": 326,
+        "wilson95": [
+          26.07,
+          33.84
+        ]
+      },
+      "top1": {
+        "n": 53,
+        "hits": 21,
+        "hit_pct": 39.62,
+        "downs": 2,
+        "down_pct": 3.77,
+        "dates": 53,
+        "stocks": 35,
+        "wilson95": [
+          27.59,
+          53.06
+        ]
+      }
+    }
+  },
+  "B_oneword": {
+    "2026-07": {
+      "pool": {
+        "n": 18,
+        "hits": 14,
+        "hit_pct": 77.78,
+        "downs": 1,
+        "down_pct": 5.56,
+        "dates": 10,
+        "stocks": 10,
+        "wilson95": [
+          54.78,
+          91.0
+        ]
+      },
+      "top1": {
+        "n": 10,
+        "hits": 8,
+        "hit_pct": 80.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 10,
+        "stocks": 2,
+        "wilson95": [
+          49.02,
+          94.33
+        ]
+      }
+    },
+    "2026-08": {
+      "pool": {
+        "n": 62,
+        "hits": 45,
+        "hit_pct": 72.58,
+        "downs": 5,
+        "down_pct": 8.06,
+        "dates": 21,
+        "stocks": 41,
+        "wilson95": [
+          60.41,
+          82.12
+        ]
+      },
+      "top1": {
+        "n": 21,
+        "hits": 14,
+        "hit_pct": 66.67,
+        "downs": 2,
+        "down_pct": 9.52,
+        "dates": 21,
+        "stocks": 15,
+        "wilson95": [
+          45.37,
+          82.81
+        ]
+      }
+    },
+    "2026-09": {
+      "pool": {
+        "n": 55,
+        "hits": 31,
+        "hit_pct": 56.36,
+        "downs": 5,
+        "down_pct": 9.09,
+        "dates": 19,
+        "stocks": 39,
+        "wilson95": [
+          43.27,
+          68.63
+        ]
+      },
+      "top1": {
+        "n": 19,
+        "hits": 12,
+        "hit_pct": 63.16,
+        "downs": 2,
+        "down_pct": 10.53,
+        "dates": 19,
+        "stocks": 14,
+        "wilson95": [
+          41.04,
+          80.85
+        ]
+      }
+    },
+    "all": {
+      "pool": {
+        "n": 135,
+        "hits": 90,
+        "hit_pct": 66.67,
+        "downs": 11,
+        "down_pct": 8.15,
+        "dates": 50,
+        "stocks": 87,
+        "wilson95": [
+          58.35,
+          74.06
+        ]
+      },
+      "top1": {
+        "n": 50,
+        "hits": 34,
+        "hit_pct": 68.0,
+        "downs": 4,
+        "down_pct": 8.0,
+        "dates": 50,
+        "stocks": 30,
+        "wilson95": [
+          54.19,
+          79.24
+        ]
+      }
+    }
+  },
+  "N_h2-10_s36000_o1_t20": {
+    "2026-07": {
+      "pool": {
+        "n": 48,
+        "hits": 16,
+        "hit_pct": 33.33,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 12,
+        "stocks": 42,
+        "wilson95": [
+          21.68,
+          47.46
+        ]
+      },
+      "top1": {
+        "n": 12,
+        "hits": 5,
+        "hit_pct": 41.67,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 12,
+        "stocks": 10,
+        "wilson95": [
+          19.33,
+          68.05
+        ]
+      }
+    },
+    "2026-08": {
+      "pool": {
+        "n": 72,
+        "hits": 30,
+        "hit_pct": 41.67,
+        "downs": 1,
+        "down_pct": 1.39,
+        "dates": 20,
+        "stocks": 64,
+        "wilson95": [
+          30.99,
+          53.19
+        ]
+      },
+      "top1": {
+        "n": 20,
+        "hits": 12,
+        "hit_pct": 60.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 20,
+        "stocks": 19,
+        "wilson95": [
+          38.66,
+          78.12
+        ]
+      }
+    },
+    "2026-09": {
+      "pool": {
+        "n": 64,
+        "hits": 23,
+        "hit_pct": 35.94,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 20,
+        "stocks": 57,
+        "wilson95": [
+          25.29,
+          48.18
+        ]
+      },
+      "top1": {
+        "n": 20,
+        "hits": 9,
+        "hit_pct": 45.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 20,
+        "stocks": 16,
+        "wilson95": [
+          25.82,
+          65.79
+        ]
+      }
+    },
+    "all": {
+      "pool": {
+        "n": 184,
+        "hits": 69,
+        "hit_pct": 37.5,
+        "downs": 1,
+        "down_pct": 0.54,
+        "dates": 52,
+        "stocks": 155,
+        "wilson95": [
+          30.83,
+          44.68
+        ]
+      },
+      "top1": {
+        "n": 52,
+        "hits": 26,
+        "hit_pct": 50.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 52,
+        "stocks": 43,
+        "wilson95": [
+          36.89,
+          63.11
+        ]
+      }
+    }
+  },
+  "O_h2-10_t5": {
+    "2026-07": {
+      "pool": {
+        "n": 16,
+        "hits": 14,
+        "hit_pct": 87.5,
+        "downs": 1,
+        "down_pct": 6.25,
+        "dates": 10,
+        "stocks": 9,
+        "wilson95": [
+          63.98,
+          96.5
+        ]
+      },
+      "top1": {
+        "n": 10,
+        "hits": 9,
+        "hit_pct": 90.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 10,
+        "stocks": 3,
+        "wilson95": [
+          59.58,
+          98.21
+        ]
+      }
+    },
+    "2026-08": {
+      "pool": {
+        "n": 59,
+        "hits": 43,
+        "hit_pct": 72.88,
+        "downs": 4,
+        "down_pct": 6.78,
+        "dates": 21,
+        "stocks": 38,
+        "wilson95": [
+          60.4,
+          82.56
+        ]
+      },
+      "top1": {
+        "n": 21,
+        "hits": 14,
+        "hit_pct": 66.67,
+        "downs": 2,
+        "down_pct": 9.52,
+        "dates": 21,
+        "stocks": 15,
+        "wilson95": [
+          45.37,
+          82.81
+        ]
+      }
+    },
+    "2026-09": {
+      "pool": {
+        "n": 50,
+        "hits": 27,
+        "hit_pct": 54.0,
+        "downs": 5,
+        "down_pct": 10.0,
+        "dates": 18,
+        "stocks": 35,
+        "wilson95": [
+          40.4,
+          67.03
+        ]
+      },
+      "top1": {
+        "n": 18,
+        "hits": 11,
+        "hit_pct": 61.11,
+        "downs": 2,
+        "down_pct": 11.11,
+        "dates": 18,
+        "stocks": 13,
+        "wilson95": [
+          38.62,
+          79.7
+        ]
+      }
+    },
+    "all": {
+      "pool": {
+        "n": 125,
+        "hits": 84,
+        "hit_pct": 67.2,
+        "downs": 10,
+        "down_pct": 8.0,
+        "dates": 49,
+        "stocks": 80,
+        "wilson95": [
+          58.56,
+          74.81
+        ]
+      },
+      "top1": {
+        "n": 49,
+        "hits": 34,
+        "hit_pct": 69.39,
+        "downs": 4,
+        "down_pct": 8.16,
+        "dates": 49,
+        "stocks": 31,
+        "wilson95": [
+          55.47,
+          80.48
+        ]
+      }
+    }
+  }
+}

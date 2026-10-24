@@ -101,9 +101,12 @@ def test_codex_https_proxy_overrides_mismatched_all_proxy(monkeypatch, caplog):
 def test_codex_starts_app_server_inside_scoped_proxy_environment(monkeypatch):
     monkeypatch.setenv("CODEX_HTTPS_PROXY", "http://bridge.test:7891")
     captured_environment = {}
+    captured_configs = []
+    monkeypatch.setenv("CODEX_CLI_PATH", "/test/codex/bin/codex")
     thread = FakeThread()
 
-    def create_codex():
+    def create_codex(config):
+        captured_configs.append(config)
         captured_environment.update(
             {key: os.environ.get(key) for key in ("HTTPS_PROXY", "ALL_PROXY")}
         )
@@ -112,6 +115,7 @@ def test_codex_starts_app_server_inside_scoped_proxy_environment(monkeypatch):
     client = CodexSubscriptionClient.__new__(CodexSubscriptionClient)
     client._ApprovalMode = SimpleNamespace(deny_all="deny_all")
     client._Codex = create_codex
+    client._CodexConfig = SimpleNamespace
     client._Sandbox = SimpleNamespace(read_only="read_only")
     client.model = None
     client.resolved_model = ""
@@ -119,6 +123,7 @@ def test_codex_starts_app_server_inside_scoped_proxy_environment(monkeypatch):
     client._codex = None
 
     assert client.review("prompt") == "Codex response"
+    assert captured_configs[0].codex_bin == "/test/codex/bin/codex"
     assert captured_environment == {
         "HTTPS_PROXY": "http://bridge.test:7891",
         "ALL_PROXY": "http://bridge.test:7891",

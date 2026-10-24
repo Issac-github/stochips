@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "checks": [
+    "Python syntax",
+    "85 unique predefined rules",
+    "features exclude labels",
+    "unique stock-date observations",
+    "raw snapshot outcome parity",
+    "next-day time ordering",
+    "purged training counts",
+    "September-outcome perturbation cannot change selection",
+    "deterministic top-one ranking",
+    "snapshot hash",
+    "original strategy unchanged",
+    "frozen source hash"
+  ]
+}

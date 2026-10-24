@@ -1,0 +1,20 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    image: stochips-dashboard:latest
+    container_name: stochips_dashboard
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://${MYSQL_USER:-stock}:${MYSQL_PASSWORD:-stock123}@mysql:3306/stock_analysis?charset=utf8mb4}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL:-http://127.0.0.1:8787}
+    ports:
+      - "${DASHBOARD_PORT:-8787}:8787"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - stock_network

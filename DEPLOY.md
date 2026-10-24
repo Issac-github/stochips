@@ -156,13 +156,13 @@ docker compose down -v
 如果本地改完代码后需要同步到服务器，可以使用本地 rsync 脚本：
 
 ```bash
-./scripts/rsync-to-server.sh root@8.163.22.74:/root/stochips/
+./scripts/rsync-to-server.sh root@192.0.2.10:/root/stochips/
 ```
 
 然后登录服务器重建并重启后端服务：
 
 ```bash
-ssh root@8.163.22.74
+ssh root@192.0.2.10
 cd /root/stochips
 
 # 首次启用飞书播报时，确认服务器 .env 已配置：

@@ -1,0 +1,28 @@
+{
+  "selected": {
+    "nonword": {
+      "id": "N_h2-10_s36000_o1_t20",
+      "group": "nonword",
+      "kind": "nonword",
+      "hmin": 2,
+      "hmax": 10,
+      "last_max": 36000,
+      "open_max": 1,
+      "turn_max": 20
+    },
+    "oneword": {
+      "id": "O_h2-10_t5",
+      "group": "oneword",
+      "kind": "oneword",
+      "hmin": 2,
+      "hmax": 10,
+      "turn_max": 5
+    }
+  },
+  "selection_used_months": [
+    "2026-07",
+    "2026-08"
+  ],
+  "manifest_sha256": "a2089ecf99df36181e9a7fffa70767b5d9a9eacceac20d74680cf893a11be908",
+  "experiment_sha256": "4fcc506409e7babb66531f3dba94e4dbca851ed4d34d139269924dd7305dc939"
+}

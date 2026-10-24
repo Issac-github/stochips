@@ -126,6 +126,10 @@ class LeaderAssistSummary:
     stock: StockSummary
     shared_reason_tags: List[str] = field(default_factory=list)
     shared_blocks: List[str] = field(default_factory=list)
+    leader_first_limit_up_time: str = ""
+    board_type: str = ""
+    last_limit_up_time: str = ""
+    open_count: Optional[int] = None
 
 
 @dataclass
@@ -191,6 +195,7 @@ class BreakoutSummary:
     gap_trading_days: int
     block_name: str
     reason: str
+    is_first_breakout: bool = False
 
 
 @dataclass
@@ -582,7 +587,7 @@ class FeishuStockNotifier:
         if report.daily_review:
             review_parts.extend(
                 [
-                    report.daily_review.content,
+                    self._flatten_markdown_tables(report.daily_review.content),
                     "",
                     "---",
                     config.ai.output_metadata(
@@ -610,6 +615,51 @@ class FeishuStockNotifier:
                 "elements": elements
             },
         }
+
+    @staticmethod
+    def _flatten_markdown_tables(markdown: str) -> str:
+        """Render Markdown tables as text so they do not consume card table slots."""
+        lines = markdown.splitlines()
+        flattened: List[str] = []
+        index = 0
+
+        def split_row(line: str) -> List[str]:
+            escaped_pipe = "\u0000"
+            line = line.replace(r"\|", escaped_pipe)
+            cells = line.strip().strip("|").split("|")
+            return [cell.strip().replace(escaped_pipe, "|") for cell in cells]
+
+        def is_separator(line: str) -> bool:
+            cells = split_row(line)
+            return bool(cells) and all(
+                re.fullmatch(r":?-{3,}:?", cell.replace(" ", ""))
+                for cell in cells
+            )
+
+        while index < len(lines):
+            if (
+                index + 1 < len(lines)
+                and "|" in lines[index]
+                and "|" in lines[index + 1]
+                and is_separator(lines[index + 1])
+            ):
+                headers = split_row(lines[index])
+                index += 2
+                while index < len(lines) and "|" in lines[index]:
+                    values = split_row(lines[index])
+                    fields = [
+                        f"{(headers[column] if column < len(headers) else f'列{column + 1}')}："
+                        f"{value.replace('|', '｜') or '-'}"
+                        for column, value in enumerate(values)
+                    ]
+                    flattened.append("- " + "；".join(fields))
+                    index += 1
+                continue
+
+            flattened.append(lines[index])
+            index += 1
+
+        return "\n".join(flattened)
 
     def _build_card_summary(self, report: FeishuStockReport) -> str:
         """Render the scan-first summary shown before the detailed tables."""
@@ -1022,7 +1072,8 @@ class FeishuStockNotifier:
                 "**核心连板**",
                 stock_lines,
                 "",
-                "**龙头助攻明细（同属性或同板块、先于龙头涨停且板数更低）**",
+                "**龙头助攻候选（同属性或同板块、首次封板更早且板数更低）**",
+                "收盘池回溯：允许非一字及首板；首次封板更早不代表龙头封板时仍有效，亦不证明因果带动。",
                 assist_lines,
                 "",
                 "**昨日高标反馈（收盘涨停口径）**",
@@ -1805,7 +1856,7 @@ class FeishuStockNotifier:
         leaders: List[StockSummary],
         pool_rows: List[LimitUpPool],
     ) -> List[LeaderAssistSummary]:
-        """Find factual assists using same-day board/reason and seal-time evidence."""
+        """Find retrospective support candidates, not confirmed intraday assists."""
         continuous_days_by_code = {
             item.code: item.continuous_days or 1
             for item in session.query(ContinuousLimitUp)
@@ -1827,10 +1878,11 @@ class FeishuStockNotifier:
             if leader.continuous_days <= 1:
                 continue
             leader_pool = pool_by_code.get(leader.code)
-            leader_time = self._normalize_limit_up_time(
-                leader_pool.limit_up_time if leader_pool else leader.limit_up_time
+            leader_bounds = self._assist_time_bounds(
+                leader_pool.limit_up_time if leader_pool else leader.limit_up_time,
+                target_date,
             )
-            if not leader_time:
+            if leader_bounds is None:
                 continue
             leader_reason_tags = self._reason_tags(
                 (leader_pool.concept if leader_pool else "")
@@ -1842,15 +1894,17 @@ class FeishuStockNotifier:
                 leader_boards.add(leader_pool.block_name)
 
             leader_assists = []
-            for candidate in pool_rows:
+            for candidate in pool_by_code.values():
                 if candidate.code == leader.code:
                     continue
                 candidate_days = continuous_days_by_code.get(candidate.code, 1)
-                candidate_time = self._normalize_limit_up_time(candidate.limit_up_time)
+                candidate_bounds = self._assist_time_bounds(
+                    candidate.limit_up_time, target_date
+                )
                 if (
                     candidate_days >= leader.continuous_days
-                    or not candidate_time
-                    or candidate_time >= leader_time
+                    or candidate_bounds is None
+                    or candidate_bounds[1] >= leader_bounds[0]
                 ):
                     continue
 
@@ -1876,7 +1930,7 @@ class FeishuStockNotifier:
                             code=candidate.code,
                             name=candidate.name,
                             continuous_days=candidate_days,
-                            limit_up_time=candidate_time,
+                            limit_up_time=self._format_assist_time(candidate_bounds),
                             block_name=candidate.block_name or "",
                             reason=self._shorten(
                                 candidate.concept or candidate.reason or "", 28
@@ -1885,6 +1939,12 @@ class FeishuStockNotifier:
                         ),
                         shared_reason_tags=shared_reason_tags,
                         shared_blocks=shared_blocks,
+                        leader_first_limit_up_time=self._format_assist_time(leader_bounds),
+                        board_type=candidate.limit_up_type or "",
+                        last_limit_up_time=self._format_assist_time(
+                            self._assist_time_bounds(candidate.last_time, target_date)
+                        ),
+                        open_count=candidate.open_count,
                     )
                 )
             assists.extend(
@@ -2005,6 +2065,10 @@ class FeishuStockNotifier:
         for pool in candidates:
             breakout_price = self._stock_price(pool)
             if breakout_price is None:
+                breakout_price = self._eastmoney_stock_price_for_date(
+                    session, pool.code, target_date
+                )
+            if breakout_price is None:
                 continue
 
             chain_rows = (
@@ -2058,6 +2122,17 @@ class FeishuStockNotifier:
                     gap_trading_days=gap_trading_days,
                     block_name=pool.block_name or "",
                     reason=self._shorten(pool.concept or pool.reason or "", 24),
+                    is_first_breakout=(
+                        breakout_price > previous_high
+                        and self._is_first_breakout_after_chain(
+                            session,
+                            pool.code,
+                            chain_end,
+                            target_date,
+                            previous_high,
+                            previous_dates,
+                        )
+                    ),
                 )
             )
 
@@ -2154,11 +2229,63 @@ class FeishuStockNotifier:
                     .one_or_none()
                 )
                 price = self._stock_price(pool)
+            if price is None:
+                price = self._eastmoney_stock_price_for_date(
+                    session, item.code, item.date
+                )
             if price is not None:
                 prices.append(price)
         if not prices:
             return None
         return max(prices)
+
+    def _is_first_breakout_after_chain(
+        self,
+        session: Session,
+        code: str,
+        chain_end: date,
+        target_date: date,
+        previous_high: float,
+        previous_dates: List[date],
+    ) -> bool:
+        """Only mark the first limit-up close above this completed chain's high."""
+        earlier_dates = [
+            item for item in previous_dates if chain_end < item < target_date
+        ]
+        if not earlier_dates:
+            return True
+
+        pool_rows = (
+            session.query(LimitUpPool)
+            .filter(
+                LimitUpPool.code == code,
+                LimitUpPool.date.in_(earlier_dates),
+            )
+            .all()
+        )
+        eastmoney_rows = (
+            session.query(EastmoneyZTPool)
+            .filter(
+                EastmoneyZTPool.code == code,
+                EastmoneyZTPool.date.in_(earlier_dates),
+            )
+            .all()
+        )
+        pool_by_date = {item.date: item for item in pool_rows}
+        eastmoney_by_date = {item.date: item for item in eastmoney_rows}
+
+        for trading_date in earlier_dates:
+            pool = pool_by_date.get(trading_date)
+            eastmoney = eastmoney_by_date.get(trading_date)
+            if pool is None and eastmoney is None:
+                continue
+            price = self._stock_price(pool)
+            if price is None:
+                price = self._eastmoney_stock_price(eastmoney)
+            # Missing historical price means we cannot safely claim this is first.
+            if price is None or price > previous_high:
+                return False
+        return True
 
     def _prefer_regular_stocks(self, rows: List[Any], limit: int) -> List[Any]:
         regular = [item for item in rows if not self._is_special_stock(item.name)]
@@ -2179,6 +2306,67 @@ class FeishuStockNotifier:
             if price is not None and price > 0:
                 return price
         return None
+
+    def _eastmoney_stock_price_for_date(
+        self, session: Session, code: str, target_date: date
+    ) -> Optional[float]:
+        """Return Eastmoney's raw thousandths-of-a-yuan price in yuan."""
+        item = (
+            session.query(EastmoneyZTPool)
+            .filter(
+                EastmoneyZTPool.code == code,
+                EastmoneyZTPool.date == target_date,
+            )
+            .one_or_none()
+        )
+        if item is None:
+            return None
+        return self._eastmoney_stock_price(item)
+
+    def _eastmoney_stock_price(self, item: Any) -> Optional[float]:
+        if item is None:
+            return None
+        price = self._to_float(item.latest_price)
+        if price is None or price <= 0:
+            return None
+        return price / 1000
+
+    @staticmethod
+    def _format_assist_time(bounds: Optional[tuple[int, int]]) -> str:
+        if bounds is None:
+            return ""
+        start, end = bounds
+        hour, remainder = divmod(start, 3600)
+        minute, second = divmod(remainder, 60)
+        clock = f"{hour:02d}:{minute:02d}"
+        return f"{clock}:{second:02d}" if start == end else clock
+
+    @staticmethod
+    def _assist_time_bounds(value: Any, target_date: date) -> Optional[tuple[int, int]]:
+        """Return earliest/latest possible seconds; minute-only times stay uncertain."""
+        text = str(value or "").strip()
+        if text.isdigit() and len(text) == 10:
+            try:
+                stamp = datetime.fromtimestamp(int(text), tz=SHANGHAI_TIMEZONE)
+            except (OverflowError, OSError, ValueError):
+                return None
+            if stamp.date() != target_date:
+                return None
+            seconds = stamp.hour * 3600 + stamp.minute * 60 + stamp.second
+            return seconds, seconds
+        match = re.fullmatch(r"(\d{2}):(\d{2})(?::(\d{2}))?", text)
+        if match:
+            hour, minute = int(match[1]), int(match[2])
+            second = int(match[3]) if match[3] is not None else None
+        elif text.isdigit() and len(text) in (5, 6):
+            text = text.zfill(6)
+            hour, minute, second = int(text[:2]), int(text[2:4]), int(text[4:])
+        else:
+            return None
+        if hour >= 24 or minute >= 60 or (second is not None and second >= 60):
+            return None
+        start = hour * 3600 + minute * 60 + (second or 0)
+        return start, start if second is not None else start + 59
 
     @staticmethod
     def _normalize_limit_up_time(value: Any) -> str:
@@ -2329,7 +2517,7 @@ class FeishuStockNotifier:
 
     def _format_leader_assists(self, assists: List[LeaderAssistSummary]) -> str:
         if not assists:
-            return "- 暂无可由当日板块/原因标签和首次涨停时间核验的助攻"
+            return "- 当前收盘池未识别到助攻候选，不代表盘中没有助攻"
 
         grouped: Dict[str, List[LeaderAssistSummary]] = defaultdict(list)
         leaders: Dict[str, StockSummary] = {}
@@ -2350,6 +2538,10 @@ class FeishuStockNotifier:
             1,
         ):
             leader = leaders[leader_code]
+            leader_time = (
+                grouped[leader_code][0].leader_first_limit_up_time
+                or leader.limit_up_time
+            )
             candidates = []
             for item in grouped[leader_code]:
                 basis = []
@@ -2357,6 +2549,12 @@ class FeishuStockNotifier:
                     basis.append("同属性 " + "、".join(item.shared_reason_tags))
                 if item.shared_blocks:
                     basis.append("同板块 " + "、".join(item.shared_blocks))
+                basis.append("板型 " + (item.board_type or "未知"))
+                basis.append("最后封板 " + (item.last_limit_up_time or "未知"))
+                basis.append(
+                    f"开板{item.open_count}次" if item.open_count is not None
+                    else "开板次数未知"
+                )
                 candidates.append(
                     f"{item.stock.name}({item.stock.code})"
                     f" {item.stock.continuous_days}板 {item.stock.limit_up_time}"
@@ -2364,8 +2562,8 @@ class FeishuStockNotifier:
                 )
             lines.append(
                 f"{index}. 龙头 {leader.name}({leader.code})："
-                f"{leader.continuous_days}板 {leader.limit_up_time}\n"
-                f"   助攻：{'；'.join(candidates)}"
+                f"{leader.continuous_days}板 {leader_time}\n"
+                f"   助攻候选：{'；'.join(candidates)}"
             )
         return "\n".join(lines)
 
@@ -2373,7 +2571,7 @@ class FeishuStockNotifier:
     def _reason_tags(value: str) -> set[str]:
         return {
             tag.strip()
-            for tag in re.split(r"[+＋,，、/／;；|｜\\s]+", value or "")
+            for tag in re.split(r"[+＋,，、/／;；|｜\s]+", value or "")
             if tag.strip()
         }
 
@@ -2495,13 +2693,16 @@ class FeishuStockNotifier:
                         if item.breakout_ratio == 0
                         else f"突破{item.breakout_ratio:.1f}%"
                     )
+                    first_breakout = (
+                        "【首次突破前高】" if item.is_first_breakout else ""
+                    )
                     lines.append(
                         f"{index}. {item.name}({item.code})："
                         f"前期{item.previous_max_days}板，"
                         f"距前段连板结束{item.gap_trading_days}个交易日，"
                         f"前高{item.previous_high_price:.2f}，"
                         f"今涨停{item.breakout_price:.2f}，"
-                        f"{price_result}{block}{reason}"
+                        f"{price_result}{first_breakout}{block}{reason}"
                     )
             lower_bound = upper_bound
         # Feishu Markdown collapses single line breaks, so each time window must

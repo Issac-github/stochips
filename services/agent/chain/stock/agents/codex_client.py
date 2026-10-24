@@ -49,10 +49,11 @@ class CodexSubscriptionClient:
     """Run analysis with a local ChatGPT-authenticated Codex app-server."""
 
     def __init__(self, model: Optional[str] = None, working_directory: Optional[str] = None):
-        from openai_codex import ApprovalMode, Codex, Sandbox
+        from openai_codex import ApprovalMode, Codex, CodexConfig, Sandbox
 
         self._ApprovalMode = ApprovalMode
         self._Codex = Codex
+        self._CodexConfig = CodexConfig
         self._Sandbox = Sandbox
         self.model = model or os.getenv("CODEX_MODEL") or None
         self.resolved_model = self.model or ""
@@ -107,7 +108,14 @@ class CodexSubscriptionClient:
     def _get_codex(self) -> Any:
         """Start the app-server after its scoped proxy environment is installed."""
         if self._codex is None:
-            self._codex = self._Codex()
+            self._codex = self._Codex(
+                self._CodexConfig(
+                    codex_bin=os.getenv(
+                        "CODEX_CLI_PATH",
+                        "/opt/codex-cli-0.162.1/bin/codex",
+                    )
+                )
+            )
         return self._codex
 
     def _resolve_default_model(self) -> None:

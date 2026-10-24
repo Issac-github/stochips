@@ -23,7 +23,7 @@ Usage:
   ./scripts/rsync-to-server.sh <user@host:/root/stochips/> [--delete]
 
 Example:
-  ./scripts/rsync-to-server.sh root@8.163.22.74:/root/stochips/
+  ./scripts/rsync-to-server.sh root@192.0.2.10:/root/stochips/
 EOF
   exit 1
 fi

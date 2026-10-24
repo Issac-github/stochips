@@ -1,0 +1,1816 @@
+{
+  "variants": [
+    {
+      "name": "frozen",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 36000,
+        "open_max": 1,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 120,
+          "hits": 46,
+          "hit_pct": 38.33,
+          "downs": 1,
+          "down_pct": 0.83,
+          "dates": 32,
+          "stocks": 102,
+          "wilson95": [
+            30.12,
+            47.27
+          ]
+        },
+        "top1": {
+          "n": 32,
+          "hits": 17,
+          "hit_pct": 53.12,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 32,
+          "stocks": 27,
+          "wilson95": [
+            36.45,
+            69.13
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 64,
+          "hits": 23,
+          "hit_pct": 35.94,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 57,
+          "wilson95": [
+            25.29,
+            48.18
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 9,
+          "hit_pct": 45.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 16,
+          "wilson95": [
+            25.82,
+            65.79
+          ]
+        }
+      }
+    },
+    {
+      "name": "seal0945",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 35100,
+        "open_max": 1,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 106,
+          "hits": 40,
+          "hit_pct": 37.74,
+          "downs": 1,
+          "down_pct": 0.94,
+          "dates": 30,
+          "stocks": 91,
+          "wilson95": [
+            29.09,
+            47.24
+          ]
+        },
+        "top1": {
+          "n": 30,
+          "hits": 15,
+          "hit_pct": 50.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 30,
+          "stocks": 27,
+          "wilson95": [
+            33.15,
+            66.85
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 56,
+          "hits": 20,
+          "hit_pct": 35.71,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 51,
+          "wilson95": [
+            24.46,
+            48.81
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 9,
+          "hit_pct": 45.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 17,
+          "wilson95": [
+            25.82,
+            65.79
+          ]
+        }
+      }
+    },
+    {
+      "name": "seal1030",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 37800,
+        "open_max": 1,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 134,
+          "hits": 49,
+          "hit_pct": 36.57,
+          "downs": 1,
+          "down_pct": 0.75,
+          "dates": 32,
+          "stocks": 115,
+          "wilson95": [
+            28.89,
+            44.99
+          ]
+        },
+        "top1": {
+          "n": 32,
+          "hits": 18,
+          "hit_pct": 56.25,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 32,
+          "stocks": 27,
+          "wilson95": [
+            39.33,
+            71.83
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 70,
+          "hits": 24,
+          "hit_pct": 34.29,
+          "downs": 1,
+          "down_pct": 1.43,
+          "dates": 20,
+          "stocks": 62,
+          "wilson95": [
+            24.25,
+            45.96
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 9,
+          "hit_pct": 45.0,
+          "downs": 1,
+          "down_pct": 5.0,
+          "dates": 20,
+          "stocks": 16,
+          "wilson95": [
+            25.82,
+            65.79
+          ]
+        }
+      }
+    },
+    {
+      "name": "zero_open",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 36000,
+        "open_max": 0,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 73,
+          "hits": 27,
+          "hit_pct": 36.99,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 27,
+          "stocks": 68,
+          "wilson95": [
+            26.82,
+            48.45
+          ]
+        },
+        "top1": {
+          "n": 27,
+          "hits": 16,
+          "hit_pct": 59.26,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 27,
+          "stocks": 26,
+          "wilson95": [
+            40.73,
+            75.49
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 42,
+          "hits": 12,
+          "hit_pct": 28.57,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 17,
+          "stocks": 40,
+          "wilson95": [
+            17.17,
+            43.57
+          ]
+        },
+        "top1": {
+          "n": 17,
+          "hits": 6,
+          "hit_pct": 35.29,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 17,
+          "stocks": 15,
+          "wilson95": [
+            17.31,
+            58.7
+          ]
+        }
+      }
+    },
+    {
+      "name": "two_opens",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 36000,
+        "open_max": 2,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 141,
+          "hits": 56,
+          "hit_pct": 39.72,
+          "downs": 1,
+          "down_pct": 0.71,
+          "dates": 33,
+          "stocks": 120,
+          "wilson95": [
+            32.02,
+            47.96
+          ]
+        },
+        "top1": {
+          "n": 33,
+          "hits": 20,
+          "hit_pct": 60.61,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 33,
+          "stocks": 27,
+          "wilson95": [
+            43.68,
+            75.32
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 76,
+          "hits": 27,
+          "hit_pct": 35.53,
+          "downs": 1,
+          "down_pct": 1.32,
+          "dates": 20,
+          "stocks": 66,
+          "wilson95": [
+            25.7,
+            46.74
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 8,
+          "hit_pct": 40.0,
+          "downs": 1,
+          "down_pct": 5.0,
+          "dates": 20,
+          "stocks": 16,
+          "wilson95": [
+            21.88,
+            61.34
+          ]
+        }
+      }
+    },
+    {
+      "name": "turn15",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 36000,
+        "open_max": 1,
+        "turn_max": 15
+      },
+      "development": {
+        "pool": {
+          "n": 114,
+          "hits": 43,
+          "hit_pct": 37.72,
+          "downs": 1,
+          "down_pct": 0.88,
+          "dates": 32,
+          "stocks": 100,
+          "wilson95": [
+            29.36,
+            46.88
+          ]
+        },
+        "top1": {
+          "n": 32,
+          "hits": 16,
+          "hit_pct": 50.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 32,
+          "stocks": 28,
+          "wilson95": [
+            33.63,
+            66.37
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 60,
+          "hits": 23,
+          "hit_pct": 38.33,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 54,
+          "wilson95": [
+            27.09,
+            50.98
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 10,
+          "hit_pct": 50.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 16,
+          "wilson95": [
+            29.93,
+            70.07
+          ]
+        }
+      }
+    },
+    {
+      "name": "turn25",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 36000,
+        "open_max": 1,
+        "turn_max": 25
+      },
+      "development": {
+        "pool": {
+          "n": 122,
+          "hits": 46,
+          "hit_pct": 37.7,
+          "downs": 1,
+          "down_pct": 0.82,
+          "dates": 32,
+          "stocks": 103,
+          "wilson95": [
+            29.6,
+            46.56
+          ]
+        },
+        "top1": {
+          "n": 32,
+          "hits": 16,
+          "hit_pct": 50.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 32,
+          "stocks": 26,
+          "wilson95": [
+            33.63,
+            66.37
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 66,
+          "hits": 23,
+          "hit_pct": 34.85,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 59,
+          "wilson95": [
+            24.48,
+            46.89
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 9,
+          "hit_pct": 45.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 16,
+          "wilson95": [
+            25.82,
+            65.79
+          ]
+        }
+      }
+    },
+    {
+      "name": "height3",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 3,
+        "hmax": 10,
+        "last_max": 36000,
+        "open_max": 1,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 32,
+          "hits": 19,
+          "hit_pct": 59.38,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 18,
+          "stocks": 26,
+          "wilson95": [
+            42.26,
+            74.48
+          ]
+        },
+        "top1": {
+          "n": 18,
+          "hits": 13,
+          "hit_pct": 72.22,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 18,
+          "stocks": 15,
+          "wilson95": [
+            49.13,
+            87.5
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 21,
+          "hits": 9,
+          "hit_pct": 42.86,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 14,
+          "stocks": 18,
+          "wilson95": [
+            24.47,
+            63.45
+          ]
+        },
+        "top1": {
+          "n": 14,
+          "hits": 6,
+          "hit_pct": 42.86,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 14,
+          "stocks": 11,
+          "wilson95": [
+            21.38,
+            67.41
+          ]
+        }
+      }
+    },
+    {
+      "name": "height_max5",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 5,
+        "last_max": 36000,
+        "open_max": 1,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 117,
+          "hits": 44,
+          "hit_pct": 37.61,
+          "downs": 1,
+          "down_pct": 0.85,
+          "dates": 32,
+          "stocks": 101,
+          "wilson95": [
+            29.36,
+            46.65
+          ]
+        },
+        "top1": {
+          "n": 32,
+          "hits": 16,
+          "hit_pct": 50.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 32,
+          "stocks": 27,
+          "wilson95": [
+            33.63,
+            66.37
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 63,
+          "hits": 23,
+          "hit_pct": 36.51,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 57,
+          "wilson95": [
+            25.72,
+            48.85
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 10,
+          "hit_pct": 50.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 17,
+          "wilson95": [
+            29.93,
+            70.07
+          ]
+        }
+      }
+    },
+    {
+      "name": "remove_last_max",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "open_max": 1,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 173,
+          "hits": 57,
+          "hit_pct": 32.95,
+          "downs": 4,
+          "down_pct": 2.31,
+          "dates": 32,
+          "stocks": 142,
+          "wilson95": [
+            26.38,
+            40.26
+          ]
+        },
+        "top1": {
+          "n": 32,
+          "hits": 16,
+          "hit_pct": 50.0,
+          "downs": 1,
+          "down_pct": 3.12,
+          "dates": 32,
+          "stocks": 27,
+          "wilson95": [
+            33.63,
+            66.37
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 94,
+          "hits": 32,
+          "hit_pct": 34.04,
+          "downs": 2,
+          "down_pct": 2.13,
+          "dates": 20,
+          "stocks": 76,
+          "wilson95": [
+            25.26,
+            44.08
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 9,
+          "hit_pct": 45.0,
+          "downs": 1,
+          "down_pct": 5.0,
+          "dates": 20,
+          "stocks": 16,
+          "wilson95": [
+            25.82,
+            65.79
+          ]
+        }
+      }
+    },
+    {
+      "name": "remove_open_max",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 36000,
+        "turn_max": 20
+      },
+      "development": {
+        "pool": {
+          "n": 168,
+          "hits": 66,
+          "hit_pct": 39.29,
+          "downs": 1,
+          "down_pct": 0.6,
+          "dates": 33,
+          "stocks": 136,
+          "wilson95": [
+            32.22,
+            46.83
+          ]
+        },
+        "top1": {
+          "n": 33,
+          "hits": 20,
+          "hit_pct": 60.61,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 33,
+          "stocks": 25,
+          "wilson95": [
+            43.68,
+            75.32
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 93,
+          "hits": 32,
+          "hit_pct": 34.41,
+          "downs": 1,
+          "down_pct": 1.08,
+          "dates": 20,
+          "stocks": 77,
+          "wilson95": [
+            25.54,
+            44.51
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 9,
+          "hit_pct": 45.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 15,
+          "wilson95": [
+            25.82,
+            65.79
+          ]
+        }
+      }
+    },
+    {
+      "name": "remove_turn_max",
+      "rule": {
+        "id": "N_h2-10_s36000_o1_t20",
+        "group": "nonword",
+        "kind": "nonword",
+        "hmin": 2,
+        "hmax": 10,
+        "last_max": 36000,
+        "open_max": 1
+      },
+      "development": {
+        "pool": {
+          "n": 123,
+          "hits": 46,
+          "hit_pct": 37.4,
+          "downs": 2,
+          "down_pct": 1.63,
+          "dates": 32,
+          "stocks": 104,
+          "wilson95": [
+            29.35,
+            46.21
+          ]
+        },
+        "top1": {
+          "n": 32,
+          "hits": 15,
+          "hit_pct": 46.88,
+          "downs": 1,
+          "down_pct": 3.12,
+          "dates": 32,
+          "stocks": 26,
+          "wilson95": [
+            30.87,
+            63.55
+          ]
+        }
+      },
+      "september": {
+        "pool": {
+          "n": 68,
+          "hits": 23,
+          "hit_pct": 33.82,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 60,
+          "wilson95": [
+            23.71,
+            45.66
+          ]
+        },
+        "top1": {
+          "n": 20,
+          "hits": 8,
+          "hit_pct": 40.0,
+          "downs": 0,
+          "down_pct": 0.0,
+          "dates": 20,
+          "stocks": 17,
+          "wilson95": [
+            21.88,
+            61.34
+          ]
+        }
+      }
+    }
+  ],
+  "episodes": {
+    "B_nonword_all_candidates": {
+      "2026-07": {
+        "n": 80,
+        "hits": 17,
+        "hit_pct": 21.25,
+        "downs": 3,
+        "down_pct": 3.75,
+        "dates": 12,
+        "stocks": 76,
+        "wilson95": [
+          13.71,
+          31.42
+        ]
+      },
+      "2026-08": {
+        "n": 174,
+        "hits": 50,
+        "hit_pct": 28.74,
+        "downs": 6,
+        "down_pct": 3.45,
+        "dates": 21,
+        "stocks": 163,
+        "wilson95": [
+          22.53,
+          35.86
+        ]
+      },
+      "2026-09": {
+        "n": 132,
+        "hits": 40,
+        "hit_pct": 30.3,
+        "downs": 5,
+        "down_pct": 3.79,
+        "dates": 20,
+        "stocks": 125,
+        "wilson95": [
+          23.11,
+          38.61
+        ]
+      },
+      "all": {
+        "n": 386,
+        "hits": 107,
+        "hit_pct": 27.72,
+        "downs": 14,
+        "down_pct": 3.63,
+        "dates": 53,
+        "stocks": 326,
+        "wilson95": [
+          23.49,
+          32.39
+        ]
+      }
+    },
+    "B_nonword_daily_top1": {
+      "2026-07": {
+        "n": 7,
+        "hits": 3,
+        "hit_pct": 42.86,
+        "downs": 1,
+        "down_pct": 14.29,
+        "dates": 7,
+        "stocks": 7,
+        "wilson95": [
+          15.82,
+          74.95
+        ]
+      },
+      "2026-08": {
+        "n": 14,
+        "hits": 6,
+        "hit_pct": 42.86,
+        "downs": 1,
+        "down_pct": 7.14,
+        "dates": 14,
+        "stocks": 14,
+        "wilson95": [
+          21.38,
+          67.41
+        ]
+      },
+      "2026-09": {
+        "n": 14,
+        "hits": 4,
+        "hit_pct": 28.57,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 14,
+        "stocks": 14,
+        "wilson95": [
+          11.72,
+          54.65
+        ]
+      },
+      "all": {
+        "n": 35,
+        "hits": 13,
+        "hit_pct": 37.14,
+        "downs": 2,
+        "down_pct": 5.71,
+        "dates": 35,
+        "stocks": 35,
+        "wilson95": [
+          23.17,
+          53.66
+        ]
+      }
+    },
+    "N_h2-10_s36000_o1_t20_all_candidates": {
+      "2026-07": {
+        "n": 42,
+        "hits": 12,
+        "hit_pct": 28.57,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 11,
+        "stocks": 42,
+        "wilson95": [
+          17.17,
+          43.57
+        ]
+      },
+      "2026-08": {
+        "n": 63,
+        "hits": 24,
+        "hit_pct": 38.1,
+        "downs": 1,
+        "down_pct": 1.59,
+        "dates": 20,
+        "stocks": 63,
+        "wilson95": [
+          27.12,
+          50.44
+        ]
+      },
+      "2026-09": {
+        "n": 57,
+        "hits": 20,
+        "hit_pct": 35.09,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 19,
+        "stocks": 57,
+        "wilson95": [
+          24.0,
+          48.06
+        ]
+      },
+      "all": {
+        "n": 162,
+        "hits": 56,
+        "hit_pct": 34.57,
+        "downs": 1,
+        "down_pct": 0.62,
+        "dates": 50,
+        "stocks": 155,
+        "wilson95": [
+          27.68,
+          42.17
+        ]
+      }
+    },
+    "N_h2-10_s36000_o1_t20_daily_top1": {
+      "2026-07": {
+        "n": 10,
+        "hits": 3,
+        "hit_pct": 30.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 10,
+        "stocks": 10,
+        "wilson95": [
+          10.78,
+          60.32
+        ]
+      },
+      "2026-08": {
+        "n": 18,
+        "hits": 11,
+        "hit_pct": 61.11,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 18,
+        "stocks": 18,
+        "wilson95": [
+          38.62,
+          79.7
+        ]
+      },
+      "2026-09": {
+        "n": 16,
+        "hits": 8,
+        "hit_pct": 50.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 16,
+        "stocks": 16,
+        "wilson95": [
+          28.0,
+          72.0
+        ]
+      },
+      "all": {
+        "n": 44,
+        "hits": 22,
+        "hit_pct": 50.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 44,
+        "stocks": 43,
+        "wilson95": [
+          35.83,
+          64.17
+        ]
+      }
+    },
+    "O_h2-10_t5_all_candidates": {
+      "2026-07": {
+        "n": 9,
+        "hits": 8,
+        "hit_pct": 88.89,
+        "downs": 1,
+        "down_pct": 11.11,
+        "dates": 8,
+        "stocks": 9,
+        "wilson95": [
+          56.5,
+          98.01
+        ]
+      },
+      "2026-08": {
+        "n": 37,
+        "hits": 27,
+        "hit_pct": 72.97,
+        "downs": 1,
+        "down_pct": 2.7,
+        "dates": 20,
+        "stocks": 37,
+        "wilson95": [
+          57.02,
+          84.6
+        ]
+      },
+      "2026-09": {
+        "n": 34,
+        "hits": 21,
+        "hit_pct": 61.76,
+        "downs": 2,
+        "down_pct": 5.88,
+        "dates": 17,
+        "stocks": 34,
+        "wilson95": [
+          45.04,
+          76.1
+        ]
+      },
+      "all": {
+        "n": 80,
+        "hits": 56,
+        "hit_pct": 70.0,
+        "downs": 4,
+        "down_pct": 5.0,
+        "dates": 45,
+        "stocks": 80,
+        "wilson95": [
+          59.23,
+          78.94
+        ]
+      }
+    },
+    "O_h2-10_t5_daily_top1": {
+      "2026-07": {
+        "n": 3,
+        "hits": 3,
+        "hit_pct": 100.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 3,
+        "stocks": 3,
+        "wilson95": [
+          43.85,
+          100.0
+        ]
+      },
+      "2026-08": {
+        "n": 15,
+        "hits": 9,
+        "hit_pct": 60.0,
+        "downs": 1,
+        "down_pct": 6.67,
+        "dates": 15,
+        "stocks": 15,
+        "wilson95": [
+          35.75,
+          80.18
+        ]
+      },
+      "2026-09": {
+        "n": 13,
+        "hits": 8,
+        "hit_pct": 61.54,
+        "downs": 1,
+        "down_pct": 7.69,
+        "dates": 13,
+        "stocks": 13,
+        "wilson95": [
+          35.52,
+          82.29
+        ]
+      },
+      "all": {
+        "n": 31,
+        "hits": 20,
+        "hit_pct": 64.52,
+        "downs": 2,
+        "down_pct": 6.45,
+        "dates": 31,
+        "stocks": 31,
+        "wilson95": [
+          46.95,
+          78.88
+        ]
+      }
+    },
+    "B_oneword_all_candidates": {
+      "2026-07": {
+        "n": 10,
+        "hits": 8,
+        "hit_pct": 80.0,
+        "downs": 1,
+        "down_pct": 10.0,
+        "dates": 8,
+        "stocks": 10,
+        "wilson95": [
+          49.02,
+          94.33
+        ]
+      },
+      "2026-08": {
+        "n": 40,
+        "hits": 29,
+        "hit_pct": 72.5,
+        "downs": 2,
+        "down_pct": 5.0,
+        "dates": 20,
+        "stocks": 40,
+        "wilson95": [
+          57.16,
+          83.89
+        ]
+      },
+      "2026-09": {
+        "n": 37,
+        "hits": 24,
+        "hit_pct": 64.86,
+        "downs": 2,
+        "down_pct": 5.41,
+        "dates": 17,
+        "stocks": 37,
+        "wilson95": [
+          48.76,
+          78.17
+        ]
+      },
+      "all": {
+        "n": 87,
+        "hits": 61,
+        "hit_pct": 70.11,
+        "downs": 5,
+        "down_pct": 5.75,
+        "dates": 45,
+        "stocks": 87,
+        "wilson95": [
+          59.81,
+          78.72
+        ]
+      }
+    },
+    "B_oneword_daily_top1": {
+      "2026-07": {
+        "n": 2,
+        "hits": 2,
+        "hit_pct": 100.0,
+        "downs": 0,
+        "down_pct": 0.0,
+        "dates": 2,
+        "stocks": 2,
+        "wilson95": [
+          34.24,
+          100.0
+        ]
+      },
+      "2026-08": {
+        "n": 15,
+        "hits": 9,
+        "hit_pct": 60.0,
+        "downs": 1,
+        "down_pct": 6.67,
+        "dates": 15,
+        "stocks": 15,
+        "wilson95": [
+          35.75,
+          80.18
+        ]
+      },
+      "2026-09": {
+        "n": 13,
+        "hits": 9,
+        "hit_pct": 69.23,
+        "downs": 1,
+        "down_pct": 7.69,
+        "dates": 13,
+        "stocks": 13,
+        "wilson95": [
+          42.37,
+          87.32
+        ]
+      },
+      "all": {
+        "n": 30,
+        "hits": 20,
+        "hit_pct": 66.67,
+        "downs": 2,
+        "down_pct": 6.67,
+        "dates": 30,
+        "stocks": 30,
+        "wilson95": [
+          48.78,
+          80.77
+        ]
+      }
+    }
+  },
+  "bootstrap": {
+    "development_pool": {
+      "weeks": 8,
+      "replicates": 3000,
+      "delta95_pp": [
+        5.26,
+        14.14
+      ]
+    },
+    "development_top1": {
+      "weeks": 8,
+      "replicates": 3000,
+      "delta95_pp": [
+        -14.71,
+        32.97
+      ]
+    },
+    "september_pool": {
+      "weeks": 5,
+      "replicates": 3000,
+      "delta95_pp": [
+        -1.05,
+        11.71
+      ]
+    },
+    "september_top1": {
+      "weeks": 5,
+      "replicates": 3000,
+      "delta95_pp": [
+        0.0,
+        20.0
+      ]
+    }
+  },
+  "top1_failures": [
+    {
+      "date": "2026-07-16",
+      "month": "2026-07",
+      "code": "002739",
+      "name": "儒意电影",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 3.98,
+      "open_count": 0,
+      "first": 34233,
+      "last": 34233,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 33,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-07-17"
+    },
+    {
+      "date": "2026-07-20",
+      "month": "2026-07",
+      "code": "600722",
+      "name": "金牛化工",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 7.22,
+      "open_count": 0,
+      "first": 34546,
+      "last": 34546,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 190,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-07-21"
+    },
+    {
+      "date": "2026-07-23",
+      "month": "2026-07",
+      "code": "603619",
+      "name": "中曼石油",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 3.5,
+      "open_count": 0,
+      "first": 34271,
+      "last": 34271,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 2,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-07-24"
+    },
+    {
+      "date": "2026-07-24",
+      "month": "2026-07",
+      "code": "002498",
+      "name": "汉缆股份",
+      "height": 2,
+      "type": "T字板",
+      "turnover": 2.25,
+      "open_count": 0,
+      "first": 34257,
+      "last": 34257,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 23,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-07-27"
+    },
+    {
+      "date": "2026-07-27",
+      "month": "2026-07",
+      "code": "600617",
+      "name": "国新能源",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 3.06,
+      "open_count": 0,
+      "first": 34286,
+      "last": 34286,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 5,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-07-28"
+    },
+    {
+      "date": "2026-07-28",
+      "month": "2026-07",
+      "code": "603358",
+      "name": "华达科技",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 0.9,
+      "open_count": 0,
+      "first": 34264,
+      "last": 34264,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 47,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-07-29"
+    },
+    {
+      "date": "2026-07-29",
+      "month": "2026-07",
+      "code": "000428",
+      "name": "华天酒店",
+      "height": 3,
+      "type": "T字板",
+      "turnover": 4.28,
+      "open_count": 1,
+      "first": 33900,
+      "last": 34269,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 9,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-07-30"
+    },
+    {
+      "date": "2026-08-03",
+      "month": "2026-08",
+      "code": "002827",
+      "name": "高争民爆",
+      "height": 4,
+      "type": "T字板",
+      "turnover": 3.01,
+      "open_count": 0,
+      "first": 34224,
+      "last": 34224,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 1,
+      "market_down_count": 8,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-08-04"
+    },
+    {
+      "date": "2026-08-06",
+      "month": "2026-08",
+      "code": "603221",
+      "name": "爱丽家居",
+      "height": 10,
+      "type": "T字板",
+      "turnover": 6.61,
+      "open_count": 1,
+      "first": 33901,
+      "last": 34275,
+      "slowdown": null,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 1,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-08-07"
+    },
+    {
+      "date": "2026-08-13",
+      "month": "2026-08",
+      "code": "000802",
+      "name": "北京文化",
+      "height": 4,
+      "type": "T字板",
+      "turnover": 19.01,
+      "open_count": 1,
+      "first": 33900,
+      "last": 34212,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 4,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-08-14"
+    },
+    {
+      "date": "2026-08-19",
+      "month": "2026-08",
+      "code": "000505",
+      "name": "京粮控股",
+      "height": 3,
+      "type": "换手板",
+      "turnover": 10.74,
+      "open_count": 0,
+      "first": 34293,
+      "last": 34293,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 118,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-08-20"
+    },
+    {
+      "date": "2026-08-21",
+      "month": "2026-08",
+      "code": "002038",
+      "name": "双鹭药业",
+      "height": 2,
+      "type": "T字板",
+      "turnover": 6.88,
+      "open_count": 1,
+      "first": 33900,
+      "last": 34746,
+      "slowdown": true,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 13,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-08-24"
+    },
+    {
+      "date": "2026-08-26",
+      "month": "2026-08",
+      "code": "000428",
+      "name": "华天酒店",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 4.55,
+      "open_count": 0,
+      "first": 34746,
+      "last": 34746,
+      "slowdown": true,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 0,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-08-27"
+    },
+    {
+      "date": "2026-08-28",
+      "month": "2026-08",
+      "code": "600654",
+      "name": "中安科",
+      "height": 2,
+      "type": "T字板",
+      "turnover": 5.03,
+      "open_count": 1,
+      "first": 33903,
+      "last": 34401,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 1,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-08-31"
+    },
+    {
+      "date": "2026-08-31",
+      "month": "2026-08",
+      "code": "600691",
+      "name": "潞化科技",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 5.81,
+      "open_count": 1,
+      "first": 34329,
+      "last": 35988,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 11,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-01"
+    },
+    {
+      "date": "2026-09-01",
+      "month": "2026-09",
+      "code": "600540",
+      "name": "新赛股份",
+      "height": 4,
+      "type": "换手板",
+      "turnover": 11.32,
+      "open_count": 0,
+      "first": 34200,
+      "last": 34200,
+      "slowdown": true,
+      "concave_proxy": false,
+      "supports": 2,
+      "market_down_count": 0,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-02"
+    },
+    {
+      "date": "2026-09-03",
+      "month": "2026-09",
+      "code": "002300",
+      "name": "太阳电缆",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 8.29,
+      "open_count": 0,
+      "first": 34323,
+      "last": 34323,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 16,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-04"
+    },
+    {
+      "date": "2026-09-07",
+      "month": "2026-09",
+      "code": "605577",
+      "name": "龙版传媒",
+      "height": 6,
+      "type": "换手板",
+      "turnover": 3.34,
+      "open_count": 0,
+      "first": 34247,
+      "last": 34247,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 2,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-08"
+    },
+    {
+      "date": "2026-09-08",
+      "month": "2026-09",
+      "code": "002403",
+      "name": "爱仕达",
+      "height": 4,
+      "type": "T字板",
+      "turnover": 14.69,
+      "open_count": 1,
+      "first": 33900,
+      "last": 34443,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 0,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-09"
+    },
+    {
+      "date": "2026-09-09",
+      "month": "2026-09",
+      "code": "000930",
+      "name": "中粮科技",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 4.76,
+      "open_count": 0,
+      "first": 34332,
+      "last": 34332,
+      "slowdown": true,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 7,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-10"
+    },
+    {
+      "date": "2026-09-10",
+      "month": "2026-09",
+      "code": "000978",
+      "name": "桂林旅游",
+      "height": 4,
+      "type": "T字板",
+      "turnover": 17.27,
+      "open_count": 1,
+      "first": 33900,
+      "last": 34683,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 1,
+      "market_down_count": 11,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-11"
+    },
+    {
+      "date": "2026-09-14",
+      "month": "2026-09",
+      "code": "000823",
+      "name": "超声电子",
+      "height": 3,
+      "type": "换手板",
+      "turnover": 19.25,
+      "open_count": 0,
+      "first": 34848,
+      "last": 34848,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 16,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-15"
+    },
+    {
+      "date": "2026-09-15",
+      "month": "2026-09",
+      "code": "002232",
+      "name": "启明信息",
+      "height": 2,
+      "type": "T字板",
+      "turnover": 2.33,
+      "open_count": 0,
+      "first": 34200,
+      "last": 34200,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 27,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-16"
+    },
+    {
+      "date": "2026-09-21",
+      "month": "2026-09",
+      "code": "002453",
+      "name": "华软科技",
+      "height": 3,
+      "type": "换手板",
+      "turnover": 6.71,
+      "open_count": 0,
+      "first": 34200,
+      "last": 34200,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 2,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-22"
+    },
+    {
+      "date": "2026-09-24",
+      "month": "2026-09",
+      "code": "601811",
+      "name": "新华文轩",
+      "height": 5,
+      "type": "T字板",
+      "turnover": 1.57,
+      "open_count": 0,
+      "first": 34206,
+      "last": 34206,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 2,
+      "market_down_count": 11,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-28"
+    },
+    {
+      "date": "2026-09-28",
+      "month": "2026-09",
+      "code": "600802",
+      "name": "福建水泥",
+      "height": 3,
+      "type": "换手板",
+      "turnover": 18.69,
+      "open_count": 1,
+      "first": 34481,
+      "last": 34565,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 56,
+      "next_limit": false,
+      "next_down": false,
+      "next_date": "2026-09-29"
+    }
+  ],
+  "nonword_pool_downs": [
+    {
+      "date": "2026-08-19",
+      "month": "2026-08",
+      "code": "000020",
+      "name": "深华发A",
+      "height": 2,
+      "type": "换手板",
+      "turnover": 10.57,
+      "open_count": 1,
+      "first": 34200,
+      "last": 34464,
+      "slowdown": false,
+      "concave_proxy": false,
+      "supports": 0,
+      "market_down_count": 118,
+      "next_limit": false,
+      "next_down": true,
+      "next_date": "2026-08-20"
+    }
+  ],
+  "frozen_hash": "0544fc06c4f9732d77a59f9838fef76eff4e73de9479bb7ce2cb2c7205332b20",
+  "note": "Sensitivity diagnostics observed after holdout; not eligible for promotion as a newly validated strategy."
+}

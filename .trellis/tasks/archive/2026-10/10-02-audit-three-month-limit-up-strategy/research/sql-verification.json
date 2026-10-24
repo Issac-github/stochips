@@ -1,0 +1,26 @@
+[
+  {
+    "label": "all",
+    "n": 3768,
+    "next_limit": "733",
+    "next_down": "105"
+  },
+  {
+    "label": "high3plus",
+    "n": 268,
+    "next_limit": "118",
+    "next_down": "25"
+  },
+  {
+    "label": "high_turn20",
+    "n": 45,
+    "next_limit": "9",
+    "next_down": "7"
+  },
+  {
+    "label": "high_post0710",
+    "n": 255,
+    "next_limit": "112",
+    "next_down": "25"
+  }
+]
