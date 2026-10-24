@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import {
   Alert,
   Badge,
@@ -7,10 +7,8 @@ import {
   Collapse,
   DatePicker,
   Empty,
-  Segmented,
   Skeleton,
   Space,
-  Statistic,
   Tabs,
   Tag,
   Typography,
@@ -23,157 +21,27 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { z } from 'zod'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { barOption, Chart } from './Chart'
+import { Markdown } from './Markdown'
+import { StrategyOverview } from './StrategyOverview'
 import { Details } from './Details'
 import { downloadJson, fetchJson, payloadSchema } from './data'
-import type { Payload, Report } from './data'
+import type { DatasetKey, Payload } from './data'
 import type { AuthState } from './AuthGate'
 
 const dateListSchema = z.object({ dates: z.array(z.iso.date()) })
-function Markdown({ content }: { content: string }) {
-  return (
-    <div className="markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-    </div>
-  )
-}
+const MarketOverview = lazy(() =>
+  import('./MarketOverview').then((module) => ({
+    default: module.MarketOverview,
+  })),
+)
 
-function Overview({ report }: { report: Report }) {
-  const [blockSource, setBlockSource] = useState('同花顺板块')
-  const observedCount = (value: number, source: string) =>
-    value > 0 ||
-    report.fetch_logs.some(
-      (log) => log.data_type === source && log.status === 'success',
-    )
-      ? value
-      : null
-  const continuous = Object.entries(report.continuous_distribution).sort(
-    ([a], [b]) => Number(a) - Number(b),
-  )
-  const types = Object.entries(report.limit_up_type_distribution)
-  const blocks =
-    blockSource === '同花顺板块'
-      ? report.top_blocks
-      : report.eastmoney_industries
-  const blockNames = blocks.map((item) =>
-    String(item.block_name ?? item.industry_name ?? '未知'),
-  )
-  const blockCounts = blocks.map((item) => Number(item.stock_count ?? 0))
-  const ladderOption = useMemo(
-    () =>
-      barOption(
-        continuous.map(([name]) => `${name}板`),
-        continuous.map(([, value]) => value),
-      ),
-    [continuous],
-  )
-  const typeOption = {
-    color: ['#3867eb', '#55c3bf', '#8d9fec', '#edbd63', '#ef8790'],
-    tooltip: { trigger: 'item', confine: true },
-    legend: { bottom: 0, icon: 'circle' },
-    series: [
-      {
-        type: 'pie',
-        radius: ['46%', '70%'],
-        center: ['50%', '44%'],
-        itemStyle: { borderColor: '#fff', borderWidth: 4, borderRadius: 5 },
-        label: { formatter: '{b}\n{c} 只', color: '#667085' },
-        data: types.map(([name, value]) => ({ name, value })),
-      },
-    ],
-  }
-  return (
-    <>
-      <div className="stat-grid">
-        {[
-          [
-            '同花顺涨停',
-            observedCount(report.hr_limit_up_count, 'limit_up_pool'),
-            '只',
-            'red',
-          ],
-          [
-            '东财涨停',
-            observedCount(report.em_limit_up_count, 'eastmoney_zt_pool'),
-            '只',
-            'red',
-          ],
-          [
-            '连板股票',
-            observedCount(report.continuous_count, 'continuous_limit_up'),
-            '只',
-            'blue',
-          ],
-          [
-            '最高连板',
-            observedCount(report.max_continuous_days, 'continuous_limit_up'),
-            '板',
-            'blue',
-          ],
-          [
-            '同花顺跌停',
-            observedCount(report.lower_limit_count, 'lower_limit_pool'),
-            '只',
-            'green',
-          ],
-          [
-            '热点板块',
-            observedCount(report.block_count, 'block_top'),
-            '个',
-            'neutral',
-          ],
-        ].map(([title, value, suffix, color]) => (
-          <Card key={String(title)} className={`stat-card ${color}`}>
-            <Statistic
-              title={title}
-              value={Number(value)}
-              suffix={value === null ? '未就绪' : suffix}
-              formatter={value === null ? () => '—' : undefined}
-            />
-          </Card>
-        ))}
-      </div>
-      <div className="chart-grid">
-        <Card
-          title="连板梯队"
-          extra={<span className="muted">个股数量 / 连板高度</span>}
-        >
-          <Chart option={ladderOption} empty={!continuous.length} />
-        </Card>
-        <Card title="涨停结构" extra={<Tag bordered={false}>同花顺</Tag>}>
-          <Chart option={typeOption} empty={!types.length} />
-        </Card>
-        <Card
-          className="wide"
-          title="市场热点"
-          extra={
-            <Segmented
-              size="small"
-              value={blockSource}
-              onChange={setBlockSource}
-              options={['同花顺板块', '东财行业']}
-            />
-          }
-        >
-          <Chart
-            option={barOption(blockNames, blockCounts, true)}
-            empty={!blocks.length}
-          />
-        </Card>
-      </div>
-      <div className="overview-note">
-        <SafetyCertificateOutlined />
-        <span>
-          全部指标复用飞书播报统计口径。不同来源分别展示；图表未提供的细节可在「数据明细」查看。
-        </span>
-      </div>
-    </>
-  )
-}
-
-export default function App({ auth, onAuthChange }: { auth: AuthState; onAuthChange: () => void }) {
+export default function App({
+  auth,
+  onAuthChange,
+}: {
+  auth: AuthState
+  onAuthChange: () => void
+}) {
   const [dates, setDates] = useState<string[]>([])
   const [selectedDate, setSelectedDate] = useState<string>('')
   const [revision, setRevision] = useState(0)
@@ -181,10 +49,19 @@ export default function App({ auth, onAuthChange }: { auth: AuthState; onAuthCha
   const [loading, setLoading] = useState(true)
   const [dateError, setDateError] = useState('')
   const [reportError, setReportError] = useState('')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState('strategy')
+  const [detailDataset, setDetailDataset] = useState<DatasetKey>('top_stocks')
+
+  const openDataset = (key: DatasetKey) => {
+    setDetailDataset(key)
+    setActiveTab('details')
+  }
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': auth.csrf_token || '' } })
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': auth.csrf_token || '' },
+    })
     setPayload(null)
     onAuthChange()
   }
@@ -256,22 +133,24 @@ export default function App({ auth, onAuthChange }: { auth: AuthState; onAuthCha
           </span>
           StoChips
           <span className="brand-divider" />
-          <span className="brand-subtitle">市场观察</span>
+          <span className="brand-subtitle">策略复盘</span>
         </a>
         <Tag bordered={false} icon={<SafetyCertificateOutlined />}>
           只读看板
         </Tag>
         <Space className="account-bar">
           <span>{auth.user?.name || '飞书用户'}</span>
-          <Button size="small" onClick={() => void logout()}>退出登录</Button>
+          <Button size="small" onClick={() => void logout()}>
+            退出登录
+          </Button>
         </Space>
       </header>
       <main>
         <div className="page-heading">
           <div>
-            <div className="eyebrow">DAILY MARKET REVIEW</div>
-            <Typography.Title level={2}>每日市场复盘</Typography.Title>
-            <p>飞书播报数据与分析，一览全貌。</p>
+            <div className="eyebrow">DAILY STRATEGY REVIEW</div>
+            <Typography.Title level={2}>连板策略复盘</Typography.Title>
+            <p>情绪与主线 · 高标与助攻 · 风险与次日验证</p>
           </div>
           <div className="page-actions">
             <DatePicker
@@ -396,22 +275,45 @@ export default function App({ auth, onAuthChange }: { auth: AuthState; onAuthCha
             onChange={setActiveTab}
             items={[
               {
+                key: 'strategy',
+                label: '策略复盘',
+                children: (
+                  <StrategyOverview
+                    report={report}
+                    onDataset={openDataset}
+                    onReview={() => setActiveTab('review')}
+                    onMarket={() => setActiveTab('overview')}
+                  />
+                ),
+              },
+              {
                 key: 'overview',
-                label: '市场概览',
-                children: <Overview report={report} />,
+                label: '市场数据',
+                children: (
+                  <Suspense
+                    fallback={<Skeleton active paragraph={{ rows: 9 }} />}
+                  >
+                    <MarketOverview report={report} />
+                  </Suspense>
+                ),
               },
               {
                 key: 'details',
                 label: '数据明细',
                 children: (
                   <Card className="detail-card">
-                    <Details key={report.target_date} report={report} />
+                    <Details
+                      key={`${report.target_date}-${detailDataset}`}
+                      report={report}
+                      active={detailDataset}
+                      onDatasetChange={setDetailDataset}
+                    />
                   </Card>
                 ),
               },
               {
                 key: 'review',
-                label: '分析结果',
+                label: '完整复盘',
                 children: (
                   <Card
                     title="当日市场复盘"

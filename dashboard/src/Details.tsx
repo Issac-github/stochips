@@ -44,8 +44,15 @@ function Value({ value }: { value: JsonValue | undefined }) {
   return <span className="cell-value">{String(value)}</span>
 }
 
-export function Details({ report }: { report: Report }) {
-  const [active, setActive] = useState<DatasetKey>('top_blocks')
+export function Details({
+  report,
+  active,
+  onDatasetChange,
+}: {
+  report: Report
+  active: DatasetKey
+  onDatasetChange: (key: DatasetKey) => void
+}) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Row | null>(null)
   const rows = report[active]
@@ -84,7 +91,7 @@ export function Details({ report }: { report: Report }) {
             key={key}
             className={active === key ? 'selected' : ''}
             onClick={() => {
-              setActive(key)
+              onDatasetChange(key)
               setSearch('')
             }}
           >

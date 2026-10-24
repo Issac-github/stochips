@@ -209,6 +209,138 @@ main {
   color: #8590a2;
   margin: 20px 0;
 }
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 10px 0 18px;
+}
+.section-heading h3.ant-typography {
+  margin: 0 0 6px;
+  font-size: 20px;
+  letter-spacing: -0.4px;
+}
+.section-heading p {
+  color: #667085;
+  font-size: 13px;
+  margin: 0;
+}
+.strategy-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.strategy-main,
+.strategy-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.review-card .ant-card-head {
+  min-height: 58px;
+  border-bottom-color: #edf0f5;
+}
+.review-card .ant-card-head-title {
+  font-size: 15px;
+}
+.review-card .markdown {
+  font-size: 14px;
+  line-height: 1.85;
+}
+.review-card .markdown > :last-child {
+  margin-bottom: 0;
+}
+.review-card .markdown ul,
+.review-card .markdown ol {
+  padding-left: 21px;
+}
+.review-card .markdown li + li {
+  margin-top: 9px;
+}
+.sentiment-card {
+  border-top: 3px solid #3867eb;
+}
+.section-index {
+  font-variant-numeric: tabular-nums;
+  color: #8590a2;
+  font-size: 12px;
+  margin-right: 5px;
+}
+.risk-card {
+  border-top: 3px solid #edbd63;
+}
+.next-day-card {
+  border-top: 3px solid #55c3bf;
+}
+.pending-label {
+  display: block;
+  margin-bottom: 14px;
+  color: #667085;
+  font-size: 12px;
+}
+.verification-card {
+  background: #f8faff;
+}
+.verification-card dl {
+  margin: 0;
+}
+.verification-card dl > div + div {
+  margin-top: 15px;
+}
+.verification-card dt {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.verification-card dd {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #667085;
+  margin: 0;
+}
+.review-format-note {
+  margin-bottom: 18px;
+}
+.strategy-evidence {
+  margin-top: 32px;
+}
+.evidence-card .ant-card-body {
+  padding-top: 8px;
+}
+.evidence-toolbar {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.evidence-toolbar p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #667085;
+  margin: 0;
+}
+.evidence-toolbar .ant-btn {
+  flex-shrink: 0;
+  padding: 0;
+  height: auto;
+}
+.stock-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stock-identity strong {
+  font-weight: 600;
+}
+.stock-identity span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: #8590a2;
+}
 .account-bar {
   margin-left: auto;
   color: #667085;
@@ -225,7 +357,9 @@ main {
   text-align: center;
   box-shadow: 0 20px 60px rgb(16 24 40 / 8%);
 }
-.auth-card .ant-card-body { padding: 40px 36px; }
+.auth-card .ant-card-body {
+  padding: 40px 36px;
+}
 .auth-mark {
   width: 56px;
   height: 56px;
@@ -237,8 +371,13 @@ main {
   background: #edf2ff;
   font-size: 26px;
 }
-.auth-card .ant-typography h2 { margin-bottom: 8px; }
-.auth-alert { margin: 18px 0; text-align: left; }
+.auth-card .ant-typography h2 {
+  margin-bottom: 8px;
+}
+.auth-alert {
+  margin: 18px 0;
+  text-align: left;
+}
 .details-layout {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
@@ -390,6 +529,40 @@ footer span {
   }
 }
 @media (max-width: 760px) {
+  .strategy-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .strategy-main,
+  .strategy-aside {
+    display: contents;
+  }
+  .sentiment-card {
+    order: 0;
+  }
+  .risk-card {
+    order: 1;
+  }
+  .themes-card {
+    order: 2;
+  }
+  .leaders-card {
+    order: 3;
+  }
+  .next-day-card {
+    order: 4;
+  }
+  .verification-card {
+    order: 5;
+  }
+  .section-heading,
+  .evidence-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .review-card .ant-card-body,
+  .evidence-card .ant-card-body {
+    padding: 16px;
+  }
   .topbar {
     padding: 0 16px;
     height: 60px;
@@ -397,6 +570,23 @@ footer span {
   .brand-subtitle,
   .brand-divider {
     display: none;
+  }
+  .topbar > .ant-tag {
+    display: none;
+  }
+  .brand {
+    font-size: 18px;
+    gap: 8px;
+  }
+  .account-bar {
+    font-size: 12px;
+    min-width: 0;
+  }
+  .account-bar .ant-space-item:first-child {
+    max-width: 85px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   main {
     padding: 24px 16px 0;

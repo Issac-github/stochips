@@ -45,7 +45,7 @@
 ## 6. Tests Required
 
 - `python -m pytest dashboard/test_server.py dashboard/test_auth.py -q`: isolated SQLite report/date queries, no-auth denial, OAuth/PKCE/state replay, session expiry, allowlists and CSRF logout; no credentials in API errors.
-- `cd dashboard && npm run lint && npm run build`: strict TypeScript, runtime zod contracts, production build.
+- `cd dashboard && npm run lint && npm run build && npm test`: strict TypeScript, runtime zod contracts, production build, conservative Markdown section parsing.
 - Browser: charts, detail search/nested values, Markdown, date switching, retry/empty state, responsive layout.
 
 ## 7. Wrong vs Correct
@@ -121,3 +121,14 @@ rsync -avz --exclude='.env' --exclude='.git/' --exclude='node_modules/' ./ root@
 docker compose -f docker-compose.yml -f docker-compose.dashboard.yml up -d --build dashboard
 ```
 For a dashboard-only transfer, explicitly include the dashboard source, `services/agent/`, the root Compose file, and the overlay while preserving `.env`.
+
+## 10. Strategy review presentation
+
+- Default tab is `strategy`; `StrategyOverview` renders saved `daily_review.content`. `MarketOverview` retains existing charts and loads via `React.lazy`. Do not run analysis or introduce frontend trading scores.
+- `splitReview(content): ReviewSections | null` in `dashboard/src/review.ts` accepts the complete ordered headings 情绪定位、主线与梯队、龙头与助攻、风险与反证、次日验证清单. Only strip presentation markers from headings; preserve section bodies. Fence contents are not headings.
+- Unknown, missing, duplicate, reordered or empty sections, preamble text and unclosed fences return `null`: render the entire original Markdown rather than losing counter-evidence. A null review gets an explicit empty state. Keep the complete-review tab available.
+- Keep risk next to analysis on desktop and immediately after sentiment on narrow screens. Keep next-day conditions explicitly pending.
+- Evidence tables use `top_stocks`, `previous_high_feedback`, `leader_assists` in backend order. Preserve zero values and distinguish null from zero. `App` owns the `DatasetKey` so evidence links open the matching `Details` view; reset search/modal on date or dataset changes.
+- Height does not confirm leadership; turnover does not prove historical volume extremes. “未进入涨停池” does not mean limit down. Assist records are retrospective candidates (including non-one-word/first-board), not verified intraday causal relationships. Historical volume, auction, opening gaps and intraday continuity require additional facts.
+- Keep internal methodology source documents private. Public UI and committed documentation describe display contracts without copying private source material.
+- Verify with `npm test`: all five bodies preserved, CRLF/heading markers, fenced headings, invalid-format fallback. Browser checks cover desktop/mobile, evidence navigation, missing review, legacy Markdown, date changes and failed requests clearing stale data.
