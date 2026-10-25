@@ -4,6 +4,7 @@ Feishu card notifier for daily stock reports.
 
 import base64
 import hashlib
+import json
 import hmac
 import logging
 import os
@@ -203,6 +204,7 @@ class DailyReviewSummary:
     content: str
     provider: str
     model: str
+    strategy_evidence: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -524,6 +526,11 @@ class FeishuStockNotifier:
                     content=daily_review_row.content,
                     provider=daily_review_row.provider,
                     model=daily_review_row.model or "default",
+                    strategy_evidence=(
+                        json.loads(daily_review_row.strategy_evidence)
+                        if daily_review_row.strategy_evidence
+                        else None
+                    ),
                 )
                 if daily_review_row
                 else None

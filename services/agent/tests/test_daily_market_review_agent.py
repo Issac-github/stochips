@@ -1,4 +1,5 @@
 import hashlib
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -13,10 +14,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from chain.stock.agents.daily_market_review_agent import (
     DailyMarketReviewAgent,
     MoonshotReviewClient,
+    parse_review_response,
 )
 from chain.stock.models.database import DailyMarketReview
 
 TEST_STRATEGY_RELATIVE_PATH = Path("private/strategy.md")
+CONCEPTS = json.loads(
+    (Path(__file__).resolve().parents[3] / "dashboard/strategy-concepts.json")
+    .read_text(encoding="utf-8")
+)["concepts"]
+
+
+def fake_structured_response(content):
+    return json.dumps(
+        {
+            "review_markdown": content,
+            "concepts": [
+                {
+                    "key": concept["key"],
+                    "status": "insufficient_evidence",
+                    "summary": "测试数据不足",
+                    "evidence": [],
+                    "counter_evidence": [],
+                    "missing_data": ["测试数据"],
+                    "confidence": "unavailable",
+                }
+                for concept in CONCEPTS
+            ],
+        },
+        ensure_ascii=False,
+    )
 
 
 class FakeCodexClient:
@@ -28,7 +55,9 @@ class FakeCodexClient:
 
     def review(self, prompt):
         self.prompts.append(prompt)
-        return f"### 市场情绪\n测试复盘内容 {len(self.prompts)}"
+        return fake_structured_response(
+            f"### 市场情绪\n测试复盘内容 {len(self.prompts)}"
+        )
 
     def close(self):
         self.closed = True
@@ -37,7 +66,7 @@ class FakeCodexClient:
 class FakeMoonshotClient:
     def __init__(self, content="### Kimi复盘\n备用模型内容"):
         self.model = "moonshot-test"
-        self.content = content
+        self.content = fake_structured_response(content)
         self.prompts = []
         self.closed = False
 
@@ -114,7 +143,10 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
     assert fresh.cached is False
     assert cached.cached is True
     assert fresh.content == "### 市场情绪\n测试复盘内容 1"
+    assert fresh.strategy_evidence["version"] == 1
+    assert len(fresh.strategy_evidence["concepts"]) == 16
     assert cached.content == fresh.content
+    assert cached.strategy_evidence == fresh.strategy_evidence
     assert fresh.provider == "codex"
     assert fresh.model == "gpt-test-codex"
     assert len(client.prompts) == 1
@@ -151,6 +183,8 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
     assert "简略原因（reason_type）：先进封装+存储芯片" in client.prompts[0]
     assert "详细原因（reason_info）：行业原因：先进封装景气度提升" in client.prompts[0]
     assert "不要沿用程序预设的评分" in client.prompts[0]
+    assert "最终只输出一个 JSON 对象" in client.prompts[0]
+    assert "必须恰好覆盖目录全部概念" in client.prompts[0]
     assert "不得把昨日数据当作今日事实" in client.prompts[0]
     assert fresh.strategy_path == TEST_STRATEGY_RELATIVE_PATH.as_posix()
     expected_material = (
@@ -162,7 +196,11 @@ def test_daily_review_reads_strategy_context_and_reuses_saved_report(tmp_path):
         "- 详细原因（reason_info）：行业原因：先进封装景气度提升"
     )
     expected_digest = hashlib.sha256(
-        f"天量弱转强是检验真龙的标准\n\n{expected_material}".encode("utf-8")
+        (
+            "天量弱转强是检验真龙的标准\n\n"
+            f"{expected_material}\n\n"
+            + json.dumps(CONCEPTS, ensure_ascii=False, separators=(",", ":"))
+        ).encode("utf-8")
     ).hexdigest()
     assert fresh.source_material_digest == expected_digest
 
@@ -296,6 +334,112 @@ def test_failed_codex_reuses_identical_prompt_with_moonshot_fallback(
     assert result.content == "### Kimi复盘\n备用模型内容"
     assert codex_client.prompts == moonshot_client.prompts
     assert codex_client.closed is True
+
+
+def test_invalid_structured_review_does_not_overwrite_saved_record(tmp_path):
+    strategy_path = tmp_path / TEST_STRATEGY_RELATIVE_PATH
+    strategy_path.parent.mkdir(parents=True)
+    strategy_path.write_text("交易体系", encoding="utf-8")
+    database_path = tmp_path / "review.db"
+    session_factory = create_review_session(database_path)
+
+    class InvalidSecondReviewClient(FakeCodexClient):
+        def review(self, prompt):
+            self.prompts.append(prompt)
+            if len(self.prompts) == 1:
+                return fake_structured_response("### 市场情绪\n有效旧复盘")
+            return '{"review_markdown":"新正文","concepts":[]}'
+
+    agent = DailyMarketReviewAgent(
+        f"sqlite:///{database_path}",
+        codex_client=InvalidSecondReviewClient(),
+        notifier=FakeNotifier(),
+        project_root=tmp_path,
+        strategy_path=TEST_STRATEGY_RELATIVE_PATH,
+        session_factory=session_factory,
+    )
+    target_date = date(2026, 7, 10)
+    original = agent.run(target_date)
+
+    with pytest.raises(ValueError, match="必须完整且不重复"):
+        agent.run(target_date, force=True)
+
+    cached = agent.run(target_date)
+    assert cached.content == original.content
+    assert cached.strategy_evidence == original.strategy_evidence
+
+
+def test_evidence_references_must_exist_in_allowed_report_source():
+    concept = next(item for item in CONCEPTS if item["key"] == "core_leader")
+    evidence_item = {
+        "source": "top_stocks",
+        "reference": "999999",
+        "field": "continuous_days",
+        "value": "3",
+    }
+    results = []
+    for item in CONCEPTS:
+        results.append(
+            {
+                "key": item["key"],
+                "status": "candidate" if item["key"] == concept["key"] else "insufficient_evidence",
+                "summary": "候选" if item["key"] == concept["key"] else "证据不足",
+                "evidence": [evidence_item] if item["key"] == concept["key"] else [],
+                "counter_evidence": [],
+                "missing_data": [],
+                "confidence": "low" if item["key"] == concept["key"] else "unavailable",
+            }
+        )
+    raw = json.dumps(
+        {"review_markdown": "复盘", "concepts": results}, ensure_ascii=False
+    )
+
+    with pytest.raises(ValueError, match="引用了不存在的 top_stocks 记录"):
+        parse_review_response(raw, CONCEPTS, SimpleNamespace(top_stocks=[]))
+
+
+def test_valid_evidence_references_are_bound_to_exact_report_fields():
+    results = []
+    for concept in CONCEPTS:
+        evidence = []
+        status = "insufficient_evidence"
+        counter = []
+        confidence = "unavailable"
+        if concept["key"] == "core_leader":
+            status = "candidate"
+            confidence = "low"
+            evidence = [
+                {
+                    "source": "top_stocks",
+                    "reference": "000001",
+                    "field": "continuous_days",
+                    "value": "3",
+                }
+            ]
+            counter = ["连板高度不能单独证明龙头身份"]
+        results.append(
+            {
+                "key": concept["key"],
+                "status": status,
+                "summary": "候选" if status == "candidate" else "证据不足",
+                "evidence": evidence,
+                "counter_evidence": counter,
+                "missing_data": [],
+                "confidence": confidence,
+            }
+        )
+    report = SimpleNamespace(
+        top_stocks=[SimpleNamespace(code="000001", continuous_days=3)]
+    )
+
+    markdown, structured = parse_review_response(
+        json.dumps({"review_markdown": "复盘正文", "concepts": results}),
+        CONCEPTS,
+        report,
+    )
+
+    assert markdown == "复盘正文"
+    assert structured["concepts"][3]["evidence"][0]["value"] == "3"
 
 
 def test_failed_codex_without_moonshot_fallback_still_raises(tmp_path, monkeypatch):

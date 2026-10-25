@@ -198,7 +198,7 @@ def assess_concept(concept, report, capabilities):
             if any(item["state"] != "available" for item in requirements)
             else "not_implemented"
         )
-        explanation = "完整模式识别尚未实现；关联观测和前高记录不等于该模式匹配。"
+        explanation = "看板没有确定性模式分类规则；每日复盘的 AI 判断见上方，关联观测和前高记录本身不等于模式匹配。"
     return dict(
         key=concept["key"],
         status=status,

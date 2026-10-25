@@ -23,6 +23,7 @@ async function moduleUrl(file, imports) {
 }
 const zod = import.meta.resolve('zod')
 const data = await moduleUrl('../src/data.ts', { zod })
+const { strategyEvidenceSchema } = await import(data)
 const rawCatalog = JSON.parse(
   await readFile(new URL('../strategy-concepts.json', import.meta.url), 'utf8'),
 )
@@ -70,6 +71,27 @@ test('follow-up text reports facts without assigning a manual condition result',
   assert.equal(
     feedbackText(feedback, '000001'),
     '有涨停记录；未见跌停记录；4连板',
+  )
+})
+
+test('AI strategy evidence requires explicit status, sources and uncertainty arrays', () => {
+  const concept = {
+    key: 'small_platform',
+    status: 'insufficient_evidence',
+    summary: '缺少连续日线，无法确认平台结构',
+    evidence: [],
+    counter_evidence: ['只有前高观察记录'],
+    missing_data: ['连续日线 OHLCV'],
+    confidence: 'unavailable',
+  }
+  const result = { version: 1, concepts: [concept] }
+  assert.equal(strategyEvidenceSchema.parse(result).concepts.length, 1)
+  assert.equal(
+    strategyEvidenceSchema.safeParse({
+      version: 1,
+      concepts: [{ ...concept, status: 'confirmed', evidence: [{ source: 'top_stocks' }] }],
+    }).success,
+    false,
   )
 })
 

@@ -15,6 +15,29 @@ const jsonValue: z.ZodType<JsonValue> = z.lazy(() =>
 export const rowSchema = z.record(z.string(), jsonValue)
 export type Row = z.infer<typeof rowSchema>
 const rows = z.array(rowSchema)
+export const strategyEvidenceSchema = z.object({
+  version: z.number(),
+  concepts: z.array(z.object({
+    key: z.string(),
+    status: z.enum([
+      'confirmed',
+      'candidate',
+      'insufficient_evidence',
+      'conflicting_evidence',
+      'not_applicable',
+    ]),
+    summary: z.string(),
+    evidence: z.array(z.object({
+      source: z.string(),
+      reference: z.string(),
+      field: z.string(),
+      value: z.string(),
+    })),
+    counter_evidence: z.array(z.string()),
+    missing_data: z.array(z.string()),
+    confidence: z.enum(['high', 'medium', 'low', 'unavailable']),
+  })),
+})
 
 export const reportSchema = z.object({
   target_date: z.iso.date(),
@@ -43,7 +66,12 @@ export const reportSchema = z.object({
   limit_up_pool_metrics: rows,
   board_overlaps: rows,
   daily_review: z
-    .object({ content: z.string(), provider: z.string(), model: z.string() })
+    .object({
+      content: z.string(),
+      provider: z.string(),
+      model: z.string(),
+      strategy_evidence: strategyEvidenceSchema.nullable().optional(),
+    })
     .nullable(),
 })
 export const payloadSchema = z.object({

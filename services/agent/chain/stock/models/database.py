@@ -238,6 +238,7 @@ class DailyMarketReview(Base):
     model = Column(String(100), nullable=True, comment='实际模型')
     strategy_path = Column(String(255), nullable=False, comment='交易体系文件路径')
     source_material_digest = Column(String(64), nullable=False, comment='输入行情材料SHA256')
+    strategy_evidence = Column(Text, nullable=True, comment='策略概念结构化证据JSON')
     created_at = Column(DateTime, default=datetime.now, comment='创建时间')
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment='更新时间')
 

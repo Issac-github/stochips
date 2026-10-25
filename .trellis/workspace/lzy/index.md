@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
+- **Total Sessions**: 14
 - **Last Active**: 2026-10-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~424 | Active |
+| `journal-1.md` | ~455 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-10-25 | 用AI生成策略概念证据判断 | - | `main` |
 | 13 | 2026-10-25 | 显示策略概念的真实证据覆盖 | - | `main` |
 | 12 | 2026-10-25 | Add strategy concept categories and manual labels | - | `main` |
 | 11 | 2026-10-25 | Add persistent personal observation pool | - | `main` |

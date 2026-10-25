@@ -415,7 +415,8 @@ TORCH_VERSION=2.7.1+cpu
 ```
 
 已有数据库升级不需要手工执行SQL；`stock_agent` 和 `stock_rpc` 启动时会自动运行
-`migrations/runner.py`，创建 `daily_market_review` 与 `daily_job_run` 表。
+`migrations/runner.py`，创建和升级 `daily_market_review` 与 `daily_job_run` 表。每日复盘的
+`strategy_evidence` 可空字段保存经校验的概念判断 JSON，旧复盘无需回填。
 
 ### 本地开发
 
@@ -553,9 +554,10 @@ agent/
 结构、核心连板、全部热点板块及与当日共同热点的涨停家数变化。飞书不会重复展示前一日材料。
 
 交易体系原文只定义分析方法和判断边界，不作为当日市场事实；竞价、天量、缺口和分时弱转强等
-缺少事实数据时只能列为待观察。程序不再计算风险分数、权重或因子，也不要求Codex返回JSON。结果按日期写入
-`daily_market_review`，普通执行复用当日报告；`--force-ai` 会发起一次新调用并覆盖当日报告。
-飞书卡片保留事实材料，并在末尾追加保存的Codex复盘和实际模型来源。
+缺少事实数据时只能列为待观察。程序不计算风险分数、权重或因子。Codex在同一次调用中返回
+Markdown复盘和16项概念的结构化判断；程序校验全部 key、状态和引用到的来源字段值后，按日期
+原子写入 `daily_market_review`。普通执行复用当日报告；`--force-ai` 会发起一次新调用并覆盖当日报告。
+若结构化格式、引用或概念清单校验失败，本次复盘不覆盖原结果。飞书卡片继续只展示原 Markdown、事实材料和模型来源。
 
 ## ⏰ 定时任务
 

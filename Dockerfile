@@ -48,6 +48,7 @@ COPY --from=codex_cli_runtime /opt/codex-cli-0.162.1 /opt/codex-cli-0.162.1
 FROM python-runtime-base AS stock_agent
 
 COPY services/agent/ ./
+COPY dashboard/strategy-concepts.json /app/dashboard/strategy-concepts.json
 RUN mkdir -p logs
 
 CMD ["python", "main.py", "schedule"]
@@ -75,6 +76,7 @@ ENV STOCK_RPC_ADDR=:50051 \
     PYTHON_BIN=python
 
 COPY services/agent/ ./
+COPY dashboard/strategy-concepts.json /app/dashboard/strategy-concepts.json
 COPY --from=stock_rpc_go_builder /out/stock-rpc /usr/local/bin/stock-rpc
 RUN mkdir -p logs
 

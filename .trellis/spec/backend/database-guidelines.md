@@ -14,6 +14,8 @@ Python SQLAlchemy models in `agent/chain/stock/models/database.py` define the ap
 - `daily_job_run`
 - `data_fetch_log`
 
+`daily_market_review.strategy_evidence` stores the versioned JSON output that accompanies the human-readable daily AI review. Keep the Markdown `content` contract stable for Feishu, add new persisted fields through an ordered SQL migration, and validate the complete AI payload before atomically saving it with the review. Read APIs must not invoke the model or mutate review rows.
+
 Migrations live in `agent/migrations/`. The Go task table is added by `agent/migrations/20260522_add_rpc_tasks.sql`, and `services/stock-rpc/internal/tasks/sql_store.go` depends on that `rpc_tasks` schema.
 
 When adding a column or table, update all relevant places together:

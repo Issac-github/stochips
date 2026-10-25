@@ -4,9 +4,11 @@
 
 The root `docker-compose.dashboard.yml` overlay adds a `dashboard` container to the existing Compose project and MySQL network. Keep the ECS `.env` in place; the general synchronization script includes `.env` and must not be used for this deployment.
 
-After transferring the dashboard source and Compose overlay to `/root/stochips`, run from that directory:
+When deploying a release that includes `services/agent/` changes or a MySQL migration, transfer those sources too, then run the agent first so its startup migration applies before the dashboard reads the new column. Run from `/root/stochips`:
 
 ```sh
+docker compose build stock_agent
+docker compose up -d stock_agent
 docker compose -f docker-compose.yml -f docker-compose.dashboard.yml config --quiet
 docker compose -f docker-compose.yml -f docker-compose.dashboard.yml up -d --build dashboard
 docker compose -f docker-compose.yml -f docker-compose.dashboard.yml ps dashboard
@@ -33,7 +35,8 @@ This leaves the MySQL volume and all other containers untouched.
 - 仅完整识别已有五节格式时分卡展示，历史或非标准格式完整保留原文；没有分析时明确显示空态。
 - 策略页可核对核心连板、昨日高标反馈和助攻候选，并跳转全部字段。历史量能、竞价与分时不足的条件单独标明待验证，不由换手率或收盘候选推导交易结论。
 - “策略分类”按情绪与空间、主线与梯队、龙头与助攻、量能与弱转强、平台与反包、竞价与分时、风控与跟踪七类展示16个核对概念；每类关联原始数据和已保存复盘，保留风险反证。
-- 策略分类按所选日期读取数据库覆盖及概念关联记录，分别显示已有事实、候选、当日无观测、数据缺口、未接入看板和识别尚未实现；概念清单供人工判断时参考，不把所有未完成项都归为人工校核。
+- 每日 AI 复盘在同一次模型调用中为16个概念生成结构化判断，附结论类别、事实来源/股票、反证、缺失数据和定性置信度。看板仅读取已保存结果，不会因浏览日期额外调用模型；旧日期没有结构化结果时显示“尚未生成”，可通过既有 `assess-ai --force-ai` 命令明确重跑。
+- 策略分类按所选日期读取数据库覆盖及概念关联记录，分别显示已有事实、候选、当日无观测、数据缺口、未接入看板和自动规则尚未实现；AI复盘判断、确定性规则进度与概念清单人工检查项分开呈现。
 - 平台类分别展示小平台、大龙头天量平台、小龙头天量平台、趋势龙头平台突破，并列出实际证据覆盖。来源条数仅是数据记录数，不是模式匹配或选股信号数；池内记录不等于连续日线，也不能据此确认历史天量。
 - 证据覆盖表按日期汇总已建模行情池的记录数、日期/股票数、区间及有效价格/成交量条数；0条与字段未采集分开显示。日线、竞价、分时明确显示是否接入看板，不推断数据库里必然没有。
 - 概念证据接口独立加载，切换日期或读取失败会清空旧状态并提供重试；不影响原始报表和人工观察池。
@@ -151,6 +154,7 @@ services/agent/.venv/bin/python dashboard/server.py
 - `POST /api/auth/logout` → 带 Origin 与 CSRF 校验的退出；
 - `GET /api/dates` → `{ "dates": ["2026-10-23", ...] }`，日期降序，覆盖行情、日志、已有复盘及当前账号已保存观察日期。
 - `GET /api/report?date=YYYY-MM-DD` → `{ report, material, previous_day_material, reason_material }`。
+- `report.daily_review.strategy_evidence` → `{ version, concepts }`；旧复盘此字段为 `null`。每个概念结果带 `status`, `summary`, `evidence`, `counter_evidence`, `missing_data`, `confidence`；模型输入不含相应行情字段时，不能标为已确认。
 - `GET /api/strategy-evidence?date=YYYY-MM-DD` → `{ date, coverage, concepts }`，认证后只读汇总所选日期及以前的行情池覆盖和16个概念状态；字段、状态和推断限制见 `.trellis/spec/backend/dashboard-evidence.md`。
 - report 原样序列化 `FeishuStockReport`；日期为 ISO 字符串、Decimal 转为数字，未知字段类型报错。
 - 非法日期返回 400、无数据返回 404、数据库或表结构异常返回 503。

@@ -89,7 +89,7 @@ def test_pool_volume_never_becomes_complete_daily_history_or_confirmed_platform(
     assert requirements["prices"]["state"] == "partial"
     assert requirements["daily_bars"]["state"] == "not_integrated"
     assert small["status"] == "data_gap"
-    assert "未实现" in small["explanation"]
+    assert "确定性模式分类规则" in small["explanation"]
     assert small["stock_count"] == 1  # related core stock, not a pattern match
     assert concepts["mainline_ladder"]["status"] == "facts_available"
     assert concepts["core_leader"]["status"] == "candidate"

@@ -6,7 +6,7 @@ export const statusLabels = {
   facts_available: '已有事实',
   candidate: '候选待验证',
   data_gap: '数据有缺口',
-  not_implemented: '识别尚未实现',
+  not_implemented: '自动规则尚未实现',
   manual: '人工记录',
   no_observations: '当日无关联观测',
 } as const

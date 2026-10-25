@@ -108,6 +108,14 @@ def service(tmp_path):
                     model="test-model",
                     strategy_path="test.md",
                     source_material_digest="a" * 64,
+                    strategy_evidence=json.dumps(
+                        {
+                            "version": 1,
+                            "concepts": [
+                                {"key": "core_leader", "status": "candidate"}
+                            ],
+                        }
+                    ),
                 ),
             ]
         )
@@ -127,6 +135,7 @@ def test_report_reads_real_models_without_any_writes(service):
     result = service.report(date(2026, 10, 23))
     assert result["report"]["hr_limit_up_count"] == 1
     assert result["report"]["daily_review"]["content"] == "## 测试复盘\n完整分析"
+    assert result["report"]["daily_review"]["strategy_evidence"]["version"] == 1
     assert result["report"]["limit_up_pool_metrics"][0]["turnover_rate"] == 12.5
     assert "测试股" in result["material"] or "测试股" in result["reason_material"]
     assert all(

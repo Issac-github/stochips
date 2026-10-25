@@ -11,7 +11,7 @@ import {
 } from 'antd'
 import { ArrowRightOutlined } from '@ant-design/icons'
 import type { DatasetKey, Report } from './data'
-import { datasets, fetchJson } from './data'
+import { datasets, fetchJson, labels } from './data'
 import { Details } from './Details'
 import { Markdown } from './Markdown'
 import { reviewSections, splitReview } from './review'
@@ -24,6 +24,21 @@ import {
   statusLabels,
 } from './strategyEvidenceData'
 import type { EvidencePayload } from './strategyEvidenceData'
+
+const aiStatusLabels = {
+  confirmed: 'AI 判断：证据支持',
+  candidate: 'AI 判断：候选',
+  insufficient_evidence: 'AI 判断：证据不足',
+  conflicting_evidence: 'AI 判断：证据有冲突',
+  not_applicable: 'AI 判断：当日不适用',
+} as const
+
+const confidenceLabels = {
+  high: '较高',
+  medium: '中等',
+  low: '较低',
+  unavailable: '无法评估',
+} as const
 
 function CategoryContent({
   group,
@@ -74,6 +89,9 @@ function CategoryContent({
           const result = evidence?.concepts.find(
             (item) => item.key === concept.key,
           )
+          const aiResult = report.daily_review?.strategy_evidence?.concepts.find(
+            (item) => item.key === concept.key,
+          )
           return (
             <Card key={concept.key} size="small" className="concept-card">
               <div className="concept-card-heading">
@@ -97,6 +115,45 @@ function CategoryContent({
                 </Tag>
               </div>
               <p>{concept.focus}</p>
+              {aiResult ? (
+                <div className="concept-ai-result">
+                  <Space wrap>
+                    <Tag color={aiResult.status === 'confirmed' ? 'green' : 'blue'}>
+                      {aiStatusLabels[aiResult.status]}
+                    </Tag>
+                    <Tag>置信度：{confidenceLabels[aiResult.confidence]}</Tag>
+                  </Space>
+                  <p>{aiResult.summary}</p>
+                  {aiResult.evidence.length > 0 && (
+                    <div>
+                      <strong>引用事实</strong>
+                      <ul>
+                        {aiResult.evidence.map((item, index) => (
+                          <li key={`${item.source}-${item.reference}-${index}`}>
+                            {datasets.find(([key]) => key === item.source)?.[1] ?? item.source}
+                            {item.reference !== 'aggregate' ? ` · ${item.reference}` : ''} ·{' '}
+                            {labels[item.field] ?? item.field}={item.value}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {aiResult.counter_evidence.length > 0 && (
+                    <div><strong>反证与限制</strong><ul>{aiResult.counter_evidence.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                  )}
+                  {aiResult.missing_data.length > 0 && (
+                    <div><strong>缺失数据</strong><ul>{aiResult.missing_data.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                  )}
+                </div>
+              ) : (
+                <Alert
+                  className="concept-ai-result"
+                  type="info"
+                  showIcon
+                  message={report.daily_review ? '当日复盘未包含结构化概念判断' : '当日尚无 AI 复盘'}
+                  description="不会在打开看板时额外调用模型。"
+                />
+              )}
               {result && (
                 <>
                   <p className="concept-recognition">{result.explanation}</p>
