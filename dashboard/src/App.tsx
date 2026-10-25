@@ -24,6 +24,7 @@ import { z } from 'zod'
 import { Markdown } from './Markdown'
 import { StrategyOverview } from './StrategyOverview'
 import { Details } from './Details'
+import { Watchlist } from './Watchlist'
 import { downloadJson, fetchJson, payloadSchema } from './data'
 import type { DatasetKey, Payload } from './data'
 import type { AuthState } from './AuthGate'
@@ -136,7 +137,7 @@ export default function App({
           <span className="brand-subtitle">策略复盘</span>
         </a>
         <Tag bordered={false} icon={<SafetyCertificateOutlined />}>
-          只读看板
+          行情只读 · 观察可记录
         </Tag>
         <Space className="account-bar">
           <span>{auth.user?.name || '飞书用户'}</span>
@@ -287,6 +288,19 @@ export default function App({
                 ),
               },
               {
+                key: 'watchlist',
+                label: '次日观察池',
+                children: (
+                  <Watchlist
+                    key={`${report.target_date}-${revision}`}
+                    date={report.target_date}
+                    csrfToken={auth.csrf_token || ''}
+                    onDataset={openDataset}
+                    onReview={() => setActiveTab('review')}
+                  />
+                ),
+              },
+              {
                 key: 'overview',
                 label: '市场数据',
                 children: (
@@ -374,6 +388,15 @@ export default function App({
                 ),
               },
             ]}
+          />
+        ) : selectedDate && !dateError ? (
+          <Watchlist
+            key={`${selectedDate}-${revision}`}
+            date={selectedDate}
+            reportAvailable={false}
+            csrfToken={auth.csrf_token || ''}
+            onDataset={openDataset}
+            onReview={() => setActiveTab('review')}
           />
         ) : (
           !dateError &&

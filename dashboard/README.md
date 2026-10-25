@@ -32,6 +32,8 @@ This leaves the MySQL volume and all other containers untouched.
 - 默认“策略复盘”先展示已保存的情绪定位、主线与梯队、龙头与助攻；风险与反证、次日验证在桌面并排显示，手机端优先呈现风险。
 - 仅完整识别已有五节格式时分卡展示，历史或非标准格式完整保留原文；没有分析时明确显示空态。
 - 策略页可核对核心连板、昨日高标反馈和助攻候选，并跳转全部字段。历史量能、竞价与分时不足的条件单独标明待验证，不由换手率或收盘候选推导交易结论。
+- “次日观察池”合并核心连板、助攻及前高观察，同股保留多来源依据；支持关注、剔除、恢复、角色/状态筛选、搜索和独立 JSON 导出。
+- 观察状态、人工验证结果和备注按飞书账号与报告日期保存在服务器，保存时保留依据快照；来源消失仍可查看。后续行情展示首个可用日期的事实，不自动判定条件满足。
 - 日期选择、刷新、完整 JSON 导出；日历蓝点代表数据库有记录。
 - “市场数据”保留同花顺/东财涨停、连板、最高板、跌停、板块数量，以及连板梯队、涨停结构、板块/行业图表；图表代码按需加载。
 - 全部 14 类明细：板块、行业、核心连板、龙头助攻、昨日高标、一字板、早盘强势、弱板、跌停、突破、板块交集、原因池、涨停池指标、抓取日志。
@@ -43,7 +45,7 @@ This leaves the MySQL volume and all other containers untouched.
 
 - Node.js >= 20.19，建议 Node.js 22。
 - Python >= 3.10，使用 `services/agent` 的现有 Python 环境和依赖（SQLAlchemy、PyMySQL、python-dotenv 等）。
-- 已迁移的 MySQL 数据库。看板不会建表、迁移、抓取、调用 Codex 或发送飞书。
+- 已迁移的 MySQL 数据库。行情数据库保持只读；看板不会迁移行情、抓取、调用 Codex 或发送飞书。个人观察记录写入独立 SQLite。
 - 飞书开放平台中独立创建的 StoChips 企业自建应用，开启网页应用能力并配置回调地址。
 
 ## 飞书登录配置
@@ -64,6 +66,16 @@ FEISHU_ALLOWED_OPEN_IDS=
 本机开发时，StoChips 应用 ID 为 `cli_aa56fa290af85cb7`。在根目录未跟踪的 `.env` 设置 `FEISHU_APP_ID=cli_aa56fa290af85cb7`、从开放平台“凭证与基础信息”复制 `FEISHU_APP_SECRET`、以及 `DASHBOARD_PUBLIC_URL=http://127.0.0.1:5174`。开发回调 `http://127.0.0.1:5174/api/auth/feishu/callback` 已登记；Vite 会代理授权回调到 Python 服务。运行前端时用 `npm run dev`，Python 服务仍需在另一个终端运行。服务器生产环境必须使用 HTTPS。可选的用户/企业白名单默认不启用；应用自身的可用范围仍由飞书管理。
 
 登录采用一次性 state、PKCE 和 HttpOnly 会话 cookie；会话在服务端内存中保存，最长一小时，应用进程重启后需重新登录。生产部署保持单进程，或在反向代理后固定路由到同一进程。
+
+## 个人观察记录
+
+进入“次日观察池”，点击股票的“查看 / 编辑”核对来源、风险和待验证条件，再保存关注状态、人工结果与备注。剔除记录可通过“全部状态”或“仅已剔除”恢复。关闭详情、刷新或切换日期前请保存编辑内容。
+
+默认写入 `dashboard/data/watchlist.sqlite3`；可用 `DASHBOARD_WATCHLIST_DB` 指定绝对路径，进程须有目录写权限。Docker overlay 自动挂载独立 `dashboard_data` 卷，重建容器不丢记录。SQLite 文件包含个人备注，已从 Git、镜像构建和同步脚本排除。备份时停止看板后复制此文件，或使用 SQLite backup API；不要删除该持久卷。
+
+记录按飞书 `tenant_key + open_id` 隔离，其他账号不可见。保存版本冲突时保留编辑内容，重新读取并对比已保存备注后再保存。保存快照保留首次记录的依据，当前来源明细用于对照，二者可能因行情修正不同。
+
+“后续首个可用行情日”可能跨过缺失日期，不保证紧邻下一交易日。只有抓取成功的完整来源才能把缺席显示为“未见记录”；缺少来源显示数据不足。人工结果与后续涨跌停事实各自保留。
 
 ## 开发运行
 
@@ -128,12 +140,14 @@ services/agent/.venv/bin/python dashboard/server.py
 - `GET /api/auth/session` → 登录配置状态和当前用户（只返回 open_id、姓名、tenant_key）；
 - `GET /api/auth/feishu/login` 与 `/api/auth/feishu/callback` → 飞书 OAuth；
 - `POST /api/auth/logout` → 带 Origin 与 CSRF 校验的退出；
-- `GET /api/dates` → `{ "dates": ["2026-10-23", ...] }`，日期降序，覆盖行情、日志和已有复盘日期。
+- `GET /api/dates` → `{ "dates": ["2026-10-23", ...] }`，日期降序，覆盖行情、日志、已有复盘及当前账号已保存观察日期。
 - `GET /api/report?date=YYYY-MM-DD` → `{ report, material, previous_day_material, reason_material }`。
 - report 原样序列化 `FeishuStockReport`；日期为 ISO 字符串、Decimal 转为数字，未知字段类型报错。
 - 非法日期返回 400、无数据返回 404、数据库或表结构异常返回 503。
 - 未登录的报表请求返回 401；无效退出请求返回 403。
 - 每次请求重新查询数据库；分析内容来自已保存的 `daily_market_review`。缺失分析时不会自动生成。
+- `GET /api/watchlist?date=YYYY-MM-DD` → `{date, items, warnings, feedback}`，候选来源与个人记录、后续行情事实。
+- `POST /api/watchlist` → `{annotation}`；请求 `{date, code, status, outcome, note, revision}`，需要已登录会话、同源 Origin 和 `X-CSRF-Token`。仅保存自己的观察记录，备注最多2000字，旧版本返回409；不接受客户端指定账号或候选快照。
 
 ## 验证
 
@@ -143,7 +157,7 @@ npm run lint
 npm run build
 npm test
 cd ..
-services/agent/.venv/bin/python -m pytest dashboard/test_server.py -q
+services/agent/.venv/bin/python -m pytest dashboard/test_server.py dashboard/test_auth.py dashboard/test_watchlist.py -q
 ```
 
 前端测试覆盖五节 Markdown 的完整保留和非标准格式回退。接口测试使用隔离 SQLite 和本地 HTTP 服务，不连接生产数据库，不消耗 AI 额度。

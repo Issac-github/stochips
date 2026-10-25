@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
-- **Last Active**: 2026-10-24
+- **Total Sessions**: 11
+- **Last Active**: 2026-10-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~331 | Active |
+| `journal-1.md` | ~362 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-10-25 | Add persistent personal observation pool | - | `main` |
 | 10 | 2026-10-24 | Prioritize dashboard strategy review | `d7b335c` | `main` |
 | 9 | 2026-10-24 | Redact deployment identifiers and commit pending work | `e62ba46` | `main` |
 | 8 | 2026-10-24 | 飞书播报 React Ant Design 看板 | `51814f9` | `main` |

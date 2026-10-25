@@ -11,6 +11,9 @@ services:
       FEISHU_APP_ID: ${FEISHU_APP_ID:-}
       FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
       DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL:-http://127.0.0.1:8787}
+      DASHBOARD_WATCHLIST_DB: /app/dashboard/data/watchlist.sqlite3
+    volumes:
+      - dashboard_data:/app/dashboard/data
     ports:
       - "${DASHBOARD_PORT:-8787}:8787"
     depends_on:
@@ -18,3 +21,6 @@ services:
         condition: service_healthy
     networks:
       - stock_network
+
+volumes:
+  dashboard_data:

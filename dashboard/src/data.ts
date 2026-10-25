@@ -131,8 +131,9 @@ export const labels: Record<string, string> = {
 export async function fetchJson(
   path: string,
   signal?: AbortSignal,
+  options?: RequestInit,
 ): Promise<unknown> {
-  const response = await fetch(path, { signal })
+  const response = await fetch(path, { ...options, signal })
   const body: unknown = await response.json()
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new Event('auth-expired'))

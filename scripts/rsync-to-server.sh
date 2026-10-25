@@ -40,6 +40,7 @@ else
 fi
 
 rsync -avz "$@" \
+  --exclude='dashboard/data/' \
   --exclude='.git/' \
   --exclude='.trellis/' \
   --exclude='.agents/' \

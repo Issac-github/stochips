@@ -16,6 +16,7 @@ Read these guides before changing backend behavior:
 | [Quality Guidelines](./quality-guidelines.md) | Tests, command contracts, generated files, config, and forbidden patterns |
 | [Vector Store Guidelines](./vector-store-guidelines.md) | Optional wiki/RAG Qdrant persistence, rebuild, and test contracts |
 | [Report Dashboard](./report-dashboard.md) | Independent React/Ant Design dashboard, read-only HTTP contracts, report serialization |
+| [Dashboard Watchlist](./dashboard-watchlist.md) | Personal observation snapshots/notes, isolated SQLite, authenticated writes and later market facts |
 
 Primary references:
 

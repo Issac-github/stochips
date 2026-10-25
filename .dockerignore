@@ -21,6 +21,7 @@ services/agent/.env.*
 .vscode/
 scripts/
 .DS_Store
+dashboard/data/
 *.log
 services/agent/logs/
 services/agent/chain/wiki/chroma_wiki_db/

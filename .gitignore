@@ -41,6 +41,7 @@ services/agent/chain/rag/qdrant_db/
 services/agent/examples/ai_analysis_example.md
 
 # Local runtime state
+dashboard/data/
 agent/stock_agent.log
 .superpowers/
 

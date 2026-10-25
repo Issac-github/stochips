@@ -18,6 +18,7 @@ from sqlalchemy.schema import CreateTable
 sys.path.insert(0, str(Path(__file__).parent))
 from server import DashboardHandler, ReportService
 from auth import AuthConfig, FeishuAuth
+from watchlist import WatchlistService, WatchlistStore
 from chain.stock.models.database import (
     BlockTop,
     BlockTopStock,
@@ -139,19 +140,34 @@ def test_report_reads_real_models_without_any_writes(service):
 
 
 @pytest.fixture
-def http_server(service, tmp_path):
-    (tmp_path / "index.html").write_text("<html>Dashboard</html>")
+def dashboard_auth():
     auth = FeishuAuth(AuthConfig(app_id="test", app_secret="secret"))
     sid = "test-session"
     auth.sessions[__import__("hashlib").sha256(sid.encode()).hexdigest()] = {
         "user": {"open_id": "test", "name": "Test", "tenant_key": "tenant"},
-        "csrf_token": "csrf", "expires_at": auth.clock() + 3600,
+        "csrf_token": "csrf",
+        "expires_at": auth.clock() + 3600,
     }
-    handler = partial(DashboardHandler, service=service, auth=auth, directory=str(tmp_path))
+    return auth
+
+
+@pytest.fixture
+def http_server(service, tmp_path, dashboard_auth):
+    (tmp_path / "index.html").write_text("<html>Dashboard</html>")
+    watchlist = WatchlistService(
+        service, WatchlistStore(tmp_path / "observations.sqlite3")
+    )
+    handler = partial(
+        DashboardHandler,
+        service=service,
+        auth=dashboard_auth,
+        watchlist=watchlist,
+        directory=str(tmp_path),
+    )
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield f"http://127.0.0.1:{server.server_port}", sid
+    yield f"http://127.0.0.1:{server.server_port}", "test-session"
     server.shutdown()
     server.server_close()
     thread.join()
@@ -183,6 +199,7 @@ def test_http_contract_and_static_root(http_server):
 
 def test_database_failure_hides_credentials(http_server, service, monkeypatch):
     base, sid = http_server
+
     def fail():
         raise RuntimeError("mysql://username:secret@private-db")
 
@@ -195,10 +212,14 @@ def test_database_failure_hides_credentials(http_server, service, monkeypatch):
     assert "secret" not in error.value.read().decode()
 
 
-def test_unauthenticated_report_is_rejected_before_database_query(http_server, service, monkeypatch):
+def test_unauthenticated_report_is_rejected_before_database_query(
+    http_server, service, monkeypatch
+):
     base, _sid = http_server
+
     def fail():
         raise AssertionError("database must not be queried before authentication")
+
     monkeypatch.setattr(service, "dates", fail)
     with pytest.raises(HTTPError) as error:
         urlopen(f"{base}/api/dates")
@@ -210,19 +231,29 @@ def test_auth_routes_report_status_and_protect_logout(http_server):
     opener = build_opener()
     # A direct request with redirect handling disabled exposes the OAuth start contract.
     from urllib.request import HTTPRedirectHandler
+
     class NoRedirect(HTTPRedirectHandler):
         def redirect_request(self, *_args, **_kwargs):
             return None
+
     no_redirect = build_opener(NoRedirect())
     with pytest.raises(HTTPError) as login:
         no_redirect.open(f"{base}/api/auth/feishu/login")
     assert login.value.code == 302
-    assert "accounts.feishu.cn/open-apis/authen/v1/authorize" in login.value.headers["Location"]
+    assert (
+        "accounts.feishu.cn/open-apis/authen/v1/authorize"
+        in login.value.headers["Location"]
+    )
     assert "stochips_oauth=" in login.value.headers["Set-Cookie"]
 
     request = Request(
-        f"{base}/api/auth/logout", method="POST",
-        headers={"Cookie": f"stochips_session={sid}", "Origin": "http://127.0.0.1:8787", "X-CSRF-Token": "csrf"},
+        f"{base}/api/auth/logout",
+        method="POST",
+        headers={
+            "Cookie": f"stochips_session={sid}",
+            "Origin": "http://127.0.0.1:8787",
+            "X-CSRF-Token": "csrf",
+        },
     )
     with opener.open(request) as response:
         assert response.status == 204

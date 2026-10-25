@@ -7,7 +7,7 @@
 ## 2. Signatures
 
 - `python dashboard/server.py [--host 127.0.0.1] [--port 8787]`
-- `GET /api/dates` → `{dates: string[]}` descending ISO dates from行情、日志与已有复盘。
+- `GET /api/dates` → `{dates: string[]}` descending ISO dates from行情、日志、已有复盘与当前用户已保存观察日期。
 - `GET /api/report?date=YYYY-MM-DD` → `{report, material, previous_day_material, reason_material}`.
 - `GET /api/auth/session`, `GET /api/auth/feishu/login`, `GET /api/auth/feishu/callback`, `POST /api/auth/logout` implement login state, OAuth and CSRF-protected logout.
 - `ReportService.report(date)` calls `FeishuStockNotifier.build_report` and the three existing material builders. No new SQL business rules, schema or gRPC changes.
@@ -17,7 +17,7 @@
 - Read `DATABASE_URL` from process environment or repository `.env`, environment wins; do not expose it to browser/Vite.
 - Browser schemas live in `dashboard/src/data.ts`; align all report fields with `FeishuStockReport`. Every array has a searchable table; nested values remain accessible via full-record modal. Keep provider/model and cached content intact.
 - Dates serialize to ISO, Decimal to numeric; refuse NaN/non-JSON values.
-- API never creates tables, runs migrations, fetches stocks, generates reviews or sends Feishu. Use existing `create_engine` + `sessionmaker` injected into notifier. Optional SELECT-only DB account can enforce permissions.
+- Market report APIs never create market tables, run migrations, fetch stocks, generate reviews or send Feishu. Use existing `create_engine` + `sessionmaker` injected into notifier. Optional SELECT-only DB account can enforce permissions. Personal observation writes use separate SQLite; see [Dashboard Watchlist](./dashboard-watchlist.md).
 - Default HTTP listener is localhost; built assets only from dashboard/dist, no directory listing or files outside dist.
 - All report API routes require a server-side Feishu session. OAuth uses one-use state bound to an HttpOnly short-lived cookie and PKCE; session cookie is HttpOnly/SameSite=Lax and Secure on HTTPS. Never log callback query strings or persist provider access tokens.
 - Configure explicit `DASHBOARD_PUBLIC_URL`; allow plain HTTP only for loopback development. Production needs HTTPS. Sessions are process-local, expire no later than one hour/provider token expiry, and are invalidated on logout. Optional tenant/open_id allowlists restrict sign-in.

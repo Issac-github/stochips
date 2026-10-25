@@ -1,6 +1,7 @@
-"""Read-only Feishu report adapter and static dashboard server."""
+"""Read-only market adapter, personal observations and static dashboard."""
 
 import argparse
+import hmac
 from dataclasses import asdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -31,6 +32,7 @@ from chain.stock.models.database import (
     LowerLimitPool,
 )
 from auth import AuthConfig, AuthError, FeishuAuth
+from watchlist import WatchlistError, WatchlistService, WatchlistStore, parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +100,80 @@ class ReportService:
             "reason_material": notifier.build_codex_reason_material(report),
         }
 
+    def watchlist_feedback(self, target_date, codes):
+        """Later recorded market facts, never an inferred trading outcome."""
+        if not codes:
+            return {"date": None, "stocks": {}}
+        sources = (LimitUpPool, ContinuousLimitUp, LowerLimitPool)
+        later = union(
+            *[select(model.date).where(model.date > target_date) for model in sources],
+            select(DataFetchLog.date).where(
+                DataFetchLog.date > target_date,
+                DataFetchLog.data_type.in_(
+                    ("limit_up_pool", "continuous_limit_up", "lower_limit_pool")
+                ),
+                DataFetchLog.status == "success",
+            ),
+        ).subquery()
+        with self.sessions() as session:
+            day = session.execute(
+                select(later.c.date).order_by(later.c.date).limit(1)
+            ).scalar()
+            if day is None:
+                return {"date": None, "stocks": {}}
+            successful = set(
+                session.execute(
+                    select(DataFetchLog.data_type).where(
+                        DataFetchLog.date == day,
+                        DataFetchLog.status == "success",
+                    )
+                ).scalars()
+            )
+            pools = []
+            available = []
+            for model, source in zip(
+                sources, ("limit_up_pool", "continuous_limit_up", "lower_limit_pool")
+            ):
+                rows = (
+                    session.execute(
+                        select(model).where(model.date == day, model.code.in_(codes))
+                    )
+                    .scalars()
+                    .all()
+                )
+                pools.append({row.code: row for row in rows})
+                # Presence proves membership. Absence is conclusive only with
+                # an explicitly successful full-source fetch for this date.
+                available.append(source in successful)
+            up, continuous, down = pools
+            return {
+                "date": day.isoformat(),
+                "stocks": {
+                    code: {
+                        "limit_up": (
+                            True
+                            if code in up or code in continuous
+                            else False if available[0] else None
+                        ),
+                        "limit_down": (
+                            True if code in down else False if available[2] else None
+                        ),
+                        "continuous_days": (
+                            continuous[code].continuous_days
+                            if code in continuous
+                            else None
+                        ),
+                    }
+                    for code in codes
+                },
+            }
+
 
 class DashboardHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args, service, auth=None, directory, **kwargs):
+    def __init__(self, *args, service, auth=None, watchlist=None, directory, **kwargs):
         self.service = service
         self.auth = auth or FeishuAuth(AuthConfig())
+        self.watchlist = watchlist
         super().__init__(*args, directory=directory, **kwargs)
 
     def send_json(self, status, payload):
@@ -141,7 +212,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if url.path == "/api/auth/feishu/callback":
             try:
-                cookie = self.auth.callback(parse_qs(url.query), self.headers.get("Cookie", ""))
+                cookie = self.auth.callback(
+                    parse_qs(url.query), self.headers.get("Cookie", "")
+                )
                 self.redirect("/", cookie)
             except AuthError as error:
                 clear_flow = self.auth.cookie("stochips_oauth", "", 0)
@@ -149,28 +222,49 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         if url.path == "/api/auth/session":
             session = self.auth.session(self.headers.get("Cookie", ""))
-            self.send_json(200, {
-                "configured": self.auth.config.configured,
-                "authenticated": session is not None,
-                "user": session["user"] if session else None,
-                "csrf_token": session["csrf_token"] if session else None,
-            })
+            self.send_json(
+                200,
+                {
+                    "configured": self.auth.config.configured,
+                    "authenticated": session is not None,
+                    "user": session["user"] if session else None,
+                    "csrf_token": session["csrf_token"] if session else None,
+                },
+            )
             return
         if url.path.startswith("/api/"):
             try:
-                if not self.auth.session(self.headers.get("Cookie", "")):
+                session = self.auth.session(self.headers.get("Cookie", ""))
+                if not session:
                     self.send_json(401, {"error": "登录状态已失效，请重新登录"})
                     return
                 if url.path == "/api/dates":
-                    self.send_json(200, {"dates": self.service.dates()})
+                    dates = self.service.dates()
+                    if self.watchlist is not None:
+                        dates = sorted(
+                            set(dates) | set(self.watchlist.dates(session["user"])),
+                            reverse=True,
+                        )
+                    self.send_json(200, {"dates": dates})
                 elif url.path == "/api/report":
                     values = parse_qs(url.query).get("date", [])
                     if len(values) != 1 or len(values[0]) != 10:
                         raise ValueError("请选择 YYYY-MM-DD 格式日期")
                     target = date.fromisoformat(values[0])
                     self.send_json(200, self.service.report(target))
+                elif url.path == "/api/watchlist":
+                    values = parse_qs(url.query, keep_blank_values=True).get("date", [])
+                    if len(values) != 1:
+                        raise ValueError("请选择一个日期")
+                    if self.watchlist is None:
+                        raise WatchlistError(503, "观察记录存储未配置")
+                    self.send_json(
+                        200, self.watchlist.read(parse_date(values[0]), session["user"])
+                    )
                 else:
                     self.send_json(404, {"error": "接口不存在"})
+            except WatchlistError as error:
+                self.send_json(error.status, {"error": str(error)})
             except ValueError:
                 self.send_json(400, {"error": "日期无效，请使用 YYYY-MM-DD"})
             except LookupError:
@@ -192,12 +286,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
+        if urlsplit(self.path).path == "/api/watchlist":
+            self.save_watchlist()
+            return
         if urlsplit(self.path).path != "/api/auth/logout":
             self.send_json(404, {"error": "接口不存在"})
             return
         try:
             cookie = self.auth.logout(
-                self.headers.get("Cookie", ""), self.headers.get("Origin", ""),
+                self.headers.get("Cookie", ""),
+                self.headers.get("Origin", ""),
                 self.headers.get("X-CSRF-Token", ""),
             )
             self.send_response(204)
@@ -205,14 +303,49 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header("Set-Cookie", cookie)
             self.end_headers()
         except AuthError as error:
-            self.send_json(401 if error.code == "unauthorized" else 403, {"error": "登录状态无效"})
+            self.send_json(
+                401 if error.code == "unauthorized" else 403, {"error": "登录状态无效"}
+            )
+
+    def save_watchlist(self):
+        try:
+            session = self.auth.session(self.headers.get("Cookie", ""))
+            if not session:
+                raise WatchlistError(401, "登录状态已失效，请重新登录")
+            if self.headers.get(
+                "Origin", ""
+            ) != self.auth.config.origin or not hmac.compare_digest(
+                session["csrf_token"].encode(),
+                self.headers.get("X-CSRF-Token", "").encode(),
+            ):
+                raise WatchlistError(403, "请求验证失败，请刷新登录状态")
+            if self.headers.get_content_type() != "application/json":
+                raise WatchlistError(415, "请使用 JSON 请求")
+            if self.headers.get("Transfer-Encoding"):
+                raise WatchlistError(400, "不支持此请求编码")
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 1 or length > 16384:
+                raise WatchlistError(413, "请求内容为空或过大")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if self.watchlist is None:
+                raise WatchlistError(503, "观察记录存储未配置")
+            self.send_json(200, self.watchlist.save(payload, session["user"]))
+        except WatchlistError as error:
+            self.send_json(error.status, {"error": str(error)})
+        except (ValueError, UnicodeError):
+            self.send_json(400, {"error": "观察记录无效，请检查日期、状态和备注长度"})
+        except LookupError:
+            self.send_json(404, {"error": "该日期暂无观察来源"})
+        except Exception:
+            logger.exception("Watchlist save failed")
+            self.send_json(503, {"error": "观察记录暂时无法保存，请稍后重试"})
 
     def do_HEAD(self):
         self.send_error(405)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="飞书播报只读看板")
+    parser = argparse.ArgumentParser(description="飞书复盘与观察看板")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
     args = parser.parse_args()
@@ -223,8 +356,16 @@ def main():
         parser.error("请在根目录 .env 或环境变量中设置 DATABASE_URL")
     logging.basicConfig(level=logging.INFO)
     service = ReportService(database_url)
+    store = WatchlistStore(
+        os.getenv("DASHBOARD_WATCHLIST_DB")
+        or str(ROOT / "dashboard/data/watchlist.sqlite3")
+    )
     handler = partial(
-        DashboardHandler, service=service, auth=auth, directory=str(Path(__file__).parent / "dist")
+        DashboardHandler,
+        service=service,
+        auth=auth,
+        watchlist=WatchlistService(service, store),
+        directory=str(Path(__file__).parent / "dist"),
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
     logger.info("Dashboard: http://%s:%s", args.host, args.port)
