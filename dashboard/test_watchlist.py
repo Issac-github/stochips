@@ -340,3 +340,119 @@ def test_saved_dates_and_snapshots_remain_accessible_after_market_day_disappears
         assert result["items"][0]["source_missing"] is True
         assert result["items"][0]["annotation"]["status"] == "watching"
         assert "快照" in result["warnings"][0]
+
+
+def test_legacy_database_migrates_and_omitted_concepts_preserve_saved_labels(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy.sqlite3"
+    candidate = build_candidates(facts())["000001"]
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """CREATE TABLE observations (
+            owner TEXT NOT NULL, date TEXT NOT NULL, code TEXT NOT NULL,
+            snapshot TEXT NOT NULL, status TEXT NOT NULL, outcome TEXT NOT NULL,
+            note TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL,
+            PRIMARY KEY(owner,date,code))"""
+        )
+        connection.execute(
+            "INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                owner_key(USER),
+                DAY.isoformat(),
+                "000001",
+                json.dumps(candidate),
+                "watching",
+                "continue",
+                "迁移前已有备注",
+                5,
+                "2026-10-23T10:00:00+00:00",
+            ),
+        )
+    watchlist = WatchlistService(FakeReports(), WatchlistStore(path))
+    annotation = watchlist.read(DAY, USER)["items"][0]["annotation"]
+    assert annotation["concepts"] == []
+    assert annotation["revision"] == 5
+    assert annotation["note"] == "迁移前已有备注"
+    watchlist.save(
+        update(revision=5, concepts=["small_platform", "trend_platform"]), USER
+    )
+    restarted = WatchlistService(FakeReports(), WatchlistStore(path))
+    assert restarted.read(DAY, USER)["items"][0]["annotation"]["concepts"] == [
+        "small_platform",
+        "trend_platform",
+    ]
+    # Old clients may still submit the original six fields.
+    saved = restarted.save(update(revision=6), USER)["annotation"]
+    assert saved["concepts"] == ["small_platform", "trend_platform"]
+    with sqlite3.connect(path) as connection:
+        assert (
+            len(connection.execute("PRAGMA table_info(observations)").fetchall()) == 9
+        )
+        connection.execute(
+            """INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(owner,date,code) DO UPDATE SET note=excluded.note,
+            revision=excluded.revision""",
+            (
+                owner_key(USER),
+                DAY.isoformat(),
+                "000001",
+                json.dumps(candidate),
+                "watching",
+                "pending",
+                "旧版本更新备注",
+                8,
+                "2026-10-25T10:00:00+00:00",
+            ),
+        )
+    assert restarted.read(DAY, USER)["items"][0]["annotation"]["concepts"] == [
+        "small_platform",
+        "trend_platform",
+    ]
+    assert (
+        restarted.save(update(revision=8, concepts=[]), USER)["annotation"]["concepts"]
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "concepts",
+    [
+        None,
+        "small_platform",
+        ["unknown"],
+        ["small_platform", "small_platform"],
+        [True],
+        [{}],
+        ["small_platform"] * 20,
+    ],
+)
+def test_invalid_manual_concepts_are_rejected(concepts):
+    with pytest.raises(ValueError):
+        validate_update(update(concepts=concepts))
+
+
+def test_http_manual_concepts_roundtrip_and_isolation(http_server, dashboard_auth):
+    base, sid = http_server
+    with request_pool(
+        base, sid, update(concepts=["large_leader_platform", "risk_review"])
+    ) as response:
+        assert json.load(response)["annotation"]["concepts"] == [
+            "large_leader_platform",
+            "risk_review",
+        ]
+    with request_pool(base, sid) as response:
+        assert json.load(response)["items"][0]["annotation"]["concepts"] == [
+            "large_leader_platform",
+            "risk_review",
+        ]
+    dashboard_auth.sessions[hashlib.sha256(b"other-session").hexdigest()] = {
+        "user": {**USER, "open_id": "other"},
+        "csrf_token": "csrf",
+        "expires_at": dashboard_auth.clock() + 3600,
+    }
+    with request_pool(base, "other-session") as response:
+        assert json.load(response)["items"][0]["annotation"]["concepts"] == []
+    with pytest.raises(HTTPError) as error:
+        request_pool(base, sid, update(revision=1, concepts=["unknown"]))
+    assert error.value.code == 400

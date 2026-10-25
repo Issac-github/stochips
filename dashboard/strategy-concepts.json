@@ -1,0 +1,172 @@
+{
+  "groups": [
+    {
+      "key": "emotion",
+      "title": "情绪与空间",
+      "description": "从高标反馈与连板空间观察市场状态。",
+      "reviewKeys": ["sentiment"],
+      "datasets": ["previous_high_feedback", "top_stocks", "lower_limit_stocks"]
+    },
+    {
+      "key": "themes",
+      "title": "主线与梯队",
+      "description": "对照方向、成员交集与梯队，核对持续性。",
+      "reviewKeys": ["themes"],
+      "datasets": ["top_blocks", "board_overlaps", "eastmoney_industries"]
+    },
+    {
+      "key": "leaders",
+      "title": "龙头与助攻",
+      "description": "区分核心地位、助攻候选与跟随记录。",
+      "reviewKeys": ["leaders"],
+      "datasets": ["top_stocks", "leader_assists", "one_word_stocks"]
+    },
+    {
+      "key": "volume",
+      "title": "量能与弱转强",
+      "description": "核对量能背景、分歧过程和后续强度。",
+      "reviewKeys": ["leaders", "nextDay"],
+      "datasets": ["limit_up_pool_metrics", "weak_boards"]
+    },
+    {
+      "key": "platform",
+      "title": "平台与反包",
+      "description": "分别观察整理结构、历史位置与再次走强。",
+      "reviewKeys": ["leaders", "nextDay"],
+      "datasets": ["breakout_stocks", "top_stocks", "weak_boards"]
+    },
+    {
+      "key": "intraday",
+      "title": "竞价与分时",
+      "description": "把收盘前提转为下一交易日的核对事项。",
+      "reviewKeys": ["nextDay"],
+      "datasets": ["early_stocks", "one_word_stocks", "leader_assists"]
+    },
+    {
+      "key": "risk",
+      "title": "风控与跟踪",
+      "description": "记录反证、失效条件和后续验证结果。",
+      "reviewKeys": ["risk", "nextDay"],
+      "datasets": [
+        "lower_limit_stocks",
+        "previous_high_feedback",
+        "weak_boards",
+        "fetch_logs"
+      ]
+    }
+  ],
+  "concepts": [
+    {
+      "key": "recovery_leader",
+      "label": "复苏期龙头",
+      "group": "emotion",
+      "focus": "核对新旧高标反馈和情绪修复是否一致。",
+      "missing": ["连续交易日高标与断板后走势"]
+    },
+    {
+      "key": "leader_resonance",
+      "label": "龙头共振",
+      "group": "emotion",
+      "focus": "核对新老核心是否出现同期修复及方向反馈。",
+      "missing": ["新老核心身份、时间顺序与连续行情"]
+    },
+    {
+      "key": "mainline_ladder",
+      "label": "主线梯队",
+      "group": "themes",
+      "focus": "核对方向内部成员、层次与延续，不累加重复板块标签。",
+      "missing": ["跨日梯队与成员变化"]
+    },
+    {
+      "key": "core_leader",
+      "label": "核心龙头",
+      "group": "leaders",
+      "focus": "结合主线、地位与反馈核对，板数只是入口。",
+      "missing": ["跨日带动关系和个股地位验证"]
+    },
+    {
+      "key": "one_word_assist",
+      "label": "一字助攻",
+      "group": "leaders",
+      "focus": "核对板型、关联方向与当时是否仍有效。",
+      "missing": ["竞价封单及盘中有效性；收盘候选不能确认"]
+    },
+    {
+      "key": "huge_volume_reversal",
+      "label": "天量弱转强",
+      "group": "volume",
+      "focus": "分别核对历史量能背景与随后强度转换。",
+      "missing": ["历史成交量、前后日线和竞价/开盘过程"]
+    },
+    {
+      "key": "small_platform",
+      "label": "小平台突破",
+      "group": "platform",
+      "focus": "核对近期整理边界、量能变化与突破后的承接。",
+      "missing": ["连续日线、平台区间、历史成交量"]
+    },
+    {
+      "key": "large_leader_platform",
+      "label": "大龙头天量平台突破",
+      "group": "platform",
+      "focus": "核对前期主升、较长整理及平台上方再次蓄势。",
+      "missing": ["较长历史日线、前高筹码区域、分阶段量能"]
+    },
+    {
+      "key": "small_leader_platform",
+      "label": "小龙头天量平台突破",
+      "group": "platform",
+      "focus": "核对前期连板基础、平台整理与再次放量。",
+      "missing": ["完整前段走势、整理结构与成交量序列"]
+    },
+    {
+      "key": "trend_platform",
+      "label": "趋势龙头平台突破",
+      "group": "platform",
+      "focus": "核对趋势延续、强势整理与新一轮突破。",
+      "missing": ["连续趋势日线、整理幅度、量能及突破承接"]
+    },
+    {
+      "key": "leader_rebound",
+      "label": "龙头反包",
+      "group": "platform",
+      "focus": "核对断板后的修复结构与后续延续。",
+      "missing": ["断板K线、反包幅度及后续量价"]
+    },
+    {
+      "key": "concave_board",
+      "label": "凹字板",
+      "group": "platform",
+      "focus": "核对开板、震荡与回封的完整过程。",
+      "missing": ["盘中开板持续时间、分时结构与成交量"]
+    },
+    {
+      "key": "auction_demand",
+      "label": "竞价抢筹",
+      "group": "intraday",
+      "focus": "记录竞价变化与开盘方向，供次日核对。",
+      "missing": ["集合竞价价格、成交量和封单变化"]
+    },
+    {
+      "key": "acceleration_gap",
+      "label": "缺口与加速",
+      "group": "intraday",
+      "focus": "对照前后开盘位置和涨停速度的变化。",
+      "missing": ["连续日开盘/收盘价及首次与末次封板时间"]
+    },
+    {
+      "key": "intraday_support",
+      "label": "分时承接",
+      "group": "intraday",
+      "focus": "核对开盘首段、回落与再次走强的过程。",
+      "missing": ["逐笔或分钟行情与量能"]
+    },
+    {
+      "key": "risk_review",
+      "label": "风险反证",
+      "group": "risk",
+      "focus": "记录观察前提、反证与条件失效后的处理计划。",
+      "missing": ["人工观察记录与后续行情核对"]
+    }
+  ]
+}

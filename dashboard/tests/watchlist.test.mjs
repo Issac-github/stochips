@@ -23,8 +23,23 @@ async function moduleUrl(file, imports) {
 }
 const zod = import.meta.resolve('zod')
 const data = await moduleUrl('../src/data.ts', { zod })
+const rawCatalog = JSON.parse(
+  await readFile(new URL('../strategy-concepts.json', import.meta.url), 'utf8'),
+)
+const catalogJson = `data:text/javascript;base64,${Buffer.from(`export default ${JSON.stringify(rawCatalog)}`).toString('base64')}`
+const catalogModule = await moduleUrl('../src/strategyCatalog.ts', {
+  zod,
+  '../strategy-concepts.json': catalogJson,
+  './data': data,
+  './review': await moduleUrl('../src/review.ts', {}),
+})
+const { strategyCatalog, conceptKeys } = await import(catalogModule)
 const { feedbackText, watchlistSchema } = await import(
-  await moduleUrl('../src/watchlistData.ts', { zod, './data': data })
+  await moduleUrl('../src/watchlistData.ts', {
+    zod,
+    './data': data,
+    './strategyCatalog': catalogModule,
+  })
 )
 
 test('unknown follow-up membership remains unknown, confirmed absence stays explicit', () => {
@@ -103,6 +118,76 @@ test('watchlist boundary validates dates, source snapshots and annotation versio
     watchlistSchema.safeParse({
       ...payload,
       items: [{ ...item, annotation: { ...item.annotation, revision: -1 } }],
+    }).success,
+    false,
+  )
+})
+
+test('catalog keeps every concept in one known category and separates four platform types', () => {
+  assert.equal(new Set(conceptKeys).size, conceptKeys.length)
+  const groups = new Set(strategyCatalog.groups.map((group) => group.key))
+  assert.equal(groups.size, strategyCatalog.groups.length)
+  for (const concept of strategyCatalog.concepts)
+    assert.ok(groups.has(concept.group))
+  for (const key of [
+    'small_platform',
+    'large_leader_platform',
+    'small_leader_platform',
+    'trend_platform',
+  ]) {
+    const concept = strategyCatalog.concepts.find((value) => value.key === key)
+    assert.equal(concept.group, 'platform')
+    assert.ok(concept.missing.length)
+  }
+})
+
+test('legacy annotations default to unclassified; invalid manual labels are rejected', () => {
+  const base = {
+    date: '2026-10-23',
+    items: [],
+    warnings: [],
+    feedback: { date: null, stocks: {} },
+  }
+  const item = {
+    code: '000001',
+    name: '观察股',
+    roles: ['核心连板'],
+    evidence: [],
+    risks: [],
+    checks: [],
+    saved: true,
+    source_missing: false,
+    annotation: {
+      status: 'watching',
+      outcome: 'pending',
+      note: '',
+      revision: 1,
+      updated_at: null,
+    },
+  }
+  assert.deepEqual(
+    watchlistSchema.parse({ ...base, items: [item] }).items[0].annotation
+      .concepts,
+    [],
+  )
+  assert.deepEqual(
+    watchlistSchema.parse({
+      ...base,
+      items: [
+        {
+          ...item,
+          annotation: { ...item.annotation, concepts: ['small_platform'] },
+        },
+      ],
+    }).items[0].annotation.concepts,
+    ['small_platform'],
+  )
+  assert.equal(
+    watchlistSchema.safeParse({
+      ...base,
+      items: [
+        { ...item, annotation: { ...item.annotation, concepts: ['unknown'] } },
+      ],
     }).success,
     false,
   )

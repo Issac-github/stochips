@@ -25,6 +25,7 @@ import { Markdown } from './Markdown'
 import { StrategyOverview } from './StrategyOverview'
 import { Details } from './Details'
 import { Watchlist } from './Watchlist'
+import { StrategyCategories } from './StrategyCategories'
 import { downloadJson, fetchJson, payloadSchema } from './data'
 import type { DatasetKey, Payload } from './data'
 import type { AuthState } from './AuthGate'
@@ -52,6 +53,14 @@ export default function App({
   const [reportError, setReportError] = useState('')
   const [activeTab, setActiveTab] = useState('strategy')
   const [detailDataset, setDetailDataset] = useState<DatasetKey>('top_stocks')
+  const [watchlistConcept, setWatchlistConcept] = useState('all')
+  const [watchlistEntry, setWatchlistEntry] = useState(0)
+
+  const openWatchlist = (concept = 'all') => {
+    setWatchlistConcept(concept)
+    setWatchlistEntry((value) => value + 1)
+    setActiveTab('watchlist')
+  }
 
   const openDataset = (key: DatasetKey) => {
     setDetailDataset(key)
@@ -288,11 +297,23 @@ export default function App({
                 ),
               },
               {
+                key: 'categories',
+                label: '策略分类',
+                children: (
+                  <StrategyCategories
+                    report={report}
+                    onWatchlist={openWatchlist}
+                    onReview={() => setActiveTab('review')}
+                  />
+                ),
+              },
+              {
                 key: 'watchlist',
                 label: '次日观察池',
                 children: (
                   <Watchlist
-                    key={`${report.target_date}-${revision}`}
+                    key={`${report.target_date}-${revision}-${watchlistConcept}-${watchlistEntry}`}
+                    initialConcept={watchlistConcept}
                     date={report.target_date}
                     csrfToken={auth.csrf_token || ''}
                     onDataset={openDataset}

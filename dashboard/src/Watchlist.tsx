@@ -26,6 +26,7 @@ import {
   watchlistSchema,
 } from './watchlistData'
 import type { Annotation, Observation, WatchlistPayload } from './watchlistData'
+import { conceptLabels, strategyCatalog } from './strategyCatalog'
 
 function errorText(error: unknown) {
   return error instanceof z.ZodError
@@ -41,12 +42,14 @@ export function Watchlist({
   onDataset,
   onReview,
   reportAvailable = true,
+  initialConcept = 'all',
 }: {
   date: string
   csrfToken: string
   onDataset: (key: DatasetKey) => void
   onReview: () => void
   reportAvailable?: boolean
+  initialConcept?: string
 }) {
   const [payload, setPayload] = useState<WatchlistPayload | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,6 +58,7 @@ export function Watchlist({
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('active')
   const [role, setRole] = useState('all')
+  const [conceptFilter, setConceptFilter] = useState(initialConcept)
   const [selectedCode, setSelectedCode] = useState<string | null>(null)
   const [draft, setDraft] = useState<Annotation | null>(null)
   const [saving, setSaving] = useState(false)
@@ -94,7 +98,14 @@ export function Watchlist({
     )
       return false
     if (role !== 'all' && !item.roles.includes(role)) return false
-    return `${item.code} ${item.name} ${item.evidence.map((entry) => entry.detail).join(' ')} ${item.annotation.note}`
+    if (
+      conceptFilter === 'unclassified'
+        ? item.annotation.concepts.length > 0
+        : conceptFilter !== 'all' &&
+          !item.annotation.concepts.includes(conceptFilter)
+    )
+      return false
+    return `${item.code} ${item.name} ${item.evidence.map((entry) => entry.detail).join(' ')} ${item.annotation.note} ${item.annotation.concepts.map((key) => conceptLabels[key]).join(' ')}`
       .toLowerCase()
       .includes(search.toLowerCase().trim())
   })
@@ -125,6 +136,7 @@ export function Watchlist({
             status: draft.status,
             outcome: draft.outcome,
             note: draft.note,
+            concepts: draft.concepts,
             revision: selected.annotation.revision,
           }),
         }),
@@ -217,6 +229,23 @@ export function Watchlist({
           </span>
         </Space>
       ),
+    },
+    {
+      title: '人工模式分类',
+      key: 'concepts',
+      width: 180,
+      render: (_, item) =>
+        item.annotation.concepts.length ? (
+          <Space direction="vertical" size={4}>
+            {item.annotation.concepts.map((key) => (
+              <Tag color="purple" key={key}>
+                {conceptLabels[key]}
+              </Tag>
+            ))}
+          </Space>
+        ) : (
+          <span className="muted">未分类</span>
+        ),
     },
     {
       title: '后续行情事实',
@@ -370,13 +399,27 @@ export function Watchlist({
           <span className="muted">
             显示 {visible.length} / {items.length} 只
           </span>
+          <Select
+            aria-label="筛选人工模式分类"
+            className="concept-filter"
+            value={conceptFilter}
+            onChange={setConceptFilter}
+            options={[
+              { value: 'all', label: '全部人工模式' },
+              { value: 'unclassified', label: '未分类' },
+              ...strategyCatalog.concepts.map((concept) => ({
+                value: concept.key,
+                label: concept.label,
+              })),
+            ]}
+          />
         </div>
         <Table<Observation>
           rowKey="code"
           loading={loading}
           columns={columns}
           dataSource={error ? [] : visible}
-          scroll={{ x: 1080 }}
+          scroll={{ x: 1260 }}
           pagination={{ defaultPageSize: 10, showSizeChanger: true }}
           locale={{
             emptyText: (
@@ -385,13 +428,25 @@ export function Watchlist({
                   error
                     ? '读取失败，请重试'
                     : items.length
-                      ? '没有符合筛选条件的观察记录'
+                      ? '没有符合筛选条件的观察记录；人工分类需在“查看 / 编辑”中添加'
                       : '该日期暂无核心连板、助攻或前高观察来源'
                 }
               />
             ),
           }}
         />
+        {items.length > 0 && !visible.length && conceptFilter !== 'all' && (
+          <Button
+            onClick={() => {
+              setConceptFilter('all')
+              setStatus('all')
+              setRole('all')
+              setSearch('')
+            }}
+          >
+            显示全部股票并添加分类
+          </Button>
+        )}
       </Card>
       <Drawer
         title={selected ? `${selected.name} · ${selected.code}` : '观察记录'}
@@ -459,6 +514,32 @@ export function Watchlist({
             </p>
             <Typography.Title level={5}>我的观察记录</Typography.Title>
             <label>
+              人工模式分类（可多选）
+              <Select
+                mode="multiple"
+                aria-label="人工模式分类"
+                value={draft.concepts}
+                disabled={saving}
+                onChange={(values: string[]) =>
+                  setDraft({ ...draft, concepts: values })
+                }
+                placeholder="核对证据后选择观察模式"
+                optionFilterProp="label"
+                options={strategyCatalog.groups.map((group) => ({
+                  label: group.title,
+                  options: strategyCatalog.concepts
+                    .filter((concept) => concept.group === group.key)
+                    .map((concept) => ({
+                      value: concept.key,
+                      label: concept.label,
+                    })),
+                }))}
+              />
+            </label>
+            <p className="muted">
+              人工标签仅记录观察方向，条件是否满足仍需单独验证；前高记录不会自动归为平台突破。
+            </p>
+            <label>
               观察状态
               <Select
                 value={draft.status}
@@ -519,6 +600,11 @@ export function Watchlist({
             {saveError && selected.saved && (
               <div className="saved-note">
                 当前已保存备注：{selected.annotation.note || '无'}
+                <br />
+                当前已保存分类：
+                {selected.annotation.concepts
+                  .map((key) => conceptLabels[key])
+                  .join(' / ') || '未分类'}
               </div>
             )}
             {savedMessage && (

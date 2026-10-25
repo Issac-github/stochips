@@ -48,10 +48,12 @@ export function Details({
   report,
   active,
   onDatasetChange,
+  datasetKeys,
 }: {
   report: Report
   active: DatasetKey
   onDatasetChange: (key: DatasetKey) => void
+  datasetKeys?: readonly DatasetKey[]
 }) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Row | null>(null)
@@ -86,19 +88,21 @@ export function Details({
   return (
     <div className="details-layout">
       <div className="dataset-menu" role="navigation" aria-label="播报数据分类">
-        {datasets.map(([key, title]) => (
-          <button
-            key={key}
-            className={active === key ? 'selected' : ''}
-            onClick={() => {
-              onDatasetChange(key)
-              setSearch('')
-            }}
-          >
-            <span>{title}</span>
-            <span className="dataset-count">{report[key].length}</span>
-          </button>
-        ))}
+        {datasets
+          .filter(([key]) => !datasetKeys || datasetKeys.includes(key))
+          .map(([key, title]) => (
+            <button
+              key={key}
+              className={active === key ? 'selected' : ''}
+              onClick={() => {
+                onDatasetChange(key)
+                setSearch('')
+              }}
+            >
+              <span>{title}</span>
+              <span className="dataset-count">{report[key].length}</span>
+            </button>
+          ))}
       </div>
       <div className="dataset-content">
         <div className="table-toolbar">

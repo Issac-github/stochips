@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { rowSchema } from './data'
+import { conceptKeys } from './strategyCatalog'
 
 export const statusLabels = {
   candidate: '待观察',
@@ -18,6 +19,11 @@ export const annotationSchema = z.object({
   note: z.string(),
   revision: z.number().int().nonnegative(),
   updated_at: z.string().nullable(),
+  concepts: z
+    .array(z.enum(conceptKeys))
+    .max(conceptKeys.length)
+    .refine((values) => new Set(values).size === values.length)
+    .default([]),
 })
 export const observationSchema = z.object({
   code: z.string().regex(/^\d{6}$/),

@@ -11,6 +11,12 @@ import sqlite3
 CODE = re.compile(r"[0-9]{6}")
 STATUSES = {"candidate", "watching", "excluded"}
 OUTCOMES = {"pending", "met", "not_met", "continue"}
+CONCEPTS = {
+    item["key"]
+    for item in json.loads(
+        Path(__file__).with_name("strategy-concepts.json").read_text(encoding="utf-8")
+    )["concepts"]
+}
 
 
 class WatchlistError(Exception):
@@ -124,6 +130,7 @@ def default_annotation():
         "note": "",
         "revision": 0,
         "updated_at": None,
+        "concepts": [],
     }
 
 
@@ -132,12 +139,21 @@ class WatchlistStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self.connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS observations (
                 owner TEXT NOT NULL, date TEXT NOT NULL, code TEXT NOT NULL,
                 snapshot TEXT NOT NULL, status TEXT NOT NULL, outcome TEXT NOT NULL,
                 note TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL,
                 PRIMARY KEY (owner, date, code)
+            )"""
+            )
+            # Separate table keeps the original nine-column observation schema
+            # writable by older dashboard versions during rollback/rolling use.
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS observation_concepts (
+                owner TEXT NOT NULL, date TEXT NOT NULL, code TEXT NOT NULL,
+                concepts TEXT NOT NULL, PRIMARY KEY(owner,date,code)
             )"""
             )
 
@@ -149,13 +165,18 @@ class WatchlistStore:
     def read(self, owner, target):
         with closing(self.connect()) as connection:
             rows = connection.execute(
-                "SELECT * FROM observations WHERE owner=? AND date=? ORDER BY code",
+                """SELECT o.*, COALESCE(c.concepts, '[]') AS concepts FROM observations o
+                LEFT JOIN observation_concepts c USING(owner,date,code)
+                WHERE o.owner=? AND o.date=? ORDER BY o.code""",
                 (owner, target),
             ).fetchall()
         return {
             row["code"]: {
                 "snapshot": json.loads(row["snapshot"]),
-                "annotation": {key: row[key] for key in default_annotation()},
+                "annotation": {
+                    key: json.loads(row[key]) if key == "concepts" else row[key]
+                    for key in default_annotation()
+                },
             }
             for row in rows
         }
@@ -174,7 +195,9 @@ class WatchlistStore:
         with closing(self.connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT revision FROM observations WHERE owner=? AND date=? AND code=?",
+                """SELECT o.revision, COALESCE(c.concepts, '[]') AS concepts FROM observations o
+                LEFT JOIN observation_concepts c USING(owner,date,code)
+                WHERE o.owner=? AND o.date=? AND o.code=?""",
                 (owner, target, candidate["code"]),
             ).fetchone()
             revision = row["revision"] if row else 0
@@ -187,8 +210,12 @@ class WatchlistStore:
             annotation.update(
                 revision=revision + 1, updated_at=datetime.now(timezone.utc).isoformat()
             )
+            annotation["concepts"] = payload.get(
+                "concepts", json.loads(row["concepts"]) if row else []
+            )
             connection.execute(
-                """INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?)
+                """INSERT INTO observations (owner,date,code,snapshot,status,outcome,note,revision,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(owner,date,code) DO UPDATE SET snapshot=excluded.snapshot,
                 status=excluded.status,outcome=excluded.outcome,note=excluded.note,
                 revision=excluded.revision,updated_at=excluded.updated_at""",
@@ -204,12 +231,26 @@ class WatchlistStore:
                     annotation["updated_at"],
                 ),
             )
+            connection.execute(
+                """INSERT INTO observation_concepts VALUES (?,?,?,?)
+                ON CONFLICT(owner,date,code) DO UPDATE SET concepts=excluded.concepts""",
+                (
+                    owner,
+                    target,
+                    candidate["code"],
+                    json.dumps(annotation["concepts"]),
+                ),
+            )
             return annotation
 
 
 def validate_update(payload):
     required = {"date", "code", "status", "outcome", "note", "revision"}
-    if not isinstance(payload, dict) or set(payload) != required:
+    if (
+        not isinstance(payload, dict)
+        or not required <= set(payload)
+        or set(payload) - required - {"concepts"}
+    ):
         raise ValueError("观察记录字段不完整或包含未知字段")
     target = parse_date(payload["date"])
     if not isinstance(payload["code"], str) or not CODE.fullmatch(payload["code"]):
@@ -222,6 +263,17 @@ def validate_update(payload):
         raise ValueError("备注不能超过2000字")
     if type(payload["revision"]) is not int or payload["revision"] < 0:
         raise ValueError("记录版本无效")
+    if "concepts" in payload:
+        values = payload["concepts"]
+        if (
+            not isinstance(values, list)
+            or len(values) > len(CONCEPTS)
+            or any(
+                not isinstance(value, str) or value not in CONCEPTS for value in values
+            )
+            or len(set(values)) != len(values)
+        ):
+            raise ValueError("人工模式分类无效")
     return target
 
 
