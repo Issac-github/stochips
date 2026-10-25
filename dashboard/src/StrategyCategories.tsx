@@ -1,24 +1,44 @@
-import { useState } from 'react'
-import { Alert, Button, Card, Collapse, Space, Tag, Typography } from 'antd'
+import { useEffect, useState } from 'react'
+import {
+  Alert,
+  Button,
+  Card,
+  Collapse,
+  Skeleton,
+  Space,
+  Tag,
+  Typography,
+} from 'antd'
 import { ArrowRightOutlined } from '@ant-design/icons'
 import type { DatasetKey, Report } from './data'
-import { datasets } from './data'
+import { datasets, fetchJson } from './data'
 import { Details } from './Details'
 import { Markdown } from './Markdown'
 import { reviewSections, splitReview } from './review'
 import { strategyCatalog } from './strategyCatalog'
 import type { StrategyGroup } from './strategyCatalog'
+import { EvidenceCoverage } from './EvidenceCoverage'
+import {
+  capabilityLabels,
+  evidenceSchema,
+  statusLabels,
+} from './strategyEvidenceData'
+import type { EvidencePayload } from './strategyEvidenceData'
 
 function CategoryContent({
   group,
   report,
   onWatchlist,
   onReview,
+  evidence,
+  loading,
 }: {
   group: StrategyGroup
   report: Report
   onWatchlist: (concept?: string) => void
   onReview: () => void
+  evidence: EvidencePayload | null
+  loading: boolean
 }) {
   const [dataset, setDataset] = useState<DatasetKey>(group.datasets[0])
   const sections = report.daily_review
@@ -46,30 +66,91 @@ function CategoryContent({
           type="info"
           showIcon
           message="平台形态单独核对"
-          description="当前前高观察仅记录历史连板段价格比较。连续日线、历史成交量和整理区间尚未接入，以下平台模式均待人工核对。大/小龙头描述前期地位，大/小平台描述整理结构。"
+          description="前高观察仅记录历史连板段价格比较，不等于平台形态匹配。以下状态分别说明已查到的关联观测、必需证据覆盖和完整模式识别进度。大/小龙头描述前期地位，大/小平台描述整理结构。"
         />
       )}
       <div className="concept-card-grid">
-        {concepts.map((concept) => (
-          <Card key={concept.key} size="small" className="concept-card">
-            <div className="concept-card-heading">
-              <Typography.Title level={4}>{concept.label}</Typography.Title>
-              <Tag color="orange">待人工核对</Tag>
-            </div>
-            <p>{concept.focus}</p>
-            <div className="concept-missing">
-              <span>需补充或人工核实</span>
-              <ul>
-                {concept.missing.map((missing) => (
-                  <li key={missing}>{missing}</li>
-                ))}
-              </ul>
-            </div>
-            <Button type="link" onClick={() => onWatchlist(concept.key)}>
-              查看此类人工标记 <ArrowRightOutlined />
-            </Button>
-          </Card>
-        ))}
+        {concepts.map((concept) => {
+          const result = evidence?.concepts.find(
+            (item) => item.key === concept.key,
+          )
+          return (
+            <Card key={concept.key} size="small" className="concept-card">
+              <div className="concept-card-heading">
+                <Typography.Title level={4}>{concept.label}</Typography.Title>
+                <Tag
+                  color={
+                    result?.status === 'facts_available'
+                      ? 'blue'
+                      : result?.status === 'candidate'
+                        ? 'cyan'
+                        : result?.status === 'manual'
+                          ? 'purple'
+                          : 'orange'
+                  }
+                >
+                  {result
+                    ? statusLabels[result.status]
+                    : loading
+                      ? '正在查询'
+                      : '状态未获取'}
+                </Tag>
+              </div>
+              <p>{concept.focus}</p>
+              {result && (
+                <>
+                  <p className="concept-recognition">{result.explanation}</p>
+                  <div className="concept-observations">
+                    {result.source_counts.map((source) => (
+                      <span key={source.dataset}>
+                        {datasets.find(([key]) => key === source.dataset)?.[1]}{' '}
+                        {source.rows} 条
+                      </span>
+                    ))}
+                    {result.stock_count > 0 && (
+                      <strong>
+                        关联观测 {result.stock_count} 只
+                        {result.kind === 'pattern' ? '（非模式匹配）' : ''}
+                      </strong>
+                    )}
+                  </div>
+                  <div className="concept-requirements">
+                    {result.requirements.map((requirement) => (
+                      <div key={requirement.key}>
+                        <Space wrap>
+                          <strong>{requirement.label}</strong>
+                          <Tag
+                            color={
+                              requirement.state === 'available'
+                                ? 'blue'
+                                : 'orange'
+                            }
+                          >
+                            {capabilityLabels[requirement.state]}
+                          </Tag>
+                        </Space>
+                        <p>{requirement.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div className="concept-missing">
+                <details>
+                  <summary>概念核对清单</summary>
+                  <ul>
+                    {concept.checks.map((missing) => (
+                      <li key={missing}>{missing}</li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+              <Button type="link" onClick={() => onWatchlist(concept.key)}>
+                查看此类人工标记 <ArrowRightOutlined />
+              </Button>
+            </Card>
+          )
+        })}
       </div>
       <div className="category-source-strip" aria-label="关联数据覆盖">
         {group.datasets.map((key) => (
@@ -151,6 +232,36 @@ export function StrategyCategories({
   onReview: () => void
 }) {
   const [active, setActive] = useState('platform')
+  const [evidence, setEvidence] = useState<EvidencePayload | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [revision, setRevision] = useState(0)
+  const date = report.target_date
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setError('')
+    setEvidence(null)
+    fetchJson(
+      `/api/strategy-evidence?date=${encodeURIComponent(date)}`,
+      controller.signal,
+    )
+      .then((body) => {
+        const result = evidenceSchema.parse(body)
+        if (result.date !== date) throw new Error('证据日期不匹配，请重试')
+        setEvidence(result)
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted)
+          setError(
+            reason instanceof Error ? reason.message : '证据状态读取失败',
+          )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [date, revision])
   const group =
     strategyCatalog.groups.find((item) => item.key === active) ??
     strategyCatalog.groups[0]
@@ -163,6 +274,25 @@ export function StrategyCategories({
         </div>
         <Tag bordered={false}>收盘事实 · 已保存分析 · 人工分类</Tag>
       </div>
+      {loading ? (
+        <Card size="small">
+          <Skeleton active paragraph={{ rows: 2 }} />
+        </Card>
+      ) : error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="证据状态读取失败"
+          description="当前不显示模式判定；请确认后端接口版本与数据库连接后重试。"
+          action={
+            <Button onClick={() => setRevision((value) => value + 1)}>
+              重试
+            </Button>
+          }
+        />
+      ) : (
+        evidence?.date === date && <EvidenceCoverage evidence={evidence} />
+      )}
       <nav className="category-navigation" aria-label="策略概念分类">
         {strategyCatalog.groups.map((item, index) => (
           <button
@@ -190,6 +320,8 @@ export function StrategyCategories({
         report={report}
         onWatchlist={onWatchlist}
         onReview={onReview}
+        evidence={evidence?.date === date ? evidence : null}
+        loading={loading}
       />
       <Card size="small" className="category-boundary">
         <Space wrap>
@@ -197,8 +329,8 @@ export function StrategyCategories({
           <span>来源表中的记录</span>
           <Tag color="purple">人工分类</Tag>
           <span>记录你的观察方向</span>
-          <Tag color="orange">待验证</Tag>
-          <span>仍需量价或盘中证据</span>
+          <Tag color="orange">数据有缺口</Tag>
+          <span>字段无有效值或所需接口未接入；不等于数据库完全没有行情</span>
         </Space>
       </Card>
     </section>

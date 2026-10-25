@@ -24,7 +24,10 @@ const catalogSchema = z.object({
         label: z.string(),
         group: z.string(),
         focus: z.string(),
-        missing: z.array(z.string()),
+        checks: z.array(z.string()),
+        kind: z.enum(['fact', 'candidate', 'pattern', 'manual']),
+        sources: z.array(z.enum(datasets.map(([key]) => key))),
+        requirements: z.array(z.string()),
       }),
     )
     .min(1),

@@ -9,6 +9,7 @@
 - `python dashboard/server.py [--host 127.0.0.1] [--port 8787]`
 - `GET /api/dates` → `{dates: string[]}` descending ISO dates from行情、日志、已有复盘与当前用户已保存观察日期。
 - `GET /api/report?date=YYYY-MM-DD` → `{report, material, previous_day_material, reason_material}`.
+- `GET /api/strategy-evidence?date=YYYY-MM-DD` → `{date, coverage, concepts}`; authenticated, date-bounded read-only coverage and per-concept evidence states. See [Dashboard Evidence](./dashboard-evidence.md) for status and inference limits.
 - `GET /api/auth/session`, `GET /api/auth/feishu/login`, `GET /api/auth/feishu/callback`, `POST /api/auth/logout` implement login state, OAuth and CSRF-protected logout.
 - `ReportService.report(date)` calls `FeishuStockNotifier.build_report` and the three existing material builders. No new SQL business rules, schema or gRPC changes.
 
@@ -44,7 +45,7 @@
 
 ## 6. Tests Required
 
-- `python -m pytest dashboard/test_server.py dashboard/test_auth.py -q`: isolated SQLite report/date queries, no-auth denial, OAuth/PKCE/state replay, session expiry, allowlists and CSRF logout; no credentials in API errors.
+- `services/agent/.venv/bin/python -m pytest dashboard/test_server.py dashboard/test_auth.py dashboard/test_strategy_evidence.py -q`: isolated SQLite report/date/evidence queries, no-auth denial, OAuth/PKCE/state replay, session expiry, allowlists and CSRF logout; no credentials in API errors.
 - `cd dashboard && npm run lint && npm run build && npm test`: strict TypeScript, runtime zod contracts, production build, conservative Markdown section parsing.
 - Browser: charts, detail search/nested values, Markdown, date switching, retry/empty state, responsive layout.
 

@@ -33,6 +33,7 @@ from chain.stock.models.database import (
 )
 from auth import AuthConfig, AuthError, FeishuAuth
 from watchlist import WatchlistError, WatchlistService, WatchlistStore, parse_date
+from strategy_evidence import build_strategy_evidence
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,10 @@ class ReportService:
                 },
             }
 
+    def strategy_evidence(self, target_date):
+        report = self.report(target_date)["report"]
+        return build_strategy_evidence(self.sessions, target_date, report)
+
 
 class DashboardHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, service, auth=None, watchlist=None, directory, **kwargs):
@@ -260,6 +265,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                         raise WatchlistError(503, "观察记录存储未配置")
                     self.send_json(
                         200, self.watchlist.read(parse_date(values[0]), session["user"])
+                    )
+                elif url.path == "/api/strategy-evidence":
+                    values = parse_qs(url.query, keep_blank_values=True).get("date", [])
+                    if len(values) != 1:
+                        raise ValueError("请选择一个日期")
+                    self.send_json(
+                        200, self.service.strategy_evidence(parse_date(values[0]))
                     )
                 else:
                     self.send_json(404, {"error": "接口不存在"})

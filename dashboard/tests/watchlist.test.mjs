@@ -137,7 +137,7 @@ test('catalog keeps every concept in one known category and separates four platf
   ]) {
     const concept = strategyCatalog.concepts.find((value) => value.key === key)
     assert.equal(concept.group, 'platform')
-    assert.ok(concept.missing.length)
+    assert.ok(concept.checks.length)
   }
 })
 
@@ -189,6 +189,65 @@ test('legacy annotations default to unclassified; invalid manual labels are reje
         { ...item, annotation: { ...item.annotation, concepts: ['unknown'] } },
       ],
     }).success,
+    false,
+  )
+})
+
+const { evidenceSchema } = await import(
+  await moduleUrl('../src/strategyEvidenceData.ts', {
+    zod,
+    './data': data,
+    './strategyCatalog': catalogModule,
+  })
+)
+test('evidence boundary keeps zero distinct from uncollected and rejects invented statuses', () => {
+  const coverage = {
+    source: 'continuous_limit_up',
+    label: '连板池',
+    rows: 1,
+    dates: 1,
+    stocks: 1,
+    first_date: '2026-10-23',
+    last_date: '2026-10-23',
+    positive_price_rows: 0,
+    positive_volume_rows: 0,
+  }
+  const concept = {
+    key: 'small_platform',
+    kind: 'pattern',
+    status: 'data_gap',
+    explanation: '未接入连续日线',
+    stock_count: 1,
+    source_counts: [{ dataset: 'top_stocks', rows: 1 }],
+    requirements: [
+      {
+        key: 'daily_bars',
+        label: '连续日线',
+        state: 'not_integrated',
+        detail: '看板未接入',
+      },
+    ],
+  }
+  const payload = {
+    date: '2026-10-23',
+    coverage: [
+      coverage,
+      { ...coverage, source: 'limit_up_pool', positive_volume_rows: null },
+    ],
+    concepts: [concept],
+  }
+  const result = evidenceSchema.parse(payload)
+  assert.equal(result.coverage[0].positive_volume_rows, 0)
+  assert.equal(result.coverage[1].positive_volume_rows, null)
+  assert.equal(
+    evidenceSchema.safeParse({
+      ...payload,
+      concepts: [{ ...concept, status: 'confirmed_platform' }],
+    }).success,
+    false,
+  )
+  assert.equal(
+    evidenceSchema.safeParse({ ...payload, date: 'wrong' }).success,
     false,
   )
 })

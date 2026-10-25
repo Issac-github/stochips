@@ -33,7 +33,10 @@ This leaves the MySQL volume and all other containers untouched.
 - 仅完整识别已有五节格式时分卡展示，历史或非标准格式完整保留原文；没有分析时明确显示空态。
 - 策略页可核对核心连板、昨日高标反馈和助攻候选，并跳转全部字段。历史量能、竞价与分时不足的条件单独标明待验证，不由换手率或收盘候选推导交易结论。
 - “策略分类”按情绪与空间、主线与梯队、龙头与助攻、量能与弱转强、平台与反包、竞价与分时、风控与跟踪七类展示16个核对概念；每类关联原始数据和已保存复盘，保留风险反证。
-- 平台类分别展示小平台、大龙头天量平台、小龙头天量平台、趋势龙头平台突破，并列出待补证据。来源条数仅是数据记录数，不是模式匹配或选股信号数。
+- 策略分类按所选日期读取数据库覆盖及概念关联记录，分别显示已有事实、候选、当日无观测、数据缺口、未接入看板和识别尚未实现；概念清单供人工判断时参考，不把所有未完成项都归为人工校核。
+- 平台类分别展示小平台、大龙头天量平台、小龙头天量平台、趋势龙头平台突破，并列出实际证据覆盖。来源条数仅是数据记录数，不是模式匹配或选股信号数；池内记录不等于连续日线，也不能据此确认历史天量。
+- 证据覆盖表按日期汇总已建模行情池的记录数、日期/股票数、区间及有效价格/成交量条数；0条与字段未采集分开显示。日线、竞价、分时明确显示是否接入看板，不推断数据库里必然没有。
+- 概念证据接口独立加载，切换日期或读取失败会清空旧状态并提供重试；不影响原始报表和人工观察池。
 - “次日观察池”合并核心连板、助攻及前高观察，同股保留多来源依据；支持关注、剔除、恢复、角色/状态筛选、搜索和独立 JSON 导出。
 - 观察状态、人工验证结果和备注按飞书账号与报告日期保存在服务器，保存时保留依据快照；来源消失仍可查看。后续行情展示首个可用日期的事实，不自动判定条件满足。
 - 日期选择、刷新、完整 JSON 导出；日历蓝点代表数据库有记录。
@@ -148,6 +151,7 @@ services/agent/.venv/bin/python dashboard/server.py
 - `POST /api/auth/logout` → 带 Origin 与 CSRF 校验的退出；
 - `GET /api/dates` → `{ "dates": ["2026-10-23", ...] }`，日期降序，覆盖行情、日志、已有复盘及当前账号已保存观察日期。
 - `GET /api/report?date=YYYY-MM-DD` → `{ report, material, previous_day_material, reason_material }`。
+- `GET /api/strategy-evidence?date=YYYY-MM-DD` → `{ date, coverage, concepts }`，认证后只读汇总所选日期及以前的行情池覆盖和16个概念状态；字段、状态和推断限制见 `.trellis/spec/backend/dashboard-evidence.md`。
 - report 原样序列化 `FeishuStockReport`；日期为 ISO 字符串、Decimal 转为数字，未知字段类型报错。
 - 非法日期返回 400、无数据返回 404、数据库或表结构异常返回 503。
 - 未登录的报表请求返回 401；无效退出请求返回 403。
@@ -163,7 +167,7 @@ npm run lint
 npm run build
 npm test
 cd ..
-services/agent/.venv/bin/python -m pytest dashboard/test_server.py dashboard/test_auth.py dashboard/test_watchlist.py -q
+services/agent/.venv/bin/python -m pytest dashboard/test_server.py dashboard/test_auth.py dashboard/test_watchlist.py dashboard/test_strategy_evidence.py -q
 ```
 
 前端测试覆盖五节 Markdown 的完整保留和非标准格式回退。接口测试使用隔离 SQLite 和本地 HTTP 服务，不连接生产数据库，不消耗 AI 额度。

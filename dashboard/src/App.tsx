@@ -301,6 +301,7 @@ export default function App({
                 label: '策略分类',
                 children: (
                   <StrategyCategories
+                    key={`${report.target_date}-${revision}`}
                     report={report}
                     onWatchlist={openWatchlist}
                     onReview={() => setActiveTab('review')}
